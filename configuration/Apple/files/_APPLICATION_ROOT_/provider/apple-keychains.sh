@@ -1,0 +1,5 @@
+#!/bin/sh
+set -a
+_APPLICATION_NAME=configuration
+_PLUGIN_CONFIGURATION_PATH=~/Library/Keychains
+_PLUGIN_CONFIGURATION_PATH_IS_DIR=1

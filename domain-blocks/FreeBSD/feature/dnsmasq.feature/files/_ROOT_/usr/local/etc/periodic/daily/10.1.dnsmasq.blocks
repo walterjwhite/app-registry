@@ -1,0 +1,2 @@
+dnsmasq-update-domain-blocks
+service dnsmasq restart

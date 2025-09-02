@@ -1,3 +1,0 @@
-GREP_OPTIONS='--color=auto'
-export GREP_COLOR="1;33"
-alias grep="grep $GREP_OPTIONS"

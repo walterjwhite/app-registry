@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ $(find . -maxdepth 1 -type f -name "*_test.go" -print -quit | wc -l) -gt 0 ]; then
+	go test -test.bench=".*"
+fi

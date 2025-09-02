@@ -1,9 +1,0 @@
-zstyle :compinstall filename '~/.zshrc'
-autoload -Uz compinit
-compinit
-autoload -U promptinit
-promptinit
-#autoload -U compinit promptinit
-#compinit
-#promptinit;
-#prompt gentoo

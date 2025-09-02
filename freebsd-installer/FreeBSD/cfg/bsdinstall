@@ -1,0 +1,9 @@
+: ${DISTRIBUTIONS:="kernel.txz base.txz"}
+: ${ZFSBOOT_PARTITION_SCHEME:="GPT"}
+: ${ZFSBOOT_BOOT_TYPE:="BIOS+UEFI"}
+: ${ZFSBOOT_SWAP_ENCRYPTION:=yes}
+: ${ZFSBOOT_SWAP_SIZE:=0}
+: ${ZFSBOOT_GELI_ENCRYPTION:=yes}
+: ${ZFSBOOT_GELI_KEY_FILE:=/boot/encryption.key}
+: ${ZFSBOOT_CONFIRM_LAYOUT:=0}
+: ${nonInteractive:=YES}

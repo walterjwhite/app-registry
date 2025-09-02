@@ -1,0 +1,4 @@
+git cherry pick on branch
+	checks out the specified branch before cherry-picking the requested changes, pushing, and restoring the original branch
+	branch to apply the cherry-pick on
+	source branch, tag, or git commit to cherry pick
