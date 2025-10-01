@@ -1,0 +1,3 @@
+video search
+    Wrapper for search cmd, specific to ~/.data/videos
+    * passed directly to search cmd

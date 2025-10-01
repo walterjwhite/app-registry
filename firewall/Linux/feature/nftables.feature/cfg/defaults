@@ -1,0 +1,2 @@
+: ${_CONF_FIREWALL_NFTABLES_TABLE:=global}
+: ${_CONF_FIREWALL_PROVIDER:=nftables}

@@ -1,0 +1,5 @@
+sys-apps/smartmontools
+sys-apps/gptfdisk
+sys-block/parted
+sys-fs/squashfs-tools
+sys-apps/busybox

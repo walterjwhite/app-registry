@@ -1,0 +1,5 @@
+_CONF_TIME_WHEN_EXIT_STATUS=254
+: ${_CONF_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_TIME_SECONDS_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_TIME_DATETIME_FORMAT:="%Y/%m/%d %H:%M"}
+: ${_CONF_DATE_TIME_FILEORMAT:="%Y/%m/%d %H:%M"}

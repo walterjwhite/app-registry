@@ -1,0 +1,5 @@
+case $_SUB_PLATFORM in
+    Ubuntu)
+        : ${_CONF_GIT_TEMPLATE_PATH:=/usr/share/git-core/templates}
+        ;;
+esac
