@@ -1,0 +1,8 @@
+queue video for download
+    -force force queue
+    -extract-audio
+    -profiles=*
+        use specified profiles, space delimeted
+    -v specify URL to download instead of relying on the clipboard
+    -* pass options directly to youtube-dl
+    *  comments

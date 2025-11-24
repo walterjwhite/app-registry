@@ -1,0 +1,9 @@
+: ${_CONF_FREEBSD_INSTALLER_CONFIGURATION_DIRECTORY:=/usr/local/etc/walterjwhite/system-configuration/status}
+: ${_CONF_FREEBSD_INSTALLER_LOG_DIRECTORY:=/var/log/walterjwhite}
+: ${_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION:=/usr/local/etc/walterjwhite/system}
+: ${_CONF_INSTALL_NO_PAGER:=1}
+: ${_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE_PACKAGES:="fusefs-sshfs"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_PACKAGES:="git gnugrep gsed rsync checkrestart sudo dmidecode shuf"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_BASE_PACKAGES:="beadm smartmontools"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_MICROCODE_PACKAGES:="cpu-microcode"}
+: ${_CONF_FREEBSD_INSTALLER_PACKAGE_TIMEOUT:="1800"}

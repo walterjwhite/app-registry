@@ -1,5 +1,0 @@
-: ${_CONF_FREEBSD_INSTALLER_CONFIGURATION_DIRECTORY:=/usr/local/etc/walterjwhite/system-configuration/status}
-: ${_CONF_FREEBSD_INSTALLER_LOG_DIRECTORY:=/var/log/walterjwhite}
-: ${_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION:=/usr/local/etc/walterjwhite/system}
-#: ${_CONF_FREEBSD_INSTALLER_DEBUG_FILE:=/tmp/bsdinstall-debug.log}
-: ${_CONF_INSTALL_NO_PAGER:=1}

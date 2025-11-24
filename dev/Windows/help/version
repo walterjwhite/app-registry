@@ -1,0 +1,3 @@
+print project version
+	go
+	maven (Java), prints out project version

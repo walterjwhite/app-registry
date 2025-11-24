@@ -1,5 +1,0 @@
-username=rclone
-uid=506
-grouplist=
-shell=/usr/sbin/nologin
-password='*'

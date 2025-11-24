@@ -1,0 +1,2 @@
+: ${_CONF_SEARCH_LOCATE_UPDATEDB_CMD:=/usr/bin/updatedb}
+: ${_CONF_SEARCH_LOCATE_DATABASE:=/var/lib/plocate/plocate.db}

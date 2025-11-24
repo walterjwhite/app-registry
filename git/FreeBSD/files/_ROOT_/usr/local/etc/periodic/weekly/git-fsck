@@ -2,8 +2,7 @@
 [ -z "$_OPTN_GIT_PROJECT_BASE_PATH" ] && exit 0
 cd $_OPTN_GIT_PROJECT_BASE_PATH
 for _GIT_PROJECT in $(find . -type d -name .git); do
-	_info "running git-fsck on $(basename $_GIT_PROJECT)"
-
+	_INFO "running git-fsck on $(basename $_GIT_PROJECT)"
 	cd $_GIT_PROJECT
 	git-fsck
 	cd $_OPTN_GIT_PROJECT_BASE_PATH

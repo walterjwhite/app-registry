@@ -1,0 +1,2 @@
+: ${_CONF_EXPENSES_TEXT_FIELDS:="date|name|description|category|comments"}
+: ${_CONF_EXPENSES_NUMERICAL_FIELDS:="unit-price|quantity|tax|tip|fees|total"}

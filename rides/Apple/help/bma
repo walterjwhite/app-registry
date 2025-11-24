@@ -1,0 +1,8 @@
+bike mileage add
+    If the record already exists (Date, Index, Bike), the record is not inserted and an error is returned.
+    Indexed Parameters
+    Date (2010/01/01)
+    Index (1)
+    Bike (s20)
+    Mileage (7.4)
+    Tags

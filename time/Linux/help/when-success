@@ -1,0 +1,24 @@
+invoke a command at a given date/time or when a criteria is met
+    -at=12:00
+       waits until 12:00 before executing the provided cmd
+         (time format)
+       if that time has already passed, it will wait until the following day
+    -at=00:00:00
+       waits until 00:00:00 before executing the provided cmd
+         (seconds format)
+       if that time has already passed, it will wait until the following day
+    -at=2022/05/06 00:00:00 <date format>
+       waits until 00:00:00 of the given date before executing the provided cmd
+         (seconds format)
+       if that time has already passed, an error will be raised and the cmd will return immediately
+    -file=<file to execute>
+        _TIME_FILE
+    -execute=<cmd with arguments to execute>
+        _TIME_EXECUTE
+    -every=<time duration>
+    -success=<file to execute>
+         upon successful execution, file or execute will run
+    -cleanup
+        cleanup the file on successful execution
+examples
+  when-success -success=/tmp/success.sh -every=5s -file="/tmp/test.sh"

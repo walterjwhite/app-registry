@@ -1,0 +1,6 @@
+Automatically:
+    unlocks a GELI-encrypted device
+    imports the device into the pool
+    monitors the resilvering process to ensure the drive is replicated
+    offlines the device
+    lockis the device

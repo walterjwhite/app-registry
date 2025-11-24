@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+description="PubSub Exec"
+logfile=SYSLOG
+command="/usr/local/bin/pubsub-exec"
+command_args="-cmd=/usr/local/bin/_remote-callback -log-target $logfile -log-level debug"
+pidfile="/run/pubsub-exec.pid"
+start_pre() {
+    case $logfile in
+    	SYSLOG)
+    		;;
+    	*)
+    		mkdir -p $(dirname $logfile)
+    		;;
+    esac
+}
+start() {
+    ebegin "Starting ${description}"
+    start-stop-daemon --start --make-pidfile --pidfile "${pidfile}" --background --exec "${command}" -- ${command_args}
+    eend $?
+}
+stop() {
+    ebegin "Stopping ${description}"
+    start-stop-daemon --stop --pidfile "${pidfile}"
+    eend $?
+}

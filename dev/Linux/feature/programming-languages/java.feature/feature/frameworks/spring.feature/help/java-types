@@ -1,0 +1,2 @@
+-type=enum|class|interface
+    The Java type we're interested in

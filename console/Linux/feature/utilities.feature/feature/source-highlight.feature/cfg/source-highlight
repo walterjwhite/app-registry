@@ -1,0 +1,8 @@
+case $_SUB_PLATFORM in
+  Gentoo)
+	: ${_CONF_CONSOLE_SOURCE_HIGHTLIGHT:=/usr/bin/lesspipe}
+  	;;
+  *)
+	: ${_CONF_CONSOLE_SOURCE_HIGHTLIGHT:=/usr/bin/src-hilite-lesspipe.sh}
+	;;
+esac

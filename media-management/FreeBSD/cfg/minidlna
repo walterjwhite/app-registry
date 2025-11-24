@@ -1,0 +1,2 @@
+: ${_CONF_MEDIA_MANAGEMENT_MINIDLNA_CONF:=/usr/local/etc/minidlna.conf}
+: ${_CONF_MEDIA_MANAGEMENT_MINIDLNA_DB:=/var/db/minidlna}

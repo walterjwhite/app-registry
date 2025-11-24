@@ -1,0 +1,6 @@
+#!/bin/sh
+[ -n "$_OPTN_REMOTE_PUBLISH_PUBLIC_IP_NIGHTLY_DISABLE" ] && {
+  _WARN "Publish public IP is disabled"
+  exit 0
+}
+remote-publish-public-IP
