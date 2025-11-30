@@ -1,3 +1,0 @@
-_PLUGIN_CONFIGURATION_PATH=~/.config/wezterm
-_PLUGIN_CONFIGURATION_PATH_IS_DIR=1
-_PLUGIN_INCLUDE="wezterm.lua helpers.lua"

@@ -1,0 +1,1438 @@
+#!/bin/sh
+set -a
+_APPLICATION_NAME=gentoo-installer
+_beep() {
+	[ ! -e /dev/speaker ] && return 1
+	flock -n -w 0 $RSRC_BEEP printf '%s' "$1" >/dev/speaker || {
+		_DEBUG "Another 'beep' is in progress"
+		return 2
+	}
+}
+_sudo_precmd() {
+	_beep $_CONF_LOG_SUDO_BEEP_TONE
+}
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_variable_is_set() {
+	env | grep -cqm1 "^$1=.*$"
+}
+_environment_filter() {
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
+}
+_environment_dump() {
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
+	mkdir -p $(dirname $_ENVIRONMENT_FILE)
+	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
+}
+_call() {
+	local _function_name=$1
+	type $_function_name >/dev/null 2>&1 || {
+		_DEBUG "${_function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$_function_name "$@"
+		return $?
+	}
+	$_function_name
+}
+_() {
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local _successfulExitStatus=0
+	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
+		_successfulExitStatus=$_SUCCESSFUL_EXIT_STATUS
+		unset _SUCCESSFUL_EXIT_STATUS
+	fi
+	_INFO "## $*"
+	local exit_status
+	if [ -z "$_DRY_RUN" ]; then
+		"$@"
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $_successfulExitStatus ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
+		fi
+	fi
+}
+_ERROR() {
+	if [ $# -ge 2 ]; then
+		_EXIT_STATUS=$2
+	else
+		_EXIT_STATUS=1
+	fi
+	_EXIT_LOG_LEVEL=4
+	_EXIT_STATUS_CODE="ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
+	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_ERR
+	_defer _environment_dump
+	_defer _log_app_exit
+	exit $_EXIT_STATUS
+}
+_success() {
+	_EXIT_STATUS=0
+	_EXIT_LOG_LEVEL=1
+	_EXIT_STATUS_CODE="SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
+	_EXIT_MESSAGE="$1"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_SCS
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	[ -z "$_EXIT" ] && exit 0
+}
+_on_exit() {
+	[ $_EXIT ] && return 1
+	_EXIT=0
+	[ -z "$_EXIT_STATUS" ] && _success "completed successfully"
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			_call $defer
+		done
+		unset _DEFERS
+	fi
+	return $_EXIT
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
+	fi
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
+}
+_print_help() {
+	if [ -e $2 ]; then
+		_INFO "$1:"
+		cat $2
+		printf '\n'
+	fi
+}
+_print_help_and_exit() {
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
+	if [ "$_APPLICATION_NAME" != "install" ]; then
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+	fi
+	exit 0
+}
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/$include_file ] && . $HOME/.config/walterjwhite/$include_file
+	done
+}
+_init_logging() {
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
+	0)
+		local logfile=$(_mktemp debug)
+		_WARN "Writing debug contents to: $logfile"
+		_set_logfile "$logfile"
+		set -x
+		;;
+	esac
+}
+_set_logfile() {
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
+}
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
+}
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
+}
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
+}
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
+}
+_sed_remove_nonprintable_characters() {
+	sed -e 's/[^[:print:]]//g'
+}
+_print_log() {
+	if [ -z "$5" ]; then
+		if test ! -t 0; then
+			local _line
+			cat - | _sed_remove_nonprintable_characters |
+				while read _line; do
+					_print_log $1 $2 $3 $4 "$_line"
+				done
+			return
+		fi
+		return
+	fi
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
+	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
+}
+_reset_indent() {
+	unset _LOG_INDENT
+}
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
+}
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+}
+_log_app() {
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}.XXXXXXXX
+}
+_sub_platform() {
+	which lsb_release >/dev/null 2>&1 && {
+		_SUB_PLATFORM=$(lsb_release -a | grep ID | cut -f2 -d: | tr -d '\t')
+		return
+	}
+	[ -e $_ROOT/etc/os-release ] && {
+		_SUB_PLATFORM=$(grep ^NAME= $_ROOT/etc/os-release | cut -f2 -d= | sed -e 's/"//g' -e 's/ Linux//')
+	}
+	[ -e $_ROOT/etc/gentoo-release ] && _SUB_PLATFORM=Gentoo
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
+}
+_syslog() {
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	if [ -n "$_WAITEE" ] && [ -e $_APPLICATION_PIPE ]; then
+		_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+		printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+		_INFO "$0 downstream process picked up"
+	fi
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while [ 1 ]; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local _UPSTREAM_STATUS=$?
+		if [ $_UPSTREAM_STATUS -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
+}
+_mail() {
+	if [ $# -lt 3 ]; then
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		return 1
+	fi
+	local recipients=$(printf '%s' "$1" | tr '|' ' ')
+	shift
+	local subject="$1"
+	shift
+	local message="$1"
+	shift
+	printf "$message" | mail -s "$subject" $recipients
+}
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
+		return 1
+	fi
+	_mail "$recipients" "$subject" "$2"
+}
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
+	fi
+	_alert "$subject" "$message"
+}
+_init_prepare_work_dir() {
+	INIT_WORK_DIR=/tmp/init
+	rm -rf $INIT_WORK_DIR $INIT_OUTPUT_FILE && mkdir -p $INIT_WORK_DIR
+	cd $INIT_WORK_DIR
+	mkdir -p {dev,etc,mnt/root,proc,root,sys,run,usr/bin,usr/lib,usr/lib64,usr/sbin}
+	cp -a /dev/{null,console,tty} dev/
+	ln -s usr/bin bin
+	ln -s usr/sbin sbin
+	ln -s usr/lib lib
+	ln -s usr/lib64 lib64
+}
+_init_busybox() {
+	_PACKAGE_INSTALL sys-apps/busybox
+	for cmd in $BUSYBOX_CMDS; do
+		ln -s busybox bin/$cmd
+	done
+}
+_init_dependencies() {
+	_INFO "Copying dependencies"
+	tar cph -C / $(lddtree -l $INIT_CMDS | tr '\n' ' ') 2>/dev/null | tar xp -C $INIT_WORK_DIR
+}
+_init_initscript() {
+	_INFO "Copying init"
+	cp $_CONF_APPLICATION_LIBRARY_PATH/init/walterjwhite.sh init
+	chmod +x init
+}
+_init_kernel_modules() {
+	_gentoo_latest_kernel_version
+	_INFO "Copying _KERNEL modules"
+	_init_kernel_modules_required
+	_INIT_KERNEL_MODULES_${MODULES_IMPLEMENTATION}
+	_init_kernel_modules_metadata
+}
+_init_kernel_modules_required() {
+	local module_name module_file
+	for module_name in $INIT_REQUIRED_MODULES; do
+		module_name=$(printf '%s\n' $module_name | sed -e 's/_/*/g')
+		module_file=$(find /lib/modules/$GENTOO_LATEST_KERNEL_VERSION -type f -name "$module_name.ko")
+		[ -z "$module_file" ] && {
+			_WARN "No module file found for $module_name"
+			continue
+		}
+		tar cp -C / $module_file 2>/dev/null | tar xp -C $INIT_WORK_DIR
+	done
+}
+_INIT_KERNEL_MODULES_UDEV() {
+	local path
+	for path in $INIT_MODULE_PATHS; do
+		[ ! -e /lib/modules/$GENTOO_LATEST_KERNEL_VERSION/kernel/$path ] && {
+			_WARN "/lib/modules/$GENTOO_LATEST_KERNEL_VERSION/kernel/$path not found"
+			continue
+		}
+		tar cp -C / /lib/modules/$GENTOO_LATEST_KERNEL_VERSION/kernel/$path 2>/dev/null | tar xp -C $INIT_WORK_DIR
+	done
+}
+_INIT_KERNEL_MODULES_HOST() {
+	local module_name module_file kernel_modules
+	kernel_modules=$(lsmod | sed 1d | awk {'print$1'} | sort -u | tr '\n' ' ')
+	for module_name in $kernel_modules; do
+		module_find_pattern=$(printf '%s\n' "$module_name" | sed -e 's/_/*/g')
+		module_file=$(find /lib/modules/$GENTOO_LATEST_KERNEL_VERSION -type f -name "$module_find_pattern.ko")
+		[ -z "$module_file" ] && {
+			_WARN "No module file found for $module_name"
+			continue
+		}
+		tar cp -C / $module_file 2>/dev/null | tar xp -C $INIT_WORK_DIR
+		KERNEL_HOST_MODULES="$KERNEL_HOST_MODULES $module_name"
+	done
+	_init_host_firmware
+}
+_init_host_firmware() {
+	local module_pattern
+	for module_pattern in $(lsmod | sed 1d | awk {'print$1'} | sort -u | sed -e 's/_/*/g' -e 's/^/*/' -e 's/$/*/'); do
+		find /lib/firmware -type f -path "$module_pattern" -exec tar cp -C / {} + | tar xp -C $INIT_WORK_DIR 2>/dev/null
+	done
+}
+_init_kernel_modules_metadata() {
+	tar cp -C / /lib/modules/$GENTOO_LATEST_KERNEL_VERSION/modules.* 2>/dev/null | tar xp -C $INIT_WORK_DIR
+}
+_init_conf() {
+	[ "$MODULES_IMPLEMENTATION" = "host" ] && {
+		$_CONF_GNU_SED -i "s/KERNEL_HOST_MODULES/$KERNEL_HOST_MODULES $INIT_REQUIRED_MODULES/" init
+	}
+}
+_init_build() {
+	find . -print0 | cpio --null --create --verbose --format=newc | $INIT_COMPRESSION_CMD >$INIT_OUTPUT_FILE
+}
+_features() {
+	cd $PWD
+	_WARN_ON_ERROR=1 _require_file "$1" "_features: $PWD" || return 1
+	_INFO "Installing ${_FEATURE_MESSAGE}features"
+	local feature
+	for feature in $(_features_find $1 | sort -u); do
+		_FEATURE_NAME=$(printf '%s' $feature | sed -e 's/\.feature/\.feature\n/g' | $_CONF_GNU_GREP -Po '/[a-zA-Z0-9-_]*.feature$' | sed -e 's/^\///' -e 's/\.feature$//' | tr '\n' '_' | sed -e 's/_$//')
+		_application_defaults $feature
+		_is_feature_enabled $_FEATURE_NAME || {
+			_FEATURE_DISABLED=1 _disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+		}
+		_feature $feature || {
+			_disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+			_FEATURE_ERROR=1
+		}
+		_FEATURE_MESSAGE="children " _WARN_ON_ERROR=1 _features $feature/feature
+		_features_unset
+	done
+}
+_features_unset() {
+	unset _FEATURE_NAME _FEATURE_DISABLED
+}
+_features_find() {
+	if [ -z "$_FEATURE_MESSAGE" ]; then
+		find $1 -type d \( -name '*.feature' -and ! -path '*/*.feature/*' \)
+	else
+		find $1 -type d -name '*.feature' -and ! -path "$1"
+	fi
+}
+_feature() {
+	_DETAIL $_FEATURE_NAME
+	_install $1 || return $?
+	_feature_setup $1 || return $?
+}
+_feature_setup() {
+	local setup_script
+	for setup_script in $(find $1 -type f \( -path "$1/setup/*" \) | sort -u); do
+		_setup_run_script $setup_script || return 1
+	done
+}
+_install() {
+	_sudo mkdir -p $_INSTALL_BIN_PATH
+	_install_help $1
+	local installed_files=$(_mktemp)
+	_install_cmds $1 $installed_files
+	_install_uninstall $1
+	_install_files_files $1 $installed_files
+	_install_update_files $installed_files
+	if [ -e $1/.metadata ]; then
+		cat $1/.metadata | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata"
+	fi
+}
+_install_files() {
+	if [ -e $1 ] && [ $(find $1 -type f | wc -l) -gt 0 ]; then
+		if [ -n "$3" ]; then
+			local files_sed_safe=$(_sed_safe $1)
+			local target_sed_safe=$(_sed_safe $2)
+			find $1 -type f | sed -e "s/^$files_sed_safe/$target_sed_safe/" >>$3
+		fi
+		_sudo mkdir -p $2
+		tar -c $_TAR_ARGS -C $1 . | _sudo tar -xop $_TAR_ARGS -C $2
+	fi
+}
+_install_help() {
+	_install_files $1/help $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/help
+}
+_install_cmds() {
+	if [ "$_TARGET_APPLICATION_NAME" = "$_APPLICATION_NAME" ]; then
+		printf '%s\n' "$_INSTALL_BIN_PATH/$(basename $0)" >>$2
+	fi
+	_install_files $1/bin $_INSTALL_BIN_PATH $2
+}
+_install_uninstall() {
+	_install_files $1/uninstall $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall
+}
+_install_files_files() {
+	_install_files $1/files/_ROOT_ $_ROOT $2
+	_install_files $1/files/_APPLICATION_ROOT_ "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME" $2
+}
+_install_update_files() {
+	if [ -n "$_ROOT" ] && [ "$_ROOT" != "/" ]; then
+		local root_sed_safe=$(_sed_safe $_ROOT)
+		$_CONF_GNU_SED -i "s/^$root_sed_safe//" $1
+	fi
+	_INSTALLED_FILES="$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files"
+	cat $1 | _write "$_INSTALLED_FILES"
+	rm -f $1
+	_sudo chmod 444 $_INSTALLED_FILES
+}
+_install_metadata_write() {
+	_write $_APPLICATION_METADATA_PATH
+}
+_APP_BOOTSTRAP() {
+	:
+}
+_APP_INSTALL() {
+	_DEPENDENCY=1 app-install $1
+}
+_APP_UNINSTALL() {
+	app-uninstall $1
+}
+_APP_IS_INSTALLED() {
+	[ -e $_CONF_LIBRARY_PATH/$1/.metadata ] && return 0
+	return 1
+}
+_APP_IS_FILE() {
+	return 1
+}
+_CRONTAB_BOOTSTRAP() {
+	:
+}
+_CRONTAB_INSTALL() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	_CRONTAB_UNINSTALL
+	local temp_crontab=$(_mktemp)
+	_sudo cp $1 $temp_crontab
+	_sudo $_CONF_GNU_SED -i "s/$/ # app.$_TARGET_APPLICATION_NAME/" $temp_crontab
+	printf '\n' | _sudo tee -a $temp_crontab >/dev/null 2>&1
+	_sudo $_CONF_GNU_SED -i "1i # app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo $_CONF_GNU_SED -i "1i \\" $temp_crontab
+	_crontab_append $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_UNINSTALL() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_CRONTAB_REMOVE $temp_crontab
+	_crontab_write $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_REMOVE() {
+	_crontab_get $_SUDO_USER $1
+	_sudo $_CONF_GNU_SED -i '/^$/d' $1
+	_sudo $_CONF_GNU_SED -i "/# app.$_TARGET_APPLICATION_NAME/d" $1
+}
+_CRONTAB_IS_INSTALLED() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_crontab_get $_SUDO_USER $temp_crontab
+	_sudo grep -qm1 "# app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_ENABLED() {
+	return 0
+}
+_CRONTAB_IS_FILE() {
+	return 0
+}
+_EXPECT_BOOTSTRAP() {
+	_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || {
+		_PACKAGE_INSTALL $EXPECT_PACKAGE
+		_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || EXPECT_DISABLED=1
+	}
+}
+_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE() {
+	which expect >/dev/null 2>&1
+}
+_EXPECT_INSTALL() {
+	$1 >/dev/null 2>&1
+}
+_EXPECT_UNINSTALL() {
+	_WARN "expect uninstall - Not implemented"
+}
+_EXPECT_IS_INSTALLED() {
+	return 1
+}
+_EXPECT_IS_FILE() {
+	return 0
+}
+_GO_BOOTSTRAP() {
+	_GO_BOOTSTRAP_IS_GO_AVAILABLE || {
+		_PACKAGE_INSTALL $GO_PACKAGE
+		_GO_BOOTSTRAP_IS_GO_AVAILABLE || GO_DISABLED=1
+	}
+}
+_GO_BOOTSTRAP_IS_GO_AVAILABLE() {
+	which go >/dev/null 2>&1
+}
+_GO_INSTALL() {
+	_GO_BOOTSTRAP
+	GO111MODULE=on GOPATH=$GO_INSTALL_PATH sudo_options="--preserve-env=GO111MODULE,GOPATH" _sudo go install $GO_OPTIONS "$@" || {
+		_WARN "go install failed: $GO_OPTIONS $@"
+		_WARN "  http_proxy: $http_proxy"
+		_WARN "  git  proxy: $(git config --global http.proxy)"
+	}
+}
+_GO_UPDATE() {
+	:
+}
+_GO_UNINSTALL() {
+	_sudo go uninstall "$@"
+}
+_GO_IS_INSTALLED() {
+	return 1
+}
+_GO_IS_FILE() {
+	return 1
+}
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
+	}
+	_NPM_SETUP_PROXY
+}
+_NPM_BOOTSTRAP_IS_NPM_AVAILABLE() {
+	which npm >/dev/null 2>&1
+}
+_NPM_INSTALL() {
+	local npm_package
+	for npm_package in "$@"; do
+		_NPM_IS_INSTALLED $npm_package || _sudo npm install -s -g "$npm_package"
+	done
+}
+_NPM_UNINSTALL() {
+	_sudo npm uninstall -s -g "$@"
+}
+_NPM_IS_INSTALLED() {
+	npm list -g $1 >/dev/null
+}
+_NPM_IS_FILE() {
+	return 1
+}
+_NPM_SETUP_PROXY() {
+	if [ -n "$http_proxy" ]; then
+		_WARN "Configuring NPM to use an HTTP proxy: $http_proxy"
+		npm config set proxy $http_proxy
+		npm config set https-proxy $https_proxy
+		_defer _NPM_CLEAR_PROXY
+	fi
+}
+_NPM_CLEAR_PROXY() {
+	_WARN "Reverting NPM HTTP proxy: $http_proxy"
+	npm config rm proxy
+	npm config rm https-proxy
+}
+_PACKAGE_BOOTSTRAP() {
+	:
+}
+_PACKAGE_INSTALL() {
+	[ $# -eq 0 ] && {
+		_WARN "no packages to install, none specified"
+		return 1
+	}
+	local packages
+	local package
+	for package in "$@"; do
+		_PACKAGE_IS_INSTALLED $package || {
+			if [ -n "$packages" ]; then
+				packages="$packages $package"
+			else
+				packages="$package"
+			fi
+		}
+	done
+	if [ -n "$packages" ]; then
+		_PACKAGE_INSTALL_DO "$packages"
+	else
+		_WARN "Packages [$*] are already installed, skipping"
+		return 0
+	fi
+}
+_PACKAGE_IS_FILE() {
+	return 1
+}
+_PACKAGE_ENABLED() {
+	return 0
+}
+_PYPI_BOOTSTRAP() {
+	_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || {
+		_PACKAGE_INSTALL $PYPI_PACKAGE
+		_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || PYPI_DISABLED=1
+	}
+}
+_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE() {
+	which pip >/dev/null 2>&1
+}
+_PYPI_INSTALL() {
+	_sudo pip install -U --no-input "$@" >/dev/null
+}
+_PYPI_UNINSTALL() {
+	_sudo pip uninstall -y "$@" >/dev/null
+}
+_PYPI_IS_INSTALLED() {
+	_ERROR "PIP - is installed - NOT IMPLEMENTED"
+}
+_PYPI_IS_FILE() {
+	return 1
+}
+_RUN_BOOTSTRAP() {
+	:
+}
+_RUN_INSTALL() {
+	sh $1
+}
+_RUN_UNINSTALL() {
+	_WARN "run uninstall - Not implemented"
+}
+_RUN_IS_INSTALLED() {
+	return 1
+}
+_RUN_IS_FILE() {
+	return 0
+}
+_RUST_BOOTSTRAP() {
+	_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || {
+		_PACKAGE_INSTALL $RUST_PACKAGE
+		_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || RUST_DISABLED=1
+	}
+}
+_RUST_BOOTSTRAP_IS_RUST_AVAILABLE() {
+	which cargo >/dev/null 2>&1
+}
+_RUST_INSTALL() {
+	_sudo cargo install "$@"
+}
+_RUST_UPDATE() {
+	_sudo cargo update "$@"
+}
+_RUST_UNINSTALL() {
+	_sudo cargo uninstall "$@"
+}
+_RUST_IS_INSTALLED() {
+	_ERROR "RUST - is installed - NOT IMPLEMENTED"
+}
+_RUST_IS_FILE() {
+	return 1
+}
+_USER_IS_FILE() {
+	return 0
+}
+_application_defaults() {
+	local default_file
+	for default_file in $(find $1/cfg -type f 2>/dev/null); do
+		_include $default_file
+	done
+}
+_setup_run_script() {
+	_SETUP_TYPE_NAME=$(basename $1)
+	_setup_contains_subtype $_SETUP_TYPE_NAME && {
+		_setup_sub_platform_matches $_SETUP_TYPE_NAME || {
+			_WARN "Ignoring $1, does not target this sub-platform"
+			return
+		}
+	}
+	case $_SETUP_TYPE_NAME in
+	*.*)
+		_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | sed -e "s/^.*\.//")
+		;;
+	[0-9][0-9]_[[:alnum:]]*)
+		_SETUP_TYPE_NAME=f_$_SETUP_TYPE_NAME
+		;;
+	esac
+	_SETUP_TYPE_NAME=${_SETUP_TYPE_NAME%_*}
+	_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | tr '[:lower:]' '[:upper:]')
+	type _${_SETUP_TYPE_NAME}_BOOTSTRAP >/dev/null 2>&1 || {
+		_WARN "Unknown type: $_SETUP_TYPE_NAME"
+		return
+	}
+	if [ ! -e $1 ]; then
+		_WARN "$1 no longer exists, ignoring"
+		return 0
+	fi
+	_variable_is_set _${_SETUP_TYPE_NAME}_DISABLED && return
+	_sudo mkdir -p "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type"
+	_setup_run_do_bootstrap $_SETUP_TYPE_NAME
+	_${_SETUP_TYPE_NAME}_IS_FILE
+	if [ $? -eq 0 ]; then
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $1 || {
+			local error=$?
+			_WARN "Error installing: $_SETUP_TYPE_NAME: $1"
+			return $error
+		}
+		_call _${_SETUP_TYPE_NAME}_GET_DATA $1 | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	else
+		local packages=$($_CONF_GNU_GREP -Pv '(^$|^#)' $1 | tr '\n' ' ')
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $packages || {
+			local error=$?
+			_WARN "Error installing $packages"
+			return $error
+		}
+		printf "$packages" | tr ' ' '\n' | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	fi
+	_call _${_SETUP_TYPE_NAME}_CLEANUP
+	return 0
+}
+_setup_contains_subtype() {
+	[ -z "$_SUB_PLATFORM" ] && return 1
+	case $1 in
+	*_*)
+		return 0
+		;;
+	esac
+	return 1
+}
+_setup_sub_platform_matches() {
+	local setup_type_sub_platform=${1##*_}
+	setup_type_sub_platform=${setup_type_sub_platform%%.*}
+	[ -z "$setup_type_sub_platform" ] && return 0
+	[ "$setup_type_sub_platform" = "$_SUB_PLATFORM" ] && return 0
+	return 1
+}
+_setup_run_do_bootstrap() {
+	_setup_type_bootstrapped $1 || {
+		_call _${1}_BOOTSTRAP
+		_call _${1}_BOOTSTRAP_POST
+		export _BOOTSTRAP_${1}=1
+		printf '_BOOTSTRAP_%s=1\n' "$1" | _install_metadata_write
+	}
+}
+_setup_type_bootstrapped() {
+	_variable_is_set _BOOTSTRAP_${1}
+}
+_PACKAGE_UPDATE() {
+	_package_sync
+	_INFO "updating world packages"
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --newuse -uD world $@
+	_INFO "updated world packages"
+	if [ -n "$_OPTN_INSTALL_GENTOO_DEPCLEAN" ]; then
+		_INFO "running depclean"
+		_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --depclean $@
+		_INFO "depclean completed"
+	fi
+}
+_PACKAGE_INSTALL_DO() {
+	_package_sync
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS $@
+}
+_PACKAGE_UNINSTALL() {
+	_package_sync
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --depclean $@
+}
+_PACKAGE_IS_INSTALLED() {
+	[ -f $_ROOT/var/lib/portage/world ] && {
+		$_CONF_GNU_GREP -Pqm1 "^${1}$" $_ROOT/var/lib/portage/world && {
+			return 0
+		}
+	}
+	local package_group=$(printf '%s' $1 | cut -f1 -d/)
+	local package_name=$(printf '%s' $1 | cut -f2 -d/)
+	if [ -e $_ROOT/var/db/pkg/$package_group ]; then
+		find $_ROOT/var/db/pkg/$package_group -type f | $_CONF_GNU_GREP -Pqm1 "/$package_name-[\d_\-\.]_.ebuild" && {
+			return 0
+		}
+	fi
+	return 1
+}
+__PACKAGE_BOOTSTRAP() {
+	mount | grep -qm1 'overlay on /' && {
+		_WARN 'Disabling emerge as it appears we are running on an overlayfs'
+		_PACKAGE_DISABLED=1
+		return 1
+	}
+	[ ! -e $_ROOT/etc/portage/repos.conf ] && {
+		_sudo cp $_ROOT/usr/share/portage/config/repos.conf $_ROOT/etc/portage/repos.conf
+	}
+	[ -e /etc/portage/make.conf ] && {
+		grep -qm1 '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf && {
+			grep -qm1 '^GENTOO_MIRRORS=.*$' $_ROOT/etc/portage/make.conf || {
+				printf '# mirror from host\n' >>$_ROOT/etc/portage/make.conf
+				grep '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf >>$_ROOT/etc/portage/make.conf
+			}
+		}
+	}
+	_package_sync
+	[ ! -e $_ROOT/etc/portage/package.accept_keywords/platform ] && {
+		_sudo mkdir -p $_ROOT/etc/portage/package.accept_keywords
+		printf '%s\n' "$_PLATFORM_PACKAGES_ACCEPT_KEYWORDS" | _write $_ROOT/etc/portage/package.accept_keywords/platform
+	}
+}
+_package_sync() {
+	_EMERGE_SYNC_FILE=$_CONF_APPLICATION_DATA_PATH/emerge.sync.time
+	_package_synced && {
+		_DEBUG "portage was already synced today"
+		return
+	}
+	_sudo mkdir -p $(dirname $_EMERGE_SYNC_FILE)
+	_INFO "syncing portage"
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --sync && date +%s >$_EMERGE_SYNC_FILE
+	_INFO "synced portage"
+}
+_package_synced() {
+	[ ! -e $_EMERGE_SYNC_FILE ] && return 1
+	local last_synced=$(head -1 $_EMERGE_SYNC_FILE)
+	local current_time=$(date +%s)
+	[ $(($current_time - $last_synced)) -gt 86400 ] && return 1
+	return 0
+}
+__PACKAGE_BOOTSTRAP_IS_PACKAGE_AVAILABLE() {
+	return 0
+}
+_F_00_MASK_BOOTSTRAP() {
+	:
+}
+_F_00_MASK_INSTALL() {
+	_gentoo_portage_install_file package.mask $1
+}
+_F_00_MASK_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.mask $1
+}
+_F_00_MASK_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.mask $1
+}
+_F_00_MASK_ENABLED() {
+	return 0
+}
+_F_00_MASK_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_INSTALL() {
+	_gentoo_portage_install_file package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_LICENSE_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_LICENSE_INSTALL() {
+	_gentoo_portage_install_file package.license $1
+}
+_F_00_PACKAGE_LICENSE_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.license $1
+}
+_F_00_PACKAGE_LICENSE_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.license $1
+}
+_F_00_PACKAGE_LICENSE_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_LICENSE_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_USE_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_USE_INSTALL() {
+	_gentoo_portage_install_file package.use $1
+}
+_F_00_PACKAGE_USE_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.use $1
+}
+_F_00_PACKAGE_USE_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.use $1
+}
+_F_00_PACKAGE_USE_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_USE_IS_FILE() {
+	return 0
+}
+_F_00_USE_BOOTSTRAP() {
+	:
+}
+_F_00_USE_INSTALL() {
+	local name_suffix=$(_get_feature_name $1)
+	printf '# app.%s%s\n' $_TARGET_APPLICATION_NAME "$name_suffix" | _sudo tee -a /etc/portage/make.conf >/dev/null 2>&1
+	printf 'USE="$USE %s" # app.%s%s\n' "$(cat $1)" $_TARGET_APPLICATION_NAME "$name_suffix" | _sudo tee -a /etc/portage/make.conf >/dev/null 2>&1
+}
+_F_00_USE_UNINSTALL() {
+	local name_suffix=$(_get_feature_name $1)
+	_sudo $_CONF_GNU_SED -i "s/ app.$_TARGET_APPLICATION_NAME${name_suffix}/ /" /etc/portage/make.conf
+}
+_F_00_USE_IS_INSTALLED() {
+	local name_suffix=$(_get_feature_name $1)
+	grep -qm1 " # app.$_TARGET_APPLICATION_NAME${name_suffix}" /etc/portage/make.conf
+}
+_F_00_USE_ENABLED() {
+	return 0
+}
+_F_00_USE_IS_FILE() {
+	return 0
+}
+__APP_DEFAULT_BOOTSTRAP() {
+	:
+}
+__APP_DEFAULT_INSTALL() {
+	if [ -n $_USER ]; then
+		_SUDO_USER="$USER" _sudo xdg-mime default $1.desktop $2
+		return $?
+	fi
+	xdg-mime default $1.desktop $2
+}
+__APP_DEFAULT_UNINSTALL() {
+	:
+}
+__APP_DEFAULT_IS_INSTALLED() {
+	:
+}
+__APP_DEFAULT_ENABLED() {
+	return 0
+}
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_npm_setup_use_flags
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
+	}
+	_NPM_SETUP_PROXY
+}
+_npm_setup_use_flags() {
+	local use_flag_file=/tmp/install-gentoo-npm.use
+	printf '%s npm\n' $NPM_PACKAGE >$use_flag_file
+	_F_00_PACKAGE_USE_INSTALL $use_flag_file
+	rm -f $use_flag_file
+}
+_USER_UNINSTALL() {
+	. "$1"
+	_require "$username" "username"
+	userdel $username
+}
+_get_feature_name() {
+	case $1 in
+	*feature*)
+		printf '%s' "$1" | sed \
+			-e 's/^.*\/feature\///' \
+			-e 's/.feature\/.*//' \
+			-e 's/^/./' \
+			-e 's/\//./g'
+		;;
+	*)
+		printf ''
+		;;
+	esac
+}
+_gentoo_portage_install_file() {
+	_sudo mkdir -p /etc/portage/$1
+	_sudo cp $2 /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2)
+}
+_gentoo_portage_uninstall_file() {
+	_sudo rm -f /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2)
+}
+_gentoo_portage_is_installed() {
+	[ -e /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2) ]
+}
+_gentoo_latest_kernel_version() {
+	GENTOO_LATEST_KERNEL_VERSION=$(find /boot -type f -name 'vmlinuz*' ! -name '*.old' | sed -e 's/^.*vmlinuz-//')
+}
+_crontab_get() {
+	_require "$1" "Crontab User"
+	_require "$2" "Crontab Filename to write to"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_GET "$@"
+}
+_crontab_write() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE "$@"
+}
+_crontab_append() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_has_contents $2 || return 1
+	local current_crontab=$(_SUDO_USER=$1 _mktemp)
+	_crontab_get $1 $current_crontab
+	_sudo cat $2 | _sudo tee -a $current_crontab >/dev/null 2>&1
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE $1 $current_crontab
+	_sudo rm -f $current_crontab
+}
+_CRONTAB_DEFAULT_CLEAR() {
+	_SUDO_USER=$1 _sudo crontab -f -r 2>/dev/null
+}
+_CRONTAB_DEFAULT_GET() {
+	_SUDO_USER=$1 _sudo crontab -l >$2 2>/dev/null
+}
+_CRONTAB_DEFAULT_WRITE() {
+	_crontab_default_header $1 $2
+	_SUDO_USER=$1 _sudo mkdir -p $HOME/.cache/crontab
+	_SUDO_USER=$1 _sudo crontab $2 || {
+		_WARN "_ERROR writing crontab"
+		_SUDO_USER=$1 _sudo cat $2
+	}
+}
+_crontab_default_header() {
+	if [ -n "$_OPTN_INSTALL_CRONTAB_HEADER" ]; then
+		printf '%s\n\n' "$_OPTN_INSTALL_CRONTAB_HEADER" | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo mv $2.new $2
+	fi
+	_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+	_SUDO_USER=$1 _sudo mv $2.new $2
+}
+_CRONTAB_DCRON_CLEAR() {
+	case $1 in
+	root)
+		_SUDO_USER=$1 _sudo crontab /etc/crontab
+		;;
+	*)
+		_SUDO_USER=$1 _sudo crontab -d
+		;;
+	esac
+}
+_CRONTAB_DCRON_GET() {
+	_SUDO_USER=$1 _sudo crontab -l | _SUDO_USER=$1 _sudo tee $2 >/dev/null 2>&1
+}
+_CRONTAB_DCRON_WRITE() {
+	_SUDO_USER=$1 _sudo crontab $2
+}
+_require_file() {
+	_require "$1" filename _require_file
+	local level=_ERROR
+	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+	if [ ! -e $1 ]; then
+		$level "File: $1 does not exist | $2"
+		return 1
+	fi
+}
+_has_contents() {
+	_require_file "$1" "_has_contents:$1"
+	[ $(_sudo wc -l <$1) -gt 0 ] && return 0
+	return 1
+}
+_include logging platform context wait beep paths net . gentoo-installer
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
+case $_DETECTED_PLATFORM in
+Darwin)
+	_DETECTED_PLATFORM=Apple
+	;;
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
+	;;
+esac
+_PLATFORM="Linux"
+: ${_CONF_GNU_GREP:=grep}
+: ${_CONF_GNU_SED:=sed}
+_ARCHITECTURE=$(uname -m)
+_SUDO_CMD="sudo"
+_PLATFORM_PACKAGES="dev-vcs/git net-misc/curl dev-util/sh"
+NPM_PACKAGE="net-libs/nodejs"
+RUST_PACKAGE="rust"
+PYPI_PACKAGE="dev-lang/python"
+GO_PACKAGE="dev-lang/go"
+EXPECT_PACKAGE="dev-tcltk/expect"
+: ${_CONF_LOG_SUDO_BEEP_TONE:=L32aL8fL32c}
+: ${_CONF_INSTALL_STAT_ARGUMENTS:='-f %OLp'}
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='L32c'}
+: ${_CONF_LOG_BEEP_ALRT:='L32f'}
+: ${_CONF_LOG_BEEP_SCS:='L32a'}
+: ${_CONF_LOG_BEEP_WRN:=''}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='L32ab'}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$_CONF_DATA_PATH/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_GENTOO_INSTALLER_VERSION:=20250105T170325Z}
+: ${_CONF_GENTOO_VERBOSE_TAR:=}
+: ${_CONF_GENTOO_INSTALL_PATH:=/mnt/gentoo}
+: ${INCUS_CLEANUP_EXISTING=N}
+: ${MODULES_IMPLEMENTATION:=host}
+: ${GENTOO_STAGE3_TYPE:="hardened-openrc"}
+: ${GENTOO_KERNEL:=gentoo-kernel}
+: ${GENTOO_INIT:=DRACUT}
+: ${GENTOO_BOOT_LOADER:=EFIBOOTMGR}
+: ${GENTOO_BOOT_METHOD:=UEFI}
+: ${GENTOO_BOOT_FS:=zpool}
+: ${GENTOO_CRON:=DCRON}
+: ${GENTOO_SYSLOG:=SYSKLOGD}
+: ${GENTOO_SYSLOG_USE:=logrotate}
+: ${GENTOO_INDEXING:=PLOCATE}
+: ${GENTOO_L10N:="en en-US"}
+: ${GENTOO_LUKS_CIPHER:=aes-xts-plain}
+: ${GENTOO_LUKS_KEY_SIZE:=512}
+: ${GENTOO_LUKS_HASH:=sha512}
+: ${GENTOO_SOFTWARE_LICENSE:="@FREE @BINARY-REDISTRIBUTABLE"}
+: ${GENTOO_TIME_SYNCHRONIZATION:=CHRONY}
+: ${GENTOO_KERNEL:=gentoo-kernel}
+: ${GENTOO_KERNEL_CMDLINE_ARGS:="consoleblank=300 quiet"}
+: ${_CONF_GENTOO_INSTALLER_SYSTEM_IDENTIFICATION:="/usr/local/etc/walterjwhite/system"}
+: ${GENTOO_SYSTEM_LOCALE_ESELECT:=en_US.utf8}
+: ${GENTOO_SYSTEM_LOCALE_GEN:=en_US ISO-8859-1|en_US.UTF-8 UTF-8}
+: ${GENTOO_TOOLS_WGETPASTE:=1}
+: ${GENTOO_SYSTEM_TIMEZONE:=America/New_York}
+: ${GENTOO_PORTAGE_NICENESS=19}
+: ${GENTOO_PORTAGE_SCHEDULING_POLICY=batch}
+: ${_CONF_GENTOO_INSTALLER_LIVE_PATH:=/run/root-volume}
+: ${_CONF_GENTOO_INSTALLER_LIVE_OVERLAY_PATH:=/mnt/overlay}
+: ${_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE:=zstd}
+: ${GENTOO_ROOT_SQUASH_OUTPUT_FILE=$_CONF_APPLICATION_DATA_PATH/gentoo-root.img.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE}
+: ${_CONF_GENTOO_INSTALLER_LIVE_USE_ENCRYPTION:=y}
+: ${GENTOO_DRACUT_MODULES:="dmsquash-live"}
+: ${_CONF_GENTOO_INSTALLER_UPDATE_EFI:=n}
+: ${GENTOO_BOOT_LOADER_ARGS:="consoleblank=300 quiet"}
+: ${BUSYBOX_CMDS:="awk basename cat cp dd df dirname dmesg find grep insmod losetup ln ls lsmod mkdir modprobe mount readlink rm sh sleep stat switch_root umount uname"}
+: ${INIT_CMDS:="/usr/bin/busybox /usr/bin/cryptsetup /usr/bin/findfs /usr/bin/rsync /usr/bin/tar /usr/bin/udevadm /usr/lib/systemd/systemd-udevd"}
+: ${OVERLAYFS_SIZE:=1073741824}
+: ${INIT_COMPRESSION:=zstd}
+: ${INIT_OUTPUT_FILE:=$_CONF_APPLICATION_DATA_PATH/initramfs.cpio.$INIT_COMPRESSION}
+: ${INIT_COMPRESSION_CMD:="zstd --ultra"}
+: ${INIT_REQUIRED_MODULES:="loop overlay squashfs usb_storage uas"}
+: ${INIT_MODULE_PATHS:="crypto fs lib drivers/{block,ata,nvme,md} drivers/usb/{host,storage}"}
+GENTOO_LIVE_DATA_FILE=$_CONF_GENTOO_INSTALLER_LIVE_PATH/data.tar.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE
+GENTOO_LUKS_KEY_HEADER_PATH=/run/.luks-header
+[ -n "$INTERACTIVE" ] && LUKS_OPTIONS="-q"
+_include cron
+: ${_CONF_CRON_PROVIDER:=DEFAULT}
+_REQUIRED_APP_CONF="_CONF_APP_REGISTRY_GIT_URL _CONF_CLEAN_APP_REGISTRY_WORKSPACE _CONF_INSTALL_CHECKSUM_CMD"
+_sub_platform
+case $_SUB_PLATFORM in
+Alpine)
+	_INSTALL_INSTALLER=apk
+	_CONF_INSTALL_STAT_ARGUMENTS='-c %a'
+	_CONF_GNU_GREP=ugrep
+	_CONF_GNU_SED=sed
+	_is_backgrounded() {
+		:
+	}
+	REMOVE_UNUSED_FUNCTIONS=''
+	;;
+Debian | Ubuntu)
+	_INSTALL_INSTALLER=apt
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	;;
+Gentoo)
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	_PLATFORM_PACKAGES="app-eselect/eselect-repository app-portage/mirrorselect app-portage/cpuid2cpuflags sys-apps/pciutils sys-fs/dosfstools dev-vcs/git dev-tcltk/expect net-misc/curl dev-util/sh app-admin/sudo sys-apps/usbutils"
+	_PLATFORM_PACKAGES_ACCEPT_KEYWORDS="dev-util/sh ~amd64"
+	NPM_PACKAGE="net-libs/nodejs"
+	RUST_PACKAGE="dev-lang/rust"
+	PYPI_PACKAGE="dev-lang/python"
+	GO_PACKAGE="dev-lang/go"
+	_INSTALL_INSTALLER=emerge
+	_CONF_INSTALL_STAT_ARGUMENTS='-c %a'
+	ASSUME_ALWAYS_YES=yes
+	: ${_EMERGE_FLAGS:="-q --quiet-build --quiet-fail"}
+	[ -n "$_ROOT" ] && [ "$_ROOT" != "/" ] && _EMERGE_OPTIONS="--root=$_ROOT"
+	;;
+CentOS | RedHat)
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	_INSTALL_INSTALLER=yum
+	;;
+*)
+	_ERROR "Unknown Linux Distribution: $_SUB_PLATFORM"
+	;;
+esac
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
+trap _on_exit INT 0 1 2 3 4 6 15
+for _ARG in "$@"; do
+	case $_ARG in
+	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]* | --[a-z0-9][a-z0-9][a-z0-9]*)
+		_configuration_name=${_ARG#*-}
+		_configuration_name=${_configuration_name%%=*}
+		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
+			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
+			else
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
+			fi
+		fi
+		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
+			_configuration_value=1
+		else
+			_configuration_value=${_ARG#*=}
+		fi
+		export _$_configuration_name="$_configuration_value"
+		unset _configuration_name
+		shift
+		;;
+	-h | --help)
+		_print_help_and_exit
+		;;
+	-w=*)
+		_WAITER_PID="${1#*=}"
+		shift
+		;;
+	-w)
+		_WAITEE=1
+		shift
+		;;
+	*)
+		break
+		;;
+	esac
+done
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
+fi
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
+_DETAIL "Generating initramfs"
+_init_prepare_work_dir
+_init_busybox
+_init_dependencies
+_init_initscript
+_init_kernel_modules
+_init_conf
+_init_build

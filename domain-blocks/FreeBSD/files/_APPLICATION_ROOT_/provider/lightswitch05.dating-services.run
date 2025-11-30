@@ -1,293 +1,81 @@
 #!/bin/sh
 set -a
-_APPLICATION_NAME='domain-blocks'
-_PLATFORM="FreeBSD"
-_TAR_ARGS=" -f - "
-_SUDO_CMD="sudo"
-_ARCHITECTURE=$(uname -m)
-_INSTALL_INSTALLER=pkg
-: ${_CONF_INSTALL_GNU_GREP:=/usr/local/bin/grep}
-: ${_CONF_INSTALL_GNU_SED:=gsed}
-_PLATFORM_PACKAGES="git gsed gnugrep gtar gawk"
-_NPM_PACKAGE="npm"
-_RUST_PACKAGE="rust"
-_PYPI_DISABLED=1
-_PYPI_PACKAGE="python39 py39-pip"
-_GO_PACKAGE="go"
-GOPATH=/usr/local
-PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin
-if [ "$HOME" = "/" ]; then
-	HOME=/root
-fi
-: ${_CONF_INSTALL_C_ALRT:="1;31m"}
-: ${_CONF_INSTALL_C_ERR:="1;31m"}
-: ${_CONF_INSTALL_C_SCS:="1;32m"}
-: ${_CONF_INSTALL_C_WRN:="1;33m"}
-: ${_CONF_INSTALL_C_INFO:="1;36m"}
-: ${_CONF_INSTALL_C_DETAIL:="1;0;36m"}
-: ${_CONF_INSTALL_C_DEBUG:="1;35m"}
-: ${_CONF_INSTALL_C_STDIN:="1;34m"}
-: ${_CONF_INSTALL_AUDIT:=0}
-: ${_CONF_INSTALL_LOG_LEVEL:=2}
-: ${_CONF_INSTALL_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
-: ${_CONF_INSTALL_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
-: ${_CONF_INSTALL_WAIT_INTERVAL:=30}
-: ${_CONF_INSTALL_NO_PAGER:=0}
-: ${_CONF_INSTALL_BEEP_TIMEOUT:=5}
-: ${_CONF_INSTALL_BEEP_ERR:='L32c'}
-: ${_CONF_INSTALL_BEEP_ALRT:='L32f'}
-: ${_CONF_INSTALL_BEEP_SCS:='L32a'}
-: ${_CONF_INSTALL_BEEP_WRN:=''}
-: ${_CONF_INSTALL_BEEP_INFO:=''}
-: ${_CONF_INSTALL_BEEP_DETAIL:=''}
-: ${_CONF_INSTALL_BEEP_DEBUG:=''}
-: ${_CONF_INSTALL_BEEP_STDIN:='L32ab'}
-: ${_CONF_INSTALL_SYSTEM_TEMPLATE_PATH:=/usr/share/git/templates}
-: ${_CONF_INSTALL_LIBRARY_PATH:=/usr/local/walterjwhite}
-: ${_CONF_INSTALL_BIN_PATH:=/usr/local/bin}
-: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
-: ${_CONF_INSTALL_CONTEXT:=default}
-: ${_CONF_INSTALL_DATA_PATH:=$HOME/.data}
-: ${_CONF_INSTALL_CACHE_PATH:=$_CONF_INSTALL_DATA_PATH/.cache}
-: ${_CONF_INSTALL_CONFIG_PATH:=$HOME/.config/walterjwhite}
-: ${_CONF_INSTALL_STEP_TIMEOUT:=300}
-: ${_CONF_INSTALL_CONF_VALIDATION_FUNCTION:=_warn}
-: ${_CONF_INSTALL_INDENT:="  "}
-: ${_CONF_INSTALL_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
-case $(ps -o stat= -p $$) in
-*+*) ;;
-*)
-	_BACKGROUNDED=1
-	;;
-esac
-if [ -z "$_NON_INTERACTIVE" ]; then
-	tty >/dev/null || _NON_INTERACTIVE=0
-fi
-if ! (: >&7) 2>/dev/null; then
-	exec 7>&1
-	exec 8>&2
-fi
-if [ $_NON_INTERACTIVE ]; then
-	_LOG_TARGET=7
-	_NLOG_TARGET=1
-else
-	_LOG_TARGET=8
-	_NLOG_TARGET=2
-fi
-: ${_CONF_INSTALL_WAITER_LEVEL:=_debug}
-: ${_CONF_INSTALL_IOSTAT_DURATION:=5}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
-_DETECTED_PLATFORM=$(uname)
-case $_DETECTED_PLATFORM in
-Darwin)
-	_DETECTED_PLATFORM=Apple
-	;;
-esac
-: ${_CONF_INSTALL_REPOSITORY_URL:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_MIRROR_URLS:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_SUDO_TIMEOUT:=270}
-: ${_CONF_INSTALL_NETWORK_TEST_TARGET:=google.com}
-: ${_CONF_INSTALL_NETWORK_TEST_TIMEOUT:=5}
-: ${_CONF_INSTALL_TEAMS_MESSAGE_PARALLELIZATION:=5}
-: ${_CONF_INSTALL_PARALLEL_BUILD:=8}
-: ${_CONF_INSTALL_APP_REGISTRY_GIT_URL:=github.com/walterjwhite/app.registry.git}
-: ${_CONF_INSTALL_RUN_PATH:=/tmp/$USER/walterjwhite/app}
-_CONF_INSTALL_DATA_ARTIFACTS_PATH=$_CONF_INSTALL_DATA_PATH/install/artifacts
-_CONF_INSTALL_DATA_REGISTRY_PATH=$_CONF_INSTALL_DATA_PATH/install/registry
-_CONF_INSTALL_APPLICATION_DATA_PATH=$_CONF_INSTALL_DATA_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_CONFIG_PATH=$_CONF_INSTALL_CONFIG_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_LIBRARY_PATH=$_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME
-: ${_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH:=/usr/local/etc/walterjwhite/network}
-: ${_CONF_DOMAIN_BLOCKS_BLACKLIST:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/blacklist}
-: ${_CONF_DOMAIN_BLOCKS_BLACKLIST_AGGREGATE:=$_CONF_DOMAIN_BLOCKS_BLACKLIST/.aggregate}
-: ${_CONF_DOMAIN_BLOCKS_WHITELIST:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/whitelist}
-: ${_CONF_DOMAIN_BLOCKS_WHITELIST_AGGREGATE:=$_CONF_DOMAIN_BLOCKS_WHITELIST/.aggregate}
-: ${_CONF_DOMAIN_BLOCKS_CURL_CONNECT_TIMEOUT:=5}
-: ${_CONF_DOMAIN_BLOCKS_PARALLEL_WORKERS:=10}
+_APPLICATION_NAME=domain-blocks
 _beep() {
-	if [ -n "$_BEEPING" ]; then
-		_debug "Another 'beep' is in progress"
-		return
-	fi
-	_BEEPING=1
-	_do_beep "$@" &
+	[ -e /dev/speaker ] || return
+	printf '%s' "$@" >/dev/speaker 2>/dev/null &
 }
-_do_beep() {
-	if [ -e /dev/speaker ]; then
-		printf '%s' "$1" >/dev/speaker
-	fi
-	_beep_done
+_sudo_precmd() {
+	_beep $_CONF_LOG_SUDO_BEEP_TONE
 }
-_beep_done() {
-	unset _BEEPING
-}
-_mktemp() {
-	mktemp -t ${_APPLICATION_NAME}.${_APPLICATION_CMD}.$1
-}
-_notify() {
-	local title=$1
-	local message=$2
-	zenity --info --text="$_APPLICATION_NAME - $_APPLICATION_CMD - $title\n$message"
-}
-_open() {
-	xdg-open $1
-	sleep 1
-}
-_syslog() {
-	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
-}
-_get_defaults() {
-	local app_name=$(printf "$_TARGET_APPLICATION_NAME" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-	find all/defaults $_PLATFORM/defaults -type f \
-		-exec $_CONF_INSTALL_GNU_GREP -Poh "_CONF_${app_name}_[\w_\d]{3,}" {} + 2>/dev/null | sort -u
-}
-_variable_is_set() {
-	if [ $(env | grep "^$1=.*$" | wc -l) -gt 0 ]; then
-		return 0
-	fi
-	return 1
-}
-_has_required_conf() {
-	if [ -n "$_REQUIRED_APP_CONF" ]; then
-		for _REQUIRED_APP_CONF_ITEM in $(printf '%s' "$_REQUIRED_APP_CONF" | sed -e 's/$/\n/' | tr '|' '\n'); do
-			_variable_is_set $_REQUIRED_APP_CONF_ITEM || {
-				_warn "$_REQUIRED_APP_CONF_ITEM is unset"
-				_MISSING_REQUIRED_CONF=1
-			}
-		done
-		if [ -n "$_MISSING_REQUIRED_CONF" ]; then
-			_error "Required configuration is missing, please refer to above error(s)"
-		fi
-	fi
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
 }
 _environment_filter() {
-	grep '^_CONF_'
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
 }
 _environment_dump() {
-	if [ -z "$_APPLICATION_PIPE_DIR" ]; then
-		return
-	fi
-	if [ -z "$_ENVIRONMENT_FILE" ]; then
-		_ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
-	fi
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
 	mkdir -p $(dirname $_ENVIRONMENT_FILE)
 	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
 }
-_environment_load() {
-	if [ -n "$_ENVIRONMENT_FILE" ]; then
-		if [ -e "$_ENVIRONMENT_FILE" ]; then
-			. $_ENVIRONMENT_FILE 2>/dev/null
-		else
-			_warn "$_ENVIRONMENT_FILE does not exist!"
-		fi
-	fi
-}
-_is_feature() {
-	printf '%s' $_SETUP | grep -c /feature/
-}
-_disable_feature() {
-	if [ -z "$_FEATURE_DISABLED" ]; then
-		_warn "Error installing feature: $_FEATURE ($1)"
-	fi
-
-	printf '%s\n' $(_feature_key $1)_DISABLED=1 | _metadata_write
-}
-_is_feature_enabled() {
-	local _feature_key=$(_feature_key $1)
-	if [ $(env | grep -c "^${_feature_key}_DISABLED=1$") -gt 0 ]; then
-		_warn "$1 is disabled"
-		return 1
-	fi
-	return 0
-}
-_feature_key() {
-	printf '%s\n' "_FEATURE_${1}" | tr '[:lower:]' '[:upper:]' | tr '-' '_'
-}
 _call() {
-	local _function_name=$1
-	shift
-	type $_function_name >/dev/null 2>&1
-	local _return=$?
-	if [ $_return -gt 0 ]; then
-		_debug "${_function_name} does not exist"
-		return $_return
-	fi
-	$_function_name "$@"
-}
-_require() {
-	local level=error
-	if [ -z "$1" ]; then
-		if [ -n "$_WARN" ]; then
-			level=warn
-		fi
-		_$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
-		return 1
-	fi
-	unset _REQUIRE_DETAILED_MESSAGE
-}
-_read_if() {
-	if [ $(env | grep -c "^$2=.*") -eq 1 ]; then
-		_debug "$2 is already set"
-		return 1
-	fi
-	[ $_NON_INTERACTIVE ] && _error "Running in non-interactive mode and user input was requested: $@" 10
-	_print_log 9 STDI "$_CONF_INSTALL_C_STDIN" "$_CONF_INSTALL_BEEP_STDIN" "$1 $3"
-	read -r $2
-}
-_read_ifs() {
-	stty -echo
-	_read_if "$@"
-	stty echo
-}
-_continue_if() {
-	_read_if "$1" _PROCEED "$2"
-	if [ -z "$_PROCEED" ]; then
-		_DEFAULT=$(printf '%s' $2 | awk -F'/' {'print$1'})
-		_PROCEED=$_DEFAULT
-	fi
-	_PROCEED=$(printf '%s' "$_PROCEED" | tr '[:lower:]' '[:upper:]')
-	if [ $_PROCEED = "N" ]; then
-		return 1
-	fi
-	return 0
+	local function_name=$1
+	type $function_name >/dev/null 2>&1 || {
+		_DEBUG "${function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$function_name "$@"
+		return $?
+	}
+	$function_name
 }
 _() {
-	local _successfulExitStatus=0
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local successful_exit_status=0
 	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
-		_successfulExitStatus=$_SUCCESSFUL_EXIT_STATUS
+		successful_exit_status=$_SUCCESSFUL_EXIT_STATUS
 		unset _SUCCESSFUL_EXIT_STATUS
 	fi
-	_info "## $*"
+	_INFO "## $*"
+	local exit_status
 	if [ -z "$_DRY_RUN" ]; then
 		"$@"
-		local _exit_status=$?
-		if [ $_exit_status -ne $_successfulExitStatus ]; then
-			if [ -n "$_ON_FAILURE" ]; then
-				$_ON_FAILURE
-				return
-			fi
-			if [ -z "$_WARN_ON_ERROR" ]; then
-				_error "Previous cmd failed" $_exit_status
-			else
-				unset _WARN_ON_ERROR
-				_warn "Previous cmd failed - $* - $_exit_status"
-				_ENVIRONMENT_FILE=$(mktemp -t error) _environment_dump
-				return $_exit_status
-			fi
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $successful_exit_status ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
 		fi
 	fi
 }
-_optional_include() {
-	if [ -e $1 ]; then
-		. $1
-	else
-		_debug "_optional_include: $1 does NOT exist"
-	fi
-}
-_configure() {
-	_optional_include $1
-}
-_error() {
+_ERROR() {
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
@@ -295,105 +83,137 @@ _error() {
 	fi
 	_EXIT_LOG_LEVEL=4
 	_EXIT_STATUS_CODE="ERR"
-	_EXIT_COLOR_CODE="$_CONF_INSTALL_C_ERR"
-	_EXIT_BEEP="$_CONF_INSTALL_BEEP_ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
 	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP="$_CONF_LOG_BEEP_ERR"
 	_defer _environment_dump
+	_defer _log_app_exit
+	_run_defers
 	exit $_EXIT_STATUS
 }
 _success() {
 	_EXIT_STATUS=0
-	_EXIT_LOG_LEVEL=3
+	_EXIT_LOG_LEVEL=1
 	_EXIT_STATUS_CODE="SCS"
-	_EXIT_COLOR_CODE="$_CONF_INSTALL_C_SCS"
-	_EXIT_BEEP="$_CONF_INSTALL_BEEP_SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
 	_EXIT_MESSAGE="$1"
-	exit 0
+	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	_run_defers
+	exit $_EXIT_STATUS
 }
-_contains_argument() {
-	local _key=$1
-	shift
-	for _ARG in "$@"; do
-		case $_ARG in
-		$_key)
-			return 0
-			;;
-		esac
-	done
-	return 1
+_on_hup() {
+	:
 }
-_write() {
-	if [ -z "$1" ]; then
-		_error "filename cannot be empty."
+_on_int() {
+	_ERROR "interrupted"
+}
+_on_quit() {
+	_ERROR "quit"
+}
+_on_illegal() {
+	_ERROR "illegal instruction"
+}
+_on_abort() {
+	_ERROR "abort"
+}
+_on_alarm() {
+	_ERROR "alarm"
+}
+_on_term() {
+	_ERROR "term"
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
 	fi
-	$_SUDO_CMD mkdir -p $(dirname "$1")
-	$_SUDO_CMD tee -a "$1" >/dev/null
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_run_defers() {
+	[ -z "$_DEFERS" ] && return 1
+	local defer
+	for defer in $_DEFERS; do
+		_call $defer
+	done
+	unset _DEFERS
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
 }
 _print_help() {
 	if [ -e $2 ]; then
-		_info "$1:"
+		_INFO "$1:"
 		cat $2
 		printf '\n'
 	fi
 }
 _print_help_and_exit() {
-	_print_help 'system-wide options' $_CONF_INSTALL_LIBRARY_PATH/install/help/default
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
 	if [ "$_APPLICATION_NAME" != "install" ]; then
-		_print_help $_APPLICATION_NAME $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME/help/default
-		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
 	fi
 	exit 0
 }
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/shell/$include_file ] && . $HOME/.config/walterjwhite/shell/$include_file
+	done
+}
 _init_logging() {
-	unset _LOGFILE
-	case $_CONF_INSTALL_LOG_LEVEL in
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
 	0)
 		local logfile=$(_mktemp debug)
-		_warn "Writing debug contents to: $logfile"
+		_WARN "Writing debug contents to: $logfile"
 		_set_logfile "$logfile"
 		set -x
 		;;
 	esac
 }
 _set_logfile() {
-	if [ -n "$1" ]; then
-		_LOGFILE=$1
-		mkdir -p $(dirname $1)
-		exec >>$1
-		exec 2>>$1
-	fi
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	_log_to_console "$_CONF_LOG_C_WRN" "writing logs to $_LOGFILE"
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
 }
-_reset_logging() {
-	exec >&7
-	exec 2>&8
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
 }
-_alert() {
-	_print_log 5 ALRT "$_CONF_INSTALL_C_ALRT" "$_CONF_INSTALL_BEEP_ALRT" "$1"
-	local recipients="$_OPTN_INSTALL_ALERT_RECIPIENTS"
-	local subject="Alert: $0 - $1"
-	if [ -z "$recipients" ]; then
-		_warn "recipients is empty, aborting"
-		return 1
-	fi
-	_mail "$recipients" "$subject" "$2"
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
 }
-_warn() {
-	_print_log 3 WRN "$_CONF_INSTALL_C_WRN" "$_CONF_INSTALL_BEEP_WRN" "$1"
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
 }
-_info() {
-	_print_log 2 INF "$_CONF_INSTALL_C_INFO" "$_CONF_INSTALL_BEEP_INFO" "$1"
-}
-_detail() {
-	_print_log 2 DTL "$_CONF_INSTALL_C_DETAIL" "$_CONF_INSTALL_BEEP_DETAIL" "$1"
-}
-_debug() {
-	_print_log 1 DBG "$_CONF_INSTALL_C_DEBUG" "$_CONF_INSTALL_BEEP_DEBUG" "$1"
-}
-_do_log() {
-	:
-}
-_colorize_text() {
-	printf '\033[%s%s\033[0m' "$1" "$2"
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
 }
 _sed_remove_nonprintable_characters() {
 	sed -e 's/[^[:print:]]//g'
@@ -401,110 +221,169 @@ _sed_remove_nonprintable_characters() {
 _print_log() {
 	if [ -z "$5" ]; then
 		if test ! -t 0; then
+			local log_line
 			cat - | _sed_remove_nonprintable_characters |
-				while read _line; do
-					_print_log $1 $2 $3 $4 "$_line"
+				while read log_line; do
+					_print_log $1 $2 $3 $4 "$log_line"
 				done
 			return
 		fi
 		return
 	fi
-	local _level=$1
-	local _slevel=$2
-	local _color=$3
-	local _tone=$4
-	local _message="$5"
-	if [ $_level -lt $_CONF_INSTALL_LOG_LEVEL ]; then
-		return
-	fi
-	[ -n "$_LOGGING_CONTEXT" ] && _message="$_LOGGING_CONTEXT - ${_LOG_INDENT}$_message"
-	local _message_date_time=$(date +"$_CONF_INSTALL_DATE_FORMAT")
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
 	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
-		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$_slevel" "$_message" &
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
 	fi
-	_do_log "$_level" "$_slevel" "$_message"
-	[ -n "$_tone" ] && _beep "$_tone"
-	_log_non_interactive "$_slevel" "$_message_date_time" "${_LOG_INDENT}$_message"
-	_log_interactive "$_color" "$_slevel" "$_message_date_time" "${_LOG_INDENT}$_message"
-}
-_add_logging_context() {
-	if [ -z "$1" ]; then
-		return 1
-	fi
-	if [ -z "$_LOGGING_CONTEXT" ]; then
-		_LOGGING_CONTEXT="$1"
-		return
-	fi
-	_LOGGING_CONTEXT="$_LOGGING_CONTEXT.$1"
-}
-_remove_logging_context() {
-	if [ -z "$_LOGGING_CONTEXT" ]; then
-		return 1
-	fi
-	case $_LOGGING_CONTEXT in
-	*.*)
-		_LOGGING_CONTEXT=$(printf '%s' "$_LOGGING_CONTEXT" | sed 's/\.[a-z0-9 _-]*$//')
-		;;
-	*)
-		unset _LOGGING_CONTEXT
-		;;
-	esac
-}
-_increase_indent() {
-	_LOG_INDENT="$_LOG_INDENT${_CONF_INSTALL_INDENT}"
-}
-_decrease_indent() {
-	_LOG_INDENT=$(printf '%s' "$_LOG_INDENT" | sed -e "s/${_CONF_INSTALL_INDENT}$//")
-	if [ ${#_LOG_INDENT} -eq 0 ]; then
-		unset _LOG_INDENT
-	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
 }
 _reset_indent() {
 	unset _LOG_INDENT
 }
-_log_non_interactive() {
-	if [ $_NON_INTERACTIVE ] || [ $_LOGFILE ]; then
-		if [ $_CONF_INSTALL_AUDIT -gt 0 ]; then
-			printf >&$_NLOG_TARGET '%s %s %s\n' "$1" "$2" "$3"
-		else
-			printf >&$_NLOG_TARGET '%s\n' "$3"
-		fi
-		_syslog "$3"
-	fi
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
 }
-_log_interactive() {
-	[ $_NO_WRITE_STDERR ] && return
-	_is_open $_LOG_TARGET || return
-	if [ $_NON_INTERACTIVE ] && [ -z $_LOGFILE ]; then
-		return
-	fi
-	if [ $_CONF_INSTALL_AUDIT -gt 0 ]; then
-		printf >&$_LOG_TARGET '\033[%s%s \033[0m%s %s\n' "$1" "$2" "$3" "$4"
-	else
-		printf >&$_LOG_TARGET '\033[%s%s \033[0m\n' "$1" "$4"
-	fi
-}
-_is_open() {
-	(: >&"$1") 2>/dev/null
-}
-_log_app_init() {
-	_log_level=debug
-	[ $_NON_INTERACTIVE ] && {
-		if [ $(basename $0 | grep -c '^_') -eq 0 ]; then
-			_log_level=info
-		fi
-	}
-	_log_app init
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
 }
 _log_app() {
-	_$_log_level "$_APPLICATION_NAME:$_APPLICATION_CMD:$_APPLICATION_VERSION $_APPLICATION_BUILD_DATE / $_APPLICATION_INSTALL_DATE - $1 ($$)"
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
 }
 _syslog() {
-	:
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_timeout() {
+	local timeout=$1
+	shift
+	local message=$1
+	shift
+	local timeout_units='s'
+	if [ $(printf '%s' "$timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+		unset timeout_units
+	fi
+	local timeout_level=_ERROR
+	[ $_WARN ] && timeout_level=_WARN
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
+	$sudo timeout $_OPTIONS $timeout "$@" || {
+		local error_status=$?
+		local error_message="Other error"
+		if [ $error_status -eq 124 ]; then
+			error_message="Timed Out"
+		fi
+		[ $_TIMEOUT_ERR_FUNCTION ] && $_TIMEOUT_ERR_FUNCTION
+		$timeout_level "_timeout: $error_message: ${timeout}${timeout_units} - $message ($error_status): $sudo timeout $_OPTIONS $timeout $* ($USER)"
+		return $error_status
+	}
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	[ -z "$_WAITEE" ] && return
+	[ -e $_APPLICATION_PIPE ] || return
+	_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+	printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+	_INFO "$0 downstream process picked up"
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while :; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local upstream_status=$?
+		if [ $upstream_status -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
 }
 _mail() {
 	if [ $# -lt 3 ]; then
-		_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
 		return 1
 	fi
 	local recipients=$(printf '%s' "$1" | tr '|' ' ')
@@ -515,214 +394,140 @@ _mail() {
 	shift
 	printf "$message" | mail -s "$subject" $recipients
 }
-_on_exit() {
-	[ $_EXIT ] && return 1
-	_EXIT=0
-	if [ -n "$_DEFERS" ]; then
-		for _DEFER in $_DEFERS; do
-			_call $_DEFER
-		done
-		unset _DEFERS
-	fi
-	_waitee_done
-	if [ $_EXIT_STATUS -gt 0 ]; then
-		_log_level=warn
-	else
-		_log_level=debug
-	fi
-	[ "$_EXIT_MESSAGE" ] && _print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
-	_log_app "exit"
-	_on_exit_beep
-}
-_defer() {
-	_DEFERS="${_DEFERS:+$_DEFERS }$1"
-}
-_on_exit_beep() {
-	local current_time=$(date +%s)
-	local timeout=$(($current_time + $_CONF_INSTALL_BEEP_TIMEOUT))
-	if [ $current_time -le $timeout ]; then
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
 		return 1
 	fi
-	local beep_code
-	if [ $_EXIT_STATUS -gt 0 ]; then
-		beep_code="$_CONF_INSTALL_BEEP_ERR"
-	else
-		beep_code="$_CONF_INSTALL_BEEP_SCS"
+	_mail "$recipients" "$subject" "$2"
+}
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
 	fi
-	_beep "$beep_code" &
+	_alert "$subject" "$message"
 }
-_context_id_is_valid() {
-	printf '%s' "$1" | $_CONF_INSTALL_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _error "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$'"
+_domain_blocks_strip() {
+	$_CONF_GNU_GREP -Pv "(^#.*$|^$|^localhost$)" | sed -e "s/\r//"
 }
-_init_application_context() {
-	if [ -z "$_CONTEXT_VALIDATED" ]; then
-		_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
-		_CONTEXT_VALIDATED=0
-	fi
-	_APPLICATION_CONTEXT_GROUP=$_CONF_INSTALL_RUN_PATH/$_CONF_INSTALL_CONTEXT
-	_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
-	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
-	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
-	mkdir -p $_APPLICATION_PIPE_DIR
-	mkfifo $_APPLICATION_PIPE
-	if [ "$_APPLICATION_NAME" != "install" ]; then
-		_configure $_CONF_INSTALL_CONFIG_PATH/install
-	fi
-	_configure $_CONF_INSTALL_APPLICATION_CONFIG_PATH
-	if [ -n "$_CONFIGURATIONS" ]; then
-		local configure
-		for configure in $_CONFIGURATIONS; do
-			_configure $_CONF_INSTALL_CONFIG_PATH/$configure
-		done
-	fi
-	$_CONF_INSTALL_WAITER_LEVEL "($_APPLICATION_CMD) Please use -w=$$"
-}
-_has_other_instances() {
-	if [ $(find $_APPLICATION_CMD_DIR -type p -maxdepth 1 ! -name $$ | wc -l) -gt 0 ]; then
-		return 0
-	fi
-	return 1
-}
-_waitee_done() {
-	if [ -z "$_EXIT_STATUS" ]; then
-		_EXIT_STATUS=0
-	fi
-	if [ -n "$_WAITEE" ] && [ -e $_APPLICATION_PIPE ]; then
-		_info "$0 process completed, notifying ($_EXIT_STATUS)"
-		printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
-		_info "$0 downstream process picked up"
-	fi
-	rm -f $_APPLICATION_PIPE
-}
-_waiter() {
-	if [ -n "$_WAITER_PID" ]; then
-		_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
-		if [ -z "$_UPSTREAM_APPLICATION_PIPE" ]; then
-			_error "$_WAITER_PID not found"
-		fi
-		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
-			_warn "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
-			return
-		fi
-		_info "Waiting for upstream to complete: $_WAITER_PID"
-		while [ 1 ]; do
-			if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
-				_error "Upstream pipe no longer exists"
-			fi
-			_UPSTREAM_APPLICATION_STATUS=$(timeout $_CONF_INSTALL_WAIT_INTERVAL cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
-			local _UPSTREAM_STATUS=$?
-			if [ $_UPSTREAM_STATUS -eq 0 ]; then
-				if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
-					_error "Upstream exited with error ($_UPSTREAM_APPLICATION_STATUS)"
-				fi
-				_warn "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
-				break
-			fi
-			_detail " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
-		done
-	fi
-}
-_kill_all() {
-	_do_kill_all $_APPLICATION_PIPE_DIR
-}
-_kill_all_group() {
-	_do_kill_all $_APPLICATION_CONTEXT_GROUP
-}
-_do_kill_all() {
-	for _EXISTING_APPLICATION_PIPE in $(find $1 -type p -not -name $$); do
-		_kill $(basename $_EXISTING_APPLICATION_PIPE)
-	done
-}
-_kill() {
-	_warn "Killing $1"
-	kill -TERM $1
-}
-_list() {
-	_list_pid_infos $_APPLICATION_PIPE_DIR
-}
-_list_group() {
-	_list_pid_infos $_APPLICATION_CONTEXT_GROUP
-}
-_list_pid_infos() {
-	_info "Running processes:"
-	_EXECUTABLE_NAME_SED_SAFE=$(_sed_safe $0)
-	for _EXISTING_APPLICATION_PIPE in $(find $1 -type p -not -name $$); do
-		_list_pid_info
-	done
-}
-_list_pid_info() {
-	_TARGET_PID=$(basename $_EXISTING_APPLICATION_PIPE)
-	_TARGET_PS_DTL=$(ps -o command -p $_TARGET_PID | sed 1d | sed -e "s/^.*$_EXECUTABLE_NAME_SED_SAFE/$_EXECUTABLE_NAME_SED_SAFE/")
-	_info " $_TARGET_PID - $_TARGET_PS_DTL"
-}
-_parent_processes() {
-	[ -n "$_PARENT_PROCESSES_FUNCTION" ] && $_PARENT_PROCESSES_FUNCTION
-}
-_parent_processes_pgrep() {
-	pgrep -P $1
-}
-_init_pager() {
-	if [ "$_CONF_INSTALL_NO_PAGER" = "1" ]; then
-		PAGER=cat
-	fi
-}
-. $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME
-_strip() {
-	$_CONF_INSTALL_GNU_GREP -Pv "(^#.*$|^$|^localhost$)" | sed -e "s/\r//"
-}
-_filter() {
+_domain_blocks_filter() {
 	cat
 }
-_install() {
+_domain_blocks_install() {
 	_NAME=$(basename $0 | sed -e 's/\.sh//' -e 's/\.run//')
-	_info "Updating $_NAME rules"
-	local target_file=$_CONF_DOMAIN_BLOCKS_BLACKLIST/$_NAME
-	$_SUDO_CMD mkdir -p $(dirname $target_file)
-	curl --connect-timeout $_CONF_DOMAIN_BLOCKS_CURL_CONNECT_TIMEOUT -s $1 | _strip | _filter | sort -u | $_SUDO_CMD tee $target_file >/dev/null
+	_INFO "Updating $_NAME rules"
+	local target_file=$_CONF_DOMAIN_BLOCKS_BLOCKLIST/$_NAME
+	_sudo mkdir -p $(dirname $target_file)
+	curl --connect-timeout $_CONF_DOMAIN_BLOCKS_CURL_CONNECT_TIMEOUT -s $1 | _domain_blocks_strip | _domain_blocks_filter | sort -u | _sudo tee $target_file >/dev/null
 }
+_include logging platform context wait beep paths net domain-blocks
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
-$_PLATFORM) ;;
-Darwin | FreeBSD | Linux | MINGW64_NT-*)
-	_error "Please use the appropriate platform-specific installer ($_DETECTED_PLATFORM)"
+Darwin)
+	_DETECTED_PLATFORM=Apple
 	;;
-*)
-	_error "Unsupported platform"
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
 	;;
 esac
+_PLATFORM="FreeBSD"
+_TAR_ARGS=" -f - "
+: ${_CONF_GNU_GREP:=/usr/local/bin/ggrep}
+: ${_CONF_GNU_SED:=gsed}
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='L32c'}
+: ${_CONF_LOG_BEEP_ALRT:='L32f'}
+: ${_CONF_LOG_BEEP_SCS:='L32a'}
+: ${_CONF_LOG_BEEP_WRN:=''}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='L32ab'}
+: ${_CONF_LOG_SUDO_BEEP_TONE:=L32aL8fL32c}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$_CONF_DATA_PATH/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH:=/usr/local/etc/walterjwhite/network}
+: ${_CONF_DOMAIN_BLOCKS_BLOCKLIST:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/blocklist}
+: ${_CONF_DOMAIN_BLOCKS_BLOCKLIST_AGGREGATE:=$_CONF_DOMAIN_BLOCKS_BLOCKLIST/.aggregate}
+: ${_CONF_DOMAIN_BLOCKS_ALLOWLIST:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/allowlist}
+: ${_CONF_DOMAIN_BLOCKS_ALLOWLIST_AGGREGATE:=$_CONF_DOMAIN_BLOCKS_ALLOWLIST/.aggregate}
+: ${_CONF_DOMAIN_BLOCKS_AGGREGATE:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/.aggregate}
+: ${_CONF_DOMAIN_BLOCKS_DNSMASQ_BLOCKS:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/dnsmasq.block}
+: ${_CONF_DOMAIN_BLOCKS_COREDNS_BLOCKS:=$_CONF_DOMAIN_BLOCKS_CONFIGURATION_PATH/coredns.block}
+: ${_CONF_DOMAIN_BLOCKS_CURL_CONNECT_TIMEOUT:=5}
+: ${_CONF_DOMAIN_BLOCKS_PARALLEL_WORKERS:=10}
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
 _APPLICATION_START_TIME=$(date +%s)
 _APPLICATION_CMD=$(basename $0)
-unset _DEFERS
+trap _on_hup 1
+trap _on_int 2
+trap _on_quit 3
+trap _on_illegal 4
+trap _on_abort 6
+trap _on_alarm 14
+trap _on_term 15
+trap _success 0
 for _ARG in "$@"; do
 	case $_ARG in
 	-h | --help)
 		_print_help_and_exit
-		;;
-	-kill-all)
-		_kill_all
-		_success "Killed all"
-		;;
-	-kill-all-group)
-		_kill_all_group
-		_success "Killed all group"
-		;;
-	-kill=*)
-		_kill ${_ARG#*=}
-		_success "Killed ${_ARG#*=}"
-		;;
-	-l)
-		_list
-		_success "listed running processes"
-		;;
-	-lg)
-		_list_group
-		_success "listed running processes"
 		;;
 	-w=*)
 		_WAITER_PID="${1#*=}"
 		shift
 		;;
 	-w)
-		_CONF_INSTALL_WAITER_LEVEL=_info
 		_WAITEE=1
 		shift
 		;;
@@ -731,9 +536,9 @@ for _ARG in "$@"; do
 		_configuration_name=${_configuration_name%%=*}
 		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
 			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
-				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/")
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
 			else
-				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/")
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
 			fi
 		fi
 		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
@@ -751,43 +556,15 @@ for _ARG in "$@"; do
 		;;
 	esac
 done
-trap _on_exit INT 0 1 2 3 4 6 15
-_init_logging
-_init_application_context
-_debug "REMAINING ARGS: $*"
-_log_app_init
-_init_pager
-_waiter
-_has_required_conf
-if [ -n "$_REQUIRED_ARGUMENTS" ]; then
-	_DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$_REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
-	_required_arguments_argument_log_level=debug
-	_ACTUAL_ARGUMENT_COUNT=$#
-	[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _required_arguments_argument_log_level=warn
-	_$_required_arguments_argument_log_level "Expecting $_DISCOVERED_ARGUMENT_COUNT, received $# arguments"
-	_INDEX=1
-	_ARGUMENT_LOG_LEVEL=info
-	while [ $_INDEX -le $_DISCOVERED_ARGUMENT_COUNT ]; do
-		_ARGUMENT_NAME=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_INDEX}p | sed -e 's/:.*$//')
-		_ARGUMENT_MESSAGE=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_INDEX}p | sed -e 's/^.*://')
-		if [ -z "$1" ]; then
-			_$_required_arguments_argument_log_level "$_INDEX:$_ARGUMENT_MESSAGE was not provided"
-		else
-			_$_required_arguments_argument_log_level "$_INDEX:$_ARGUMENT_NAME=$1"
-			export $_ARGUMENT_NAME="$1"
-			shift
-		fi
-		_INDEX=$(($_INDEX + 1))
-	done
-	[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _error "Missing arguments"
-	unset _INDEX _ARGUMENT_NAME _ARGUMENT_MESSAGE _required_arguments_argument_log_level
-	_DISCOVERED_REQUIRED_ARGUMENTS="$_REQUIRED_ARGUMENTS"
-	unset _REQUIRED_ARGUMENTS
-else
-	_debug "NO _REQUIRED_ARGUMENTS args"
-	unset _DISCOVERED_REQUIRED_ARGUMENTS _DISCOVERED_ARGUMENT_COUNT
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
 fi
-_filter() {
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
+_domain_blocks_filter() {
 	cut -f2 -d ' '
 }
-_install https://www.github.developerdan.com/hosts/lists/dating-services-extended.txt
+_domain_blocks_install https://www.github.developerdan.com/hosts/lists/dating-services-extended.txt

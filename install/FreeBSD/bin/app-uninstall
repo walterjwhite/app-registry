@@ -1,382 +1,85 @@
 #!/bin/sh
 set -a
-_APPLICATION_NAME='install'
-_PLATFORM="FreeBSD"
-_TAR_ARGS=" -f - "
-_SUDO_CMD="sudo"
-_ARCHITECTURE=$(uname -m)
-_INSTALL_INSTALLER=pkg
-: ${_CONF_INSTALL_GNU_GREP:=/usr/local/bin/grep}
-: ${_CONF_INSTALL_GNU_SED:=gsed}
-_PLATFORM_PACKAGES="git gsed gnugrep gtar gawk"
-_NPM_PACKAGE="npm"
-_RUST_PACKAGE="rust"
-_PYPI_DISABLED=1
-_PYPI_PACKAGE="python39 py39-pip"
-_GO_PACKAGE="go"
-GOPATH=/usr/local
-PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin
-if [ "$HOME" = "/" ]; then
-	HOME=/root
-fi
-: ${_CONF_INSTALL_C_ALRT:="1;31m"}
-: ${_CONF_INSTALL_C_ERR:="1;31m"}
-: ${_CONF_INSTALL_C_SCS:="1;32m"}
-: ${_CONF_INSTALL_C_WRN:="1;33m"}
-: ${_CONF_INSTALL_C_INFO:="1;36m"}
-: ${_CONF_INSTALL_C_DETAIL:="1;0;36m"}
-: ${_CONF_INSTALL_C_DEBUG:="1;35m"}
-: ${_CONF_INSTALL_C_STDIN:="1;34m"}
-: ${_CONF_INSTALL_AUDIT:=0}
-: ${_CONF_INSTALL_LOG_LEVEL:=2}
-: ${_CONF_INSTALL_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
-: ${_CONF_INSTALL_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
-: ${_CONF_INSTALL_WAIT_INTERVAL:=30}
-: ${_CONF_INSTALL_NO_PAGER:=0}
-: ${_CONF_INSTALL_BEEP_TIMEOUT:=5}
-: ${_CONF_INSTALL_BEEP_ERR:='L32c'}
-: ${_CONF_INSTALL_BEEP_ALRT:='L32f'}
-: ${_CONF_INSTALL_BEEP_SCS:='L32a'}
-: ${_CONF_INSTALL_BEEP_WRN:=''}
-: ${_CONF_INSTALL_BEEP_INFO:=''}
-: ${_CONF_INSTALL_BEEP_DETAIL:=''}
-: ${_CONF_INSTALL_BEEP_DEBUG:=''}
-: ${_CONF_INSTALL_BEEP_STDIN:='L32ab'}
-: ${_CONF_INSTALL_SYSTEM_TEMPLATE_PATH:=/usr/share/git/templates}
-: ${_CONF_INSTALL_LIBRARY_PATH:=/usr/local/walterjwhite}
-: ${_CONF_INSTALL_BIN_PATH:=/usr/local/bin}
-: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
-: ${_CONF_INSTALL_CONTEXT:=default}
-: ${_CONF_INSTALL_DATA_PATH:=$HOME/.data}
-: ${_CONF_INSTALL_CACHE_PATH:=$_CONF_INSTALL_DATA_PATH/.cache}
-: ${_CONF_INSTALL_CONFIG_PATH:=$HOME/.config/walterjwhite}
-: ${_CONF_INSTALL_STEP_TIMEOUT:=300}
-: ${_CONF_INSTALL_CONF_VALIDATION_FUNCTION:=_warn}
-: ${_CONF_INSTALL_INDENT:="  "}
-: ${_CONF_INSTALL_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
-case $(ps -o stat= -p $$) in
-*+*) ;;
-*)
-	_BACKGROUNDED=1
-	;;
-esac
-if [ -z "$_NON_INTERACTIVE" ]; then
-	tty >/dev/null || _NON_INTERACTIVE=0
-fi
-if ! (: >&7) 2>/dev/null; then
-	exec 7>&1
-	exec 8>&2
-fi
-if [ $_NON_INTERACTIVE ]; then
-	_LOG_TARGET=7
-	_NLOG_TARGET=1
-else
-	_LOG_TARGET=8
-	_NLOG_TARGET=2
-fi
-: ${_CONF_INSTALL_WAITER_LEVEL:=_debug}
-: ${_CONF_INSTALL_IOSTAT_DURATION:=5}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
-_DETECTED_PLATFORM=$(uname)
-case $_DETECTED_PLATFORM in
-Darwin)
-	_DETECTED_PLATFORM=Apple
-	;;
-esac
-: ${_CONF_INSTALL_REPOSITORY_URL:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_MIRROR_URLS:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_SUDO_TIMEOUT:=270}
-: ${_CONF_INSTALL_NETWORK_TEST_TARGET:=google.com}
-: ${_CONF_INSTALL_NETWORK_TEST_TIMEOUT:=5}
-: ${_CONF_INSTALL_TEAMS_MESSAGE_PARALLELIZATION:=5}
-: ${_CONF_INSTALL_PARALLEL_BUILD:=8}
-: ${_CONF_INSTALL_APP_REGISTRY_GIT_URL:=github.com/walterjwhite/app.registry.git}
-: ${_CONF_INSTALL_RUN_PATH:=/tmp/$USER/walterjwhite/app}
-_CONF_INSTALL_DATA_ARTIFACTS_PATH=$_CONF_INSTALL_DATA_PATH/install/artifacts
-_CONF_INSTALL_DATA_REGISTRY_PATH=$_CONF_INSTALL_DATA_PATH/install/registry
-_CONF_INSTALL_APPLICATION_DATA_PATH=$_CONF_INSTALL_DATA_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_CONFIG_PATH=$_CONF_INSTALL_CONFIG_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_LIBRARY_PATH=$_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME
-_PLATFORM="FreeBSD"
-_TAR_ARGS=" -f - "
-_SUDO_CMD="sudo"
-_ARCHITECTURE=$(uname -m)
-_INSTALL_INSTALLER=pkg
-: ${_CONF_INSTALL_GNU_GREP:=/usr/local/bin/grep}
-: ${_CONF_INSTALL_GNU_SED:=gsed}
-_PLATFORM_PACKAGES="git gsed gnugrep gtar gawk"
-_NPM_PACKAGE="npm"
-_RUST_PACKAGE="rust"
-_PYPI_DISABLED=1
-_PYPI_PACKAGE="python39 py39-pip"
-_GO_PACKAGE="go"
-GOPATH=/usr/local
-PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin
-if [ "$HOME" = "/" ]; then
-	HOME=/root
-fi
-: ${_CONF_INSTALL_C_ALRT:="1;31m"}
-: ${_CONF_INSTALL_C_ERR:="1;31m"}
-: ${_CONF_INSTALL_C_SCS:="1;32m"}
-: ${_CONF_INSTALL_C_WRN:="1;33m"}
-: ${_CONF_INSTALL_C_INFO:="1;36m"}
-: ${_CONF_INSTALL_C_DETAIL:="1;0;36m"}
-: ${_CONF_INSTALL_C_DEBUG:="1;35m"}
-: ${_CONF_INSTALL_C_STDIN:="1;34m"}
-: ${_CONF_INSTALL_AUDIT:=0}
-: ${_CONF_INSTALL_LOG_LEVEL:=2}
-: ${_CONF_INSTALL_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
-: ${_CONF_INSTALL_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
-: ${_CONF_INSTALL_WAIT_INTERVAL:=30}
-: ${_CONF_INSTALL_NO_PAGER:=0}
-: ${_CONF_INSTALL_BEEP_TIMEOUT:=5}
-: ${_CONF_INSTALL_BEEP_ERR:='L32c'}
-: ${_CONF_INSTALL_BEEP_ALRT:='L32f'}
-: ${_CONF_INSTALL_BEEP_SCS:='L32a'}
-: ${_CONF_INSTALL_BEEP_WRN:=''}
-: ${_CONF_INSTALL_BEEP_INFO:=''}
-: ${_CONF_INSTALL_BEEP_DETAIL:=''}
-: ${_CONF_INSTALL_BEEP_DEBUG:=''}
-: ${_CONF_INSTALL_BEEP_STDIN:='L32ab'}
-: ${_CONF_INSTALL_SYSTEM_TEMPLATE_PATH:=/usr/share/git/templates}
-: ${_CONF_INSTALL_LIBRARY_PATH:=/usr/local/walterjwhite}
-: ${_CONF_INSTALL_BIN_PATH:=/usr/local/bin}
-: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
-: ${_CONF_INSTALL_CONTEXT:=default}
-: ${_CONF_INSTALL_DATA_PATH:=$HOME/.data}
-: ${_CONF_INSTALL_CACHE_PATH:=$_CONF_INSTALL_DATA_PATH/.cache}
-: ${_CONF_INSTALL_CONFIG_PATH:=$HOME/.config/walterjwhite}
-: ${_CONF_INSTALL_STEP_TIMEOUT:=300}
-: ${_CONF_INSTALL_CONF_VALIDATION_FUNCTION:=_warn}
-: ${_CONF_INSTALL_INDENT:="  "}
-: ${_CONF_INSTALL_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
-case $(ps -o stat= -p $$) in
-*+*) ;;
-*)
-	_BACKGROUNDED=1
-	;;
-esac
-if [ -z "$_NON_INTERACTIVE" ]; then
-	tty >/dev/null || _NON_INTERACTIVE=0
-fi
-if ! (: >&7) 2>/dev/null; then
-	exec 7>&1
-	exec 8>&2
-fi
-if [ $_NON_INTERACTIVE ]; then
-	_LOG_TARGET=7
-	_NLOG_TARGET=1
-else
-	_LOG_TARGET=8
-	_NLOG_TARGET=2
-fi
-: ${_CONF_INSTALL_WAITER_LEVEL:=_debug}
-: ${_CONF_INSTALL_IOSTAT_DURATION:=5}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
-_DETECTED_PLATFORM=$(uname)
-case $_DETECTED_PLATFORM in
-Darwin)
-	_DETECTED_PLATFORM=Apple
-	;;
-esac
-: ${_CONF_INSTALL_REPOSITORY_URL:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_MIRROR_URLS:=https://github.com/walterjwhite}
-: ${_CONF_INSTALL_SUDO_TIMEOUT:=270}
-: ${_CONF_INSTALL_NETWORK_TEST_TARGET:=google.com}
-: ${_CONF_INSTALL_NETWORK_TEST_TIMEOUT:=5}
-: ${_CONF_INSTALL_TEAMS_MESSAGE_PARALLELIZATION:=5}
-: ${_CONF_INSTALL_PARALLEL_BUILD:=8}
-: ${_CONF_INSTALL_APP_REGISTRY_GIT_URL:=github.com/walterjwhite/app.registry.git}
-: ${_CONF_INSTALL_RUN_PATH:=/tmp/$USER/walterjwhite/app}
-_CONF_INSTALL_DATA_ARTIFACTS_PATH=$_CONF_INSTALL_DATA_PATH/install/artifacts
-_CONF_INSTALL_DATA_REGISTRY_PATH=$_CONF_INSTALL_DATA_PATH/install/registry
-_CONF_INSTALL_APPLICATION_DATA_PATH=$_CONF_INSTALL_DATA_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_CONFIG_PATH=$_CONF_INSTALL_CONFIG_PATH/$_APPLICATION_NAME
-_CONF_INSTALL_APPLICATION_LIBRARY_PATH=$_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME
+_APPLICATION_NAME=install
+_REQUIRED_ARGUMENTS="_APPLICATIONS:Applications to remove"
 _beep() {
-	if [ -n "$_BEEPING" ]; then
-		_debug "Another 'beep' is in progress"
-		return
-	fi
-	_BEEPING=1
-	_do_beep "$@" &
+	[ -e /dev/speaker ] || return
+	printf '%s' "$@" >/dev/speaker 2>/dev/null &
 }
-_do_beep() {
-	if [ -e /dev/speaker ]; then
-		printf '%s' "$1" >/dev/speaker
-	fi
-	_beep_done
+_sudo_precmd() {
+	_beep $_CONF_LOG_SUDO_BEEP_TONE
 }
-_beep_done() {
-	unset _BEEPING
-}
-_mktemp() {
-	mktemp -t ${_APPLICATION_NAME}.${_APPLICATION_CMD}.$1
-}
-_notify() {
-	local title=$1
-	local message=$2
-	zenity --info --text="$_APPLICATION_NAME - $_APPLICATION_CMD - $title\n$message"
-}
-_open() {
-	xdg-open $1
-	sleep 1
-}
-_syslog() {
-	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
-}
-_get_defaults() {
-	local app_name=$(printf "$_TARGET_APPLICATION_NAME" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-	find all/defaults $_PLATFORM/defaults -type f \
-		-exec $_CONF_INSTALL_GNU_GREP -Poh "_CONF_${app_name}_[\w_\d]{3,}" {} + 2>/dev/null | sort -u
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
 }
 _variable_is_set() {
-	if [ $(env | grep "^$1=.*$" | wc -l) -gt 0 ]; then
-		return 0
-	fi
-	return 1
-}
-_has_required_conf() {
-	if [ -n "$_REQUIRED_APP_CONF" ]; then
-		for _REQUIRED_APP_CONF_ITEM in $(printf '%s' "$_REQUIRED_APP_CONF" | sed -e 's/$/\n/' | tr '|' '\n'); do
-			_variable_is_set $_REQUIRED_APP_CONF_ITEM || {
-				_warn "$_REQUIRED_APP_CONF_ITEM is unset"
-				_MISSING_REQUIRED_CONF=1
-			}
-		done
-		if [ -n "$_MISSING_REQUIRED_CONF" ]; then
-			_error "Required configuration is missing, please refer to above error(s)"
-		fi
-	fi
+	env | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
-	grep '^_CONF_'
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
 }
 _environment_dump() {
-	if [ -z "$_APPLICATION_PIPE_DIR" ]; then
-		return
-	fi
-	if [ -z "$_ENVIRONMENT_FILE" ]; then
-		_ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
-	fi
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
 	mkdir -p $(dirname $_ENVIRONMENT_FILE)
 	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
 }
-_environment_load() {
-	if [ -n "$_ENVIRONMENT_FILE" ]; then
-		if [ -e "$_ENVIRONMENT_FILE" ]; then
-			. $_ENVIRONMENT_FILE 2>/dev/null
-		else
-			_warn "$_ENVIRONMENT_FILE does not exist!"
-		fi
-	fi
-}
-_is_feature() {
-	printf '%s' $_SETUP | grep -c /feature/
-}
-_disable_feature() {
-	if [ -z "$_FEATURE_DISABLED" ]; then
-		_warn "Error installing feature: $_FEATURE ($1)"
-	fi
-
-	printf '%s\n' $(_feature_key $1)_DISABLED=1 | _metadata_write
-}
-_is_feature_enabled() {
-	local _feature_key=$(_feature_key $1)
-	if [ $(env | grep -c "^${_feature_key}_DISABLED=1$") -gt 0 ]; then
-		_warn "$1 is disabled"
-		return 1
-	fi
-	return 0
-}
-_feature_key() {
-	printf '%s\n' "_FEATURE_${1}" | tr '[:lower:]' '[:upper:]' | tr '-' '_'
-}
 _call() {
-	local _function_name=$1
-	shift
-	type $_function_name >/dev/null 2>&1
-	local _return=$?
-	if [ $_return -gt 0 ]; then
-		_debug "${_function_name} does not exist"
-		return $_return
-	fi
-	$_function_name "$@"
-}
-_require() {
-	local level=error
-	if [ -z "$1" ]; then
-		if [ -n "$_WARN" ]; then
-			level=warn
-		fi
-		_$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
-		return 1
-	fi
-	unset _REQUIRE_DETAILED_MESSAGE
-}
-_read_if() {
-	if [ $(env | grep -c "^$2=.*") -eq 1 ]; then
-		_debug "$2 is already set"
-		return 1
-	fi
-	[ $_NON_INTERACTIVE ] && _error "Running in non-interactive mode and user input was requested: $@" 10
-	_print_log 9 STDI "$_CONF_INSTALL_C_STDIN" "$_CONF_INSTALL_BEEP_STDIN" "$1 $3"
-	read -r $2
-}
-_read_ifs() {
-	stty -echo
-	_read_if "$@"
-	stty echo
-}
-_continue_if() {
-	_read_if "$1" _PROCEED "$2"
-	if [ -z "$_PROCEED" ]; then
-		_DEFAULT=$(printf '%s' $2 | awk -F'/' {'print$1'})
-		_PROCEED=$_DEFAULT
-	fi
-	_PROCEED=$(printf '%s' "$_PROCEED" | tr '[:lower:]' '[:upper:]')
-	if [ $_PROCEED = "N" ]; then
-		return 1
-	fi
-	return 0
+	local function_name=$1
+	type $function_name >/dev/null 2>&1 || {
+		_DEBUG "${function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$function_name "$@"
+		return $?
+	}
+	$function_name
 }
 _() {
-	local _successfulExitStatus=0
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local successful_exit_status=0
 	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
-		_successfulExitStatus=$_SUCCESSFUL_EXIT_STATUS
+		successful_exit_status=$_SUCCESSFUL_EXIT_STATUS
 		unset _SUCCESSFUL_EXIT_STATUS
 	fi
-	_info "## $*"
+	_INFO "## $*"
+	local exit_status
 	if [ -z "$_DRY_RUN" ]; then
 		"$@"
-		local _exit_status=$?
-		if [ $_exit_status -ne $_successfulExitStatus ]; then
-			if [ -n "$_ON_FAILURE" ]; then
-				$_ON_FAILURE
-				return
-			fi
-			if [ -z "$_WARN_ON_ERROR" ]; then
-				_error "Previous cmd failed" $_exit_status
-			else
-				unset _WARN_ON_ERROR
-				_warn "Previous cmd failed - $* - $_exit_status"
-				_ENVIRONMENT_FILE=$(mktemp -t error) _environment_dump
-				return $_exit_status
-			fi
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $successful_exit_status ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
 		fi
 	fi
 }
-_optional_include() {
-	if [ -e $1 ]; then
-		. $1
-	else
-		_debug "_optional_include: $1 does NOT exist"
-	fi
-}
-_configure() {
-	_optional_include $1
-}
-_error() {
+_ERROR() {
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
@@ -384,105 +87,137 @@ _error() {
 	fi
 	_EXIT_LOG_LEVEL=4
 	_EXIT_STATUS_CODE="ERR"
-	_EXIT_COLOR_CODE="$_CONF_INSTALL_C_ERR"
-	_EXIT_BEEP="$_CONF_INSTALL_BEEP_ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
 	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP="$_CONF_LOG_BEEP_ERR"
 	_defer _environment_dump
+	_defer _log_app_exit
+	_run_defers
 	exit $_EXIT_STATUS
 }
 _success() {
 	_EXIT_STATUS=0
-	_EXIT_LOG_LEVEL=3
+	_EXIT_LOG_LEVEL=1
 	_EXIT_STATUS_CODE="SCS"
-	_EXIT_COLOR_CODE="$_CONF_INSTALL_C_SCS"
-	_EXIT_BEEP="$_CONF_INSTALL_BEEP_SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
 	_EXIT_MESSAGE="$1"
-	exit 0
+	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	_run_defers
+	exit $_EXIT_STATUS
 }
-_contains_argument() {
-	local _key=$1
-	shift
-	for _ARG in "$@"; do
-		case $_ARG in
-		$_key)
-			return 0
-			;;
-		esac
-	done
-	return 1
+_on_hup() {
+	:
 }
-_write() {
-	if [ -z "$1" ]; then
-		_error "filename cannot be empty."
+_on_int() {
+	_ERROR "interrupted"
+}
+_on_quit() {
+	_ERROR "quit"
+}
+_on_illegal() {
+	_ERROR "illegal instruction"
+}
+_on_abort() {
+	_ERROR "abort"
+}
+_on_alarm() {
+	_ERROR "alarm"
+}
+_on_term() {
+	_ERROR "term"
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
 	fi
-	$_SUDO_CMD mkdir -p $(dirname "$1")
-	$_SUDO_CMD tee -a "$1" >/dev/null
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_run_defers() {
+	[ -z "$_DEFERS" ] && return 1
+	local defer
+	for defer in $_DEFERS; do
+		_call $defer
+	done
+	unset _DEFERS
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
 }
 _print_help() {
 	if [ -e $2 ]; then
-		_info "$1:"
+		_INFO "$1:"
 		cat $2
 		printf '\n'
 	fi
 }
 _print_help_and_exit() {
-	_print_help 'system-wide options' $_CONF_INSTALL_LIBRARY_PATH/install/help/default
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
 	if [ "$_APPLICATION_NAME" != "install" ]; then
-		_print_help $_APPLICATION_NAME $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME/help/default
-		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
 	fi
 	exit 0
 }
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/shell/$include_file ] && . $HOME/.config/walterjwhite/shell/$include_file
+	done
+}
 _init_logging() {
-	unset _LOGFILE
-	case $_CONF_INSTALL_LOG_LEVEL in
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
 	0)
 		local logfile=$(_mktemp debug)
-		_warn "Writing debug contents to: $logfile"
+		_WARN "Writing debug contents to: $logfile"
 		_set_logfile "$logfile"
 		set -x
 		;;
 	esac
 }
 _set_logfile() {
-	if [ -n "$1" ]; then
-		_LOGFILE=$1
-		mkdir -p $(dirname $1)
-		exec >>$1
-		exec 2>>$1
-	fi
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	_log_to_console "$_CONF_LOG_C_WRN" "writing logs to $_LOGFILE"
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
 }
-_reset_logging() {
-	exec >&7
-	exec 2>&8
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
 }
-_alert() {
-	_print_log 5 ALRT "$_CONF_INSTALL_C_ALRT" "$_CONF_INSTALL_BEEP_ALRT" "$1"
-	local recipients="$_OPTN_INSTALL_ALERT_RECIPIENTS"
-	local subject="Alert: $0 - $1"
-	if [ -z "$recipients" ]; then
-		_warn "recipients is empty, aborting"
-		return 1
-	fi
-	_mail "$recipients" "$subject" "$2"
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
 }
-_warn() {
-	_print_log 3 WRN "$_CONF_INSTALL_C_WRN" "$_CONF_INSTALL_BEEP_WRN" "$1"
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
 }
-_info() {
-	_print_log 2 INF "$_CONF_INSTALL_C_INFO" "$_CONF_INSTALL_BEEP_INFO" "$1"
-}
-_detail() {
-	_print_log 2 DTL "$_CONF_INSTALL_C_DETAIL" "$_CONF_INSTALL_BEEP_DETAIL" "$1"
-}
-_debug() {
-	_print_log 1 DBG "$_CONF_INSTALL_C_DEBUG" "$_CONF_INSTALL_BEEP_DEBUG" "$1"
-}
-_do_log() {
-	:
-}
-_colorize_text() {
-	printf '\033[%s%s\033[0m' "$1" "$2"
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
 }
 _sed_remove_nonprintable_characters() {
 	sed -e 's/[^[:print:]]//g'
@@ -490,110 +225,169 @@ _sed_remove_nonprintable_characters() {
 _print_log() {
 	if [ -z "$5" ]; then
 		if test ! -t 0; then
+			local log_line
 			cat - | _sed_remove_nonprintable_characters |
-				while read _line; do
-					_print_log $1 $2 $3 $4 "$_line"
+				while read log_line; do
+					_print_log $1 $2 $3 $4 "$log_line"
 				done
 			return
 		fi
 		return
 	fi
-	local _level=$1
-	local _slevel=$2
-	local _color=$3
-	local _tone=$4
-	local _message="$5"
-	if [ $_level -lt $_CONF_INSTALL_LOG_LEVEL ]; then
-		return
-	fi
-	[ -n "$_LOGGING_CONTEXT" ] && _message="$_LOGGING_CONTEXT - ${_LOG_INDENT}$_message"
-	local _message_date_time=$(date +"$_CONF_INSTALL_DATE_FORMAT")
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
 	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
-		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$_slevel" "$_message" &
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
 	fi
-	_do_log "$_level" "$_slevel" "$_message"
-	[ -n "$_tone" ] && _beep "$_tone"
-	_log_non_interactive "$_slevel" "$_message_date_time" "${_LOG_INDENT}$_message"
-	_log_interactive "$_color" "$_slevel" "$_message_date_time" "${_LOG_INDENT}$_message"
-}
-_add_logging_context() {
-	if [ -z "$1" ]; then
-		return 1
-	fi
-	if [ -z "$_LOGGING_CONTEXT" ]; then
-		_LOGGING_CONTEXT="$1"
-		return
-	fi
-	_LOGGING_CONTEXT="$_LOGGING_CONTEXT.$1"
-}
-_remove_logging_context() {
-	if [ -z "$_LOGGING_CONTEXT" ]; then
-		return 1
-	fi
-	case $_LOGGING_CONTEXT in
-	*.*)
-		_LOGGING_CONTEXT=$(printf '%s' "$_LOGGING_CONTEXT" | sed 's/\.[a-z0-9 _-]*$//')
-		;;
-	*)
-		unset _LOGGING_CONTEXT
-		;;
-	esac
-}
-_increase_indent() {
-	_LOG_INDENT="$_LOG_INDENT${_CONF_INSTALL_INDENT}"
-}
-_decrease_indent() {
-	_LOG_INDENT=$(printf '%s' "$_LOG_INDENT" | sed -e "s/${_CONF_INSTALL_INDENT}$//")
-	if [ ${#_LOG_INDENT} -eq 0 ]; then
-		unset _LOG_INDENT
-	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
 }
 _reset_indent() {
 	unset _LOG_INDENT
 }
-_log_non_interactive() {
-	if [ $_NON_INTERACTIVE ] || [ $_LOGFILE ]; then
-		if [ $_CONF_INSTALL_AUDIT -gt 0 ]; then
-			printf >&$_NLOG_TARGET '%s %s %s\n' "$1" "$2" "$3"
-		else
-			printf >&$_NLOG_TARGET '%s\n' "$3"
-		fi
-		_syslog "$3"
-	fi
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
 }
-_log_interactive() {
-	[ $_NO_WRITE_STDERR ] && return
-	_is_open $_LOG_TARGET || return
-	if [ $_NON_INTERACTIVE ] && [ -z $_LOGFILE ]; then
-		return
-	fi
-	if [ $_CONF_INSTALL_AUDIT -gt 0 ]; then
-		printf >&$_LOG_TARGET '\033[%s%s \033[0m%s %s\n' "$1" "$2" "$3" "$4"
-	else
-		printf >&$_LOG_TARGET '\033[%s%s \033[0m\n' "$1" "$4"
-	fi
-}
-_is_open() {
-	(: >&"$1") 2>/dev/null
-}
-_log_app_init() {
-	_log_level=debug
-	[ $_NON_INTERACTIVE ] && {
-		if [ $(basename $0 | grep -c '^_') -eq 0 ]; then
-			_log_level=info
-		fi
-	}
-	_log_app init
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
 }
 _log_app() {
-	_$_log_level "$_APPLICATION_NAME:$_APPLICATION_CMD:$_APPLICATION_VERSION $_APPLICATION_BUILD_DATE / $_APPLICATION_INSTALL_DATE - $1 ($$)"
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
 }
 _syslog() {
-	:
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_timeout() {
+	local timeout=$1
+	shift
+	local message=$1
+	shift
+	local timeout_units='s'
+	if [ $(printf '%s' "$timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+		unset timeout_units
+	fi
+	local timeout_level=_ERROR
+	[ $_WARN ] && timeout_level=_WARN
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
+	$sudo timeout $_OPTIONS $timeout "$@" || {
+		local error_status=$?
+		local error_message="Other error"
+		if [ $error_status -eq 124 ]; then
+			error_message="Timed Out"
+		fi
+		[ $_TIMEOUT_ERR_FUNCTION ] && $_TIMEOUT_ERR_FUNCTION
+		$timeout_level "_timeout: $error_message: ${timeout}${timeout_units} - $message ($error_status): $sudo timeout $_OPTIONS $timeout $* ($USER)"
+		return $error_status
+	}
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	[ -z "$_WAITEE" ] && return
+	[ -e $_APPLICATION_PIPE ] || return
+	_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+	printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+	_INFO "$0 downstream process picked up"
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while :; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local upstream_status=$?
+		if [ $upstream_status -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
 }
 _mail() {
 	if [ $# -lt 3 ]; then
-		_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
 		return 1
 	fi
 	local recipients=$(printf '%s' "$1" | tr '|' ' ')
@@ -604,473 +398,447 @@ _mail() {
 	shift
 	printf "$message" | mail -s "$subject" $recipients
 }
-_on_exit() {
-	[ $_EXIT ] && return 1
-	_EXIT=0
-	if [ -n "$_DEFERS" ]; then
-		for _DEFER in $_DEFERS; do
-			_call $_DEFER
-		done
-		unset _DEFERS
-	fi
-	_waitee_done
-	if [ $_EXIT_STATUS -gt 0 ]; then
-		_log_level=warn
-	else
-		_log_level=debug
-	fi
-	[ "$_EXIT_MESSAGE" ] && _print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
-	_log_app "exit"
-	_on_exit_beep
-}
-_defer() {
-	_DEFERS="${_DEFERS:+$_DEFERS }$1"
-}
-_on_exit_beep() {
-	local current_time=$(date +%s)
-	local timeout=$(($current_time + $_CONF_INSTALL_BEEP_TIMEOUT))
-	if [ $current_time -le $timeout ]; then
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
 		return 1
 	fi
-	local beep_code
-	if [ $_EXIT_STATUS -gt 0 ]; then
-		beep_code="$_CONF_INSTALL_BEEP_ERR"
-	else
-		beep_code="$_CONF_INSTALL_BEEP_SCS"
-	fi
-	_beep "$beep_code" &
+	_mail "$recipients" "$subject" "$2"
 }
-_context_id_is_valid() {
-	printf '%s' "$1" | $_CONF_INSTALL_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _error "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$'"
-}
-_init_application_context() {
-	if [ -z "$_CONTEXT_VALIDATED" ]; then
-		_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
-		_CONTEXT_VALIDATED=0
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
 	fi
-	_APPLICATION_CONTEXT_GROUP=$_CONF_INSTALL_RUN_PATH/$_CONF_INSTALL_CONTEXT
-	_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
-	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
-	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
-	mkdir -p $_APPLICATION_PIPE_DIR
-	mkfifo $_APPLICATION_PIPE
-	if [ "$_APPLICATION_NAME" != "install" ]; then
-		_configure $_CONF_INSTALL_CONFIG_PATH/install
-	fi
-	_configure $_CONF_INSTALL_APPLICATION_CONFIG_PATH
-	if [ -n "$_CONFIGURATIONS" ]; then
-		local configure
-		for configure in $_CONFIGURATIONS; do
-			_configure $_CONF_INSTALL_CONFIG_PATH/$configure
-		done
-	fi
-	$_CONF_INSTALL_WAITER_LEVEL "($_APPLICATION_CMD) Please use -w=$$"
+	_alert "$subject" "$message"
 }
-_has_other_instances() {
-	if [ $(find $_APPLICATION_CMD_DIR -type p -maxdepth 1 ! -name $$ | wc -l) -gt 0 ]; then
-		return 0
-	fi
-	return 1
+_build_format_shell_scripts() {
+	[ -n "$_DISABLE_SHFMT" ] && return 1
+	_is_shell_script $APP_BUILD_OUTPUT_FILE && shfmt -w $APP_BUILD_OUTPUT_FILE
 }
-_waitee_done() {
-	if [ -z "$_EXIT_STATUS" ]; then
-		_EXIT_STATUS=0
-	fi
-	if [ -n "$_WAITEE" ] && [ -e $_APPLICATION_PIPE ]; then
-		_info "$0 process completed, notifying ($_EXIT_STATUS)"
-		printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
-		_info "$0 downstream process picked up"
-	fi
-	rm -f $_APPLICATION_PIPE
+_imports_import() {
+	_imports_get $1 $2
+	_imports $1 $APP_BUILD_OUTPUT_FILE
 }
-_waiter() {
-	if [ -n "$_WAITER_PID" ]; then
-		_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
-		if [ -z "$_UPSTREAM_APPLICATION_PIPE" ]; then
-			_error "$_WAITER_PID not found"
-		fi
-		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
-			_warn "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
-			return
-		fi
-		_info "Waiting for upstream to complete: $_WAITER_PID"
-		while [ 1 ]; do
-			if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
-				_error "Upstream pipe no longer exists"
-			fi
-			_UPSTREAM_APPLICATION_STATUS=$(timeout $_CONF_INSTALL_WAIT_INTERVAL cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
-			local _UPSTREAM_STATUS=$?
-			if [ $_UPSTREAM_STATUS -eq 0 ]; then
-				if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
-					_error "Upstream exited with error ($_UPSTREAM_APPLICATION_STATUS)"
-				fi
-				_warn "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
-				break
-			fi
-			_detail " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
-		done
-	fi
+_imports_get() {
+	_RAW_IMPORTS=$($_CONF_GNU_GREP -P "^$1 " "$2" | sed -e "s/$1 //" | sort -u)
 }
-_kill_all() {
-	_do_kill_all $_APPLICATION_PIPE_DIR
-}
-_kill_all_group() {
-	_do_kill_all $_APPLICATION_CONTEXT_GROUP
-}
-_do_kill_all() {
-	for _EXISTING_APPLICATION_PIPE in $(find $1 -type p -not -name $$); do
-		_kill $(basename $_EXISTING_APPLICATION_PIPE)
+_imports() {
+	[ -z "$_RAW_IMPORTS" ] && return 1
+	_call $before_function
+	local raw_import
+	for raw_import in $_RAW_IMPORTS; do
+		_import "$1" "$2" "$3$raw_import"
 	done
+	_imports_get $1 $2
+	$_CONF_GNU_SED -i "/^$1 .*/d" $2
+	_imports "$@"
 }
-_kill() {
-	_warn "Killing $1"
-	kill -TERM $1
+_import() {
+	local import_type=$1
+	shift
+	local import_ref="$2"
+	case $import_ref in
+	git:*)
+		_setup_git_import "$import_ref"
+		case $GIT_IMPORT_TARGET_FILE in
+		*.feature/*)
+			local feature_patha=$(printf '%s\n' $GIT_IMPORT_TARGET_FILE | $_CONF_GNU_GREP -Po '^feature/.*\.feature')
+			local feature_pathb=$(printf '%s\n' $GIT_IMPORT_TARGET_FILE | sed -e 's/^.*\.feature//')
+			import_type=$import_type git_import_path=$GIT_IMPORT_PROJECT _import_file_contents $1 $GIT_IMPORT_PATH/$feature_patha/$import_type/%s/$feature_pathb
+			;;
+		*)
+			import_type=$import_type git_import_path=$GIT_IMPORT_PROJECT _import_file_contents $1 $GIT_IMPORT_PATH/$import_type/%s/$GIT_IMPORT_TARGET_FILE
+			;;
+		esac
+		;;
+	feature:*)
+		local feature_path=$(printf '%s' $1 | $_CONF_GNU_GREP -Po 'feature.*\.feature')
+		local feature_arg="${import_ref#*feature:}"
+		_import_file_contents $1 $feature_path/$import_type/%s/$feature_arg
+		;;
+	*.feature/*)
+		local feature_patha=$(printf '%s\n' $import_ref | $_CONF_GNU_GREP -Po '^feature/.*\.feature')
+		local feature_pathb=$(printf '%s\n' $import_ref | sed -e 's/^.*\.feature//')
+		_import_file_contents $1 $feature_patha/$import_type/%s/$feature_pathb
+		;;
+	.*)
+		_import_file_contents $1 $import_type/%s/$import_ref
+		;;
+	*)
+		_import_file_contents $1 $_PROJECT_ROOT/$import_type/%s/$import_ref
+		;;
+	esac
 }
-_list() {
-	_list_pid_infos $_APPLICATION_PIPE_DIR
-}
-_list_group() {
-	_list_pid_infos $_APPLICATION_CONTEXT_GROUP
-}
-_list_pid_infos() {
-	_info "Running processes:"
-	_EXECUTABLE_NAME_SED_SAFE=$(_sed_safe $0)
-	for _EXISTING_APPLICATION_PIPE in $(find $1 -type p -not -name $$); do
-		_list_pid_info
-	done
-}
-_list_pid_info() {
-	_TARGET_PID=$(basename $_EXISTING_APPLICATION_PIPE)
-	_TARGET_PS_DTL=$(ps -o command -p $_TARGET_PID | sed 1d | sed -e "s/^.*$_EXECUTABLE_NAME_SED_SAFE/$_EXECUTABLE_NAME_SED_SAFE/")
-	_info " $_TARGET_PID - $_TARGET_PS_DTL"
-}
-_parent_processes() {
-	[ -n "$_PARENT_PROCESSES_FUNCTION" ] && $_PARENT_PROCESSES_FUNCTION
-}
-_parent_processes_pgrep() {
-	pgrep -P $1
-}
-_init_pager() {
-	if [ "$_CONF_INSTALL_NO_PAGER" = "1" ]; then
-		PAGER=cat
-	fi
-}
-. $_CONF_INSTALL_LIBRARY_PATH/$_APPLICATION_NAME
-_REQUIRED_ARGUMENTS="_APPLICATIONS:Applications to remove"
-_uninstall() {
-	_require "$_TARGET_APPLICATION_NAME" "_TARGET_APPLICATION_NAME must be set"
-	_require "$_INSTALL_LIBRARY_PATH" "_INSTALL_LIBRARY_PATH must be set"
-	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME ] && return 1
-	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata ] && return 1
-	_uninstall_script
-	_uninstall_files
-	_uninstall_type
-	$_SUDO_CMD rm -Rf $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME
-	_info "Uninstalled $_TARGET_APPLICATION_NAME"
-}
-_uninstall_script() {
-	if [ -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall ]; then
-		find $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall -type f -exec $_SUDO_CMD {} \;
-	fi
-}
-_uninstall_files() {
-	if [ -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files ]; then
-		if [ "$_ROOT" = "/" ]; then
-			$_SUDO_CMD rm -f $(cat $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files)
+_import_file_contents() {
+	local file=$1
+	shift
+	local platform_path=$(printf "$1" $_TARGET_PLATFORM)
+	local all_path=$(printf "$1" all)
+	_require_file "$file" "_import_file_contents"
+	_import_has_matching_files $platform_path $all_path
+	local file_to_import
+	for file_to_import in $(find $platform_path $all_path \( -type f -or -type l \) -and ! -name '*.test' 2>/dev/null | sort -u); do
+		printf '%s\n' "$IMPORTED" | $_CONF_GNU_GREP -Pcqm1 $file_to_import && {
+			_DEBUG "$file_to_import was already imported"
+			continue
+		}
+		IMPORTED="$file_to_import\n$IMPORTED"
+		if [ -e ${file_to_import}.test ]; then
+			${file_to_import}.test $APP_BUILD_OUTPUT_FILE
+			if [ "$?" -eq "0" ]; then
+				cat $file_to_import >>$file
+			else
+				_DEBUG "$file_to_import failed test"
+			fi
 		else
-			local sed_safe_root=$(_sed_safe $_ROOT)
-			$_SUDO_CMD rm -f $(sed -e "s/^/$sed_safe_root/" $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files)
+			cat $file_to_import >>$file
 		fi
-		$_SUDO_CMD rm -f $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files
-	fi
-}
-_uninstall_type() {
-	if [ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type ]; then
-		return 1
-	fi
-	for _SETUP_TYPE_FILE in $(find $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type -type f -name '.*'); do
-		_SETUP_TYPE_NAME=$(basename $_SETUP_TYPE_FILE | sed -e 's/^.//')
-		_uninstall_type_do
 	done
 }
-_uninstall_type_do() {
-	local packages=$($_CONF_INSTALL_GNU_GREP -Pv '(^$|^#)' $_SETUP_TYPE_FILE)
-	if [ -z "$packages" ]; then
-		_detail "No ${_SETUP_TYPE_NAME}(s) to uninstall"
-		return
-	fi
-	_info "Uninstalling $packages via ${_SETUP_TYPE_NAME}"
-	_${_SETUP_TYPE_NAME}_uninstall $packages
+_import_has_matching_files() {
+	[ -n "$_OPTIONAL" ] && return
+	find $1 $2 -type f -or -type l 2>/dev/null | grep -q . || _ERROR "_import_file_contents - no matching files found: $1 $2"
 }
-_settings_init() {
-	if [ -z "$_ROOT" ]; then
-		_ROOT=/
-	fi
-	_ROOT=$(_readlink $_ROOT)
-	_info "Using root directory: $_ROOT"
-	_INSTALL_BIN_PATH=$(_USE_SUDO=1 _readlink $_ROOT/$_CONF_INSTALL_BIN_PATH)
-	_INSTALL_LIBRARY_PATH=$(_USE_SUDO=1 _readlink $_ROOT/$_CONF_INSTALL_LIBRARY_PATH)
-	_APPLICATION_METADATA_PATH=$_INSTALL_LIBRARY_PATH/install/.metadata
-	if [ -e $_APPLICATION_METADATA_PATH ]; then
-		. $_APPLICATION_METADATA_PATH
-	fi
+_inject_header() {
+	printf '#!/bin/sh\n\n' >$APP_BUILD_OUTPUT_FILE
 }
-_application_settings() {
-	_TARGET_APPLICATION_VERSION=$(git branch --no-color --show-current).$(git rev-parse HEAD)
-	_TARGET_APPLICATION_BUILD_DATE=$(git log --format=%cd -1)
-	_TARGET_APPLICATION_INSTALL_DATE=$(date +"%a %b %d %H:%M:%S %Y %z")
-	_TARGET_APPLICATION_DATA_PATH=$_CONF_INSTALL_DATA_PATH/$_TARGET_APPLICATION_NAME
-	_TARGET_APPLICATION_CONFIG_PATH="$_CONF_INSTALL_CONFIG_PATH/$_TARGET_APPLICATION_NAME"
-	_TARGET_APPLICATION_METADATA_PATH=$_CONF_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata
-	_TARGET_APPLICATION_GIT_URL=$(git remote -v | awk {'print$2'} | head -1)
-	mkdir -p $_CONF_INSTALL_DATA_PATH/install $_CONF_INSTALL_DATA_PATH $_TARGET_APPLICATION_DATA_PATH
-	_configure $_CONF_INSTALL_CONFIG_PATH/$_TARGET_APPLICATION_NAME
+_inject_app_header() {
+	printf 'set -a\n' >>$APP_BUILD_OUTPUT_FILE
 }
-_application_defaults() {
-	local default_file
-	for default_file in $(find $1/defaults -type f 2>/dev/null); do
-		_configure $default_file
+_inject_app_name() {
+	printf '_APPLICATION_NAME=%s\n' $_TARGET_APPLICATION_NAME >>$APP_BUILD_OUTPUT_FILE
+}
+_INJECT_FULL() {
+	_inject_header
+	_inject_app_header
+	_inject_app_name
+	_required_arguments $1
+	_RAW_IMPORTS="$LIB" _imports lib $APP_BUILD_OUTPUT_FILE
+	_inject_lib $1
+	_OPTIONAL=1 _RAW_IMPORTS="$CFG . $_TARGET_APPLICATION_NAME" before_function=_inject_cfg_before _imports cfg $APP_BUILD_OUTPUT_FILE
+	_inject_cfg $1
+	_required_cfg
+	_inject_init $1
+	chmod +x $APP_BUILD_OUTPUT_FILE $1
+	_build_format_shell_scripts
+	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg |init |_REQUIRED_ARGUMENTS)' $1 >>$APP_BUILD_OUTPUT_FILE
+}
+_inject_lib() {
+	_imports_import lib $1
+	unset IMPORTED
+}
+_inject_cfg() {
+	before_function=_inject_cfg_before _imports_import cfg $1
+	unset IMPORTED
+}
+_inject_cfg_before() {
+	local imports=$(printf '%s\n' "$_RAW_IMPORTS" | sort -u | sed -e 's/feature://' -e 's/.\///g' -e 's/^.$//' -e 's/ . / /' | tr '\n' ' ')
+	printf '_include %s %s\n' "$imports" >>$APP_BUILD_OUTPUT_FILE
+}
+_inject_init() {
+	_OPTIONAL=1 _import init $APP_BUILD_OUTPUT_FILE platform
+	_import init $APP_BUILD_OUTPUT_FILE full
+	_imports_import init $1
+	unset IMPORTED
+}
+_INJECT_LITE() {
+	$_CONF_GNU_GREP -Pcq '^(init |_REQUIRED_ARGUMENTS )' $1 && _ERROR "Files may not contain init or _REQUIRED_ARGUMENTS"
+	_inject_header
+	case $1 in
+	*.sh)
+		_inject_app_name
+		;;
+	esac
+	_inject_lib $1
+	_inject_cfg $1
+	chmod +x $APP_BUILD_OUTPUT_FILE $1
+	_build_format_shell_scripts
+	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg )' $1 >>$APP_BUILD_OUTPUT_FILE
+}
+_INJECT_NONE() {
+	cp -p $1 $APP_BUILD_OUTPUT_FILE
+}
+_required_arguments() {
+	_REQUIRED_ARGUMENTS=$($_CONF_GNU_GREP -P "^_REQUIRED_ARGUMENTS=" "$1")
+	[ -z "$_REQUIRED_ARGUMENTS" ] && return 1
+	printf '%s\n' "$_REQUIRED_ARGUMENTS" >>$APP_BUILD_OUTPUT_FILE
+}
+_required_cfg() {
+	local required_cfg=$($_CONF_GNU_GREP -Pvh '#.*$' $APP_BUILD_OUTPUT_FILE |
+		$_CONF_GNU_GREP -Poh '\$_CONF_[\w_]{3,}' | sed -e 's/^\$//' | sort -u)
+	local defaults=$($_CONF_GNU_GREP -Poh '_CONF_[\w]{3,}:?=' $APP_BUILD_OUTPUT_FILE | sed -e 's/^\$//' -e 's/:=$//' -e 's/=$//' | sort -u | tr '\n' '|' | sed -e 's/|$//' -e 's/^/(/' -e 's/$/)/')
+	local required_app_conf=$(printf '%s\n' "$required_cfg" | $_CONF_GNU_GREP -Pv "$defaults" | tr '\n' ' ' | sed -e 's/ $//')
+	[ -n "$required_app_conf" ] && printf '_REQUIRED_APP_CONF="%s"\n' "$required_app_conf" >>$APP_BUILD_OUTPUT_FILE
+}
+_features() {
+	_INFO "Installing ${_FEATURE_MESSAGE}features"
+	local feature
+	for feature in $(_features_find $1 | sort -u); do
+		_FEATURE_NAME=$(printf '%s' $feature | sed -e 's/\.feature/\.feature\n/g' | $_CONF_GNU_GREP -Po '/[a-zA-Z0-9-_]*.feature$' | sed -e 's/^\///' -e 's/\.feature$//' | tr '\n' '_' | sed -e 's/_$//')
+		_application_defaults $feature
+		_is_feature_enabled $_FEATURE_NAME || {
+			_FEATURE_DISABLED=1 _disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+		}
+		_feature $feature || {
+			_disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+			_FEATURE_ERROR=1
+		}
+		[ -e $feature/feature ] && {
+			_FEATURE_MESSAGE="children " _WARN_ON_ERROR=1 _features $feature/feature
+		}
+		_features_unset
 	done
 }
-_app_default_bootstrap() {
-	:
+_features_unset() {
+	unset _FEATURE_NAME _FEATURE_DISABLED
 }
-_app_default_install() {
-	local xdm_mime_sudo
-	if [ -n $_USER ]; then
-		xdm_mime_sudo="$_SUDO_CMD -u $_USER"
-	fi
-	$xdm_mime_sudo xdg-mime default $1.desktop $2
-}
-_app_default_uninstall() {
-	:
-}
-_app_default_is_installed() {
-	:
-}
-_app_default_enabled() {
-	return 0
-}
-_prepare_ssh_conf() {
-	$sudo mkdir -p $1/.ssh/socket
-	$sudo chmod 700 $1/.ssh/socket
-	printf 'StrictHostKeyChecking no\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	if [ -n "$_HOST_IP" ]; then
-		_ssh_init_bastion_host $1
-	fi
-	if [ -e /tmp/HOST-SSH ]; then
-		_info "Copying host ssh -> $1/.ssh"
-		$sudo cp /tmp/HOST-SSH/id* $1/.ssh
-	fi
-	if [ "$2" != "root" ]; then
-		$sudo chown -R $2:$2 $1/.ssh
-	fi
-}
-_ssh_init_bastion_host() {
-	printf 'Host host-proxy\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' Hostname %s\n' "$_HOST_IP" | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' User root\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf 'Host git\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' User root\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf 'Host freebsd-package-cache\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' User root\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	printf 'Host %s\n' "$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE" | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | $sudo tee -a $1/.ssh/config >/dev/null
-	printf ' User root\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	if [ "$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE" != "$_CONF_FREEBSD_INSTALLER_GIT_MIRROR" ]; then
-		printf 'Host %s\n' "$_CONF_FREEBSD_INSTALLER_GIT_MIRROR" | $sudo tee -a $1/.ssh/config >/dev/null
-		printf ' ProxyJump host-proxy\n' | $sudo tee -a $1/.ssh/config >/dev/null
-		printf ' User root\n' | $sudo tee -a $1/.ssh/config >/dev/null
-	fi
-	$sudo chmod 600 $1/.ssh/config
-}
-_user_bootstrap() {
-	$_SUDO_CMD mkdir -p /root/.ssh/socket
-	$_SUDO_CMD chmod -R 700 /root/.ssh/socket
-	app-install configuration
-}
-_user_install() {
-	_users_add "$1"
-}
-_user_uninstall() {
-	. "$1"
-	_require "$username" "username"
-	rmuser -y $username
-}
-_user_is_installed() {
-	:
-}
-_user_enabled() {
-	return 0
-}
-_users_add_argument() {
-	if [ -n "$2" ]; then
-		user_options="$user_options $1 $2"
-	fi
-}
-_users_add() {
-	. $1
-	if [ "root" != "$username" ]; then
-		$_SUDO_CMD pw user show $username >/dev/null 2>&1 || {
-			_info "### Add User: $1: $username"
-			user_options="-n $username -m"
-			_users_add_argument "-g" "$gid"
-			_users_add_argument "-G" "$grouplist"
-			_users_add_argument "-s" "$shell"
-			_users_add_argument "-u" "$uid"
-			$_SUDO_CMD pw useradd $user_options
-		}
+_features_find() {
+	if [ -z "$_FEATURE_MESSAGE" ]; then
+		find $1 -type d \( -name '*.feature' -and ! -path '*/*.feature/*' \)
 	else
-		_info "# Setting shell to $shell for root"
-		$_SUDO_CMD chsh -s "$shell"
+		find $1 -type d -name '*.feature' -and ! -path "$1"
 	fi
-	if [ -n "$password" ]; then
-		_info "# Setting password $shell for $username"
-		$_SUDO_CMD chpass -p "$password" $username
+}
+_feature() {
+	_DETAIL $_FEATURE_NAME
+	_install $1 || return $?
+	_feature_setup $1 || return $?
+}
+_feature_setup() {
+	local setup_script
+	for setup_script in $(find $1 -type f \( -path "$1/setup/*" \) | sort -u); do
+		_setup_run_script $setup_script || return 1
+	done
+}
+_install() {
+	_sudo mkdir -p $_INSTALL_BIN_PATH
+	_install_help $1
+	local installed_files=$(_mktemp)
+	_install_cmds $1 $installed_files
+	_install_uninstall $1
+	_install_files_files $1 $installed_files
+	_install_update_files $installed_files
+	if [ -e $1/.metadata ]; then
+		cat $1/.metadata | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata"
 	fi
-	_users_configure
-	_users_cleanup
 }
-_users_get_data() {
-	printf '%s\n' "$username" | tr ' ' '\n'
-}
-_users_cleanup() {
-	unset user_options username gid grouplist shell uid password system
-}
-_users_configure() {
-	local user_home=$(grep "^$username:" /etc/passwd | cut -f6 -d':')
-	sudo=$SUDO_CMD _prepare_ssh_conf $user_home $username
-	local original_pwd=$PWD
-	cd /tmp
-	if [ -n "$system" ]; then
-		_warn "$username is a system user, bypassing configuration"
-	else
-		_warn "_CONF_FREEBSD_INSTALLER_HOSTNAME:$_CONF_FREEBSD_INSTALLER_HOSTNAME"
-
-		_WARN_ON_ERROR=1 _NON_INTERACTIVE=1 _FREEBSD_INSTALLER=1 _NO_WRITE_STDERR=1 _ $_SUDO_CMD --preserve-env=_CONF_GIT_MIRROR,_WARN_ON_ERROR,_LOG_TARGET,_NON_INTERACTIVE,_CONF_FREEBSD_INSTALLER_HOSTNAME,_NO_WRITE_STDERR,http_proxy,https_proxy -H -u $username conf restore || {
-			_user_configure_debug
-		}
+_install_files() {
+	if [ -e $1 ] && [ $(find $1 -type f | wc -l) -gt 0 ]; then
+		if [ -n "$3" ]; then
+			local files_sed_safe=$(_sed_safe $1)
+			local target_sed_safe=$(_sed_safe $2)
+			find $1 -type f | sed -e "s/^$files_sed_safe/$target_sed_safe/" >>$3
+		fi
+		_sudo mkdir -p $2
+		tar -c $_TAR_ARGS -C $1 . | _sudo tar -xop $_TAR_ARGS -C $2
 	fi
-	cd $original_pwd
 }
-_user_configure_debug() {
-	_warn "Error restoring configuration for $username"
-	cat $user_home/.ssh/id_ecdsa.pub
-	cat $user_home/.ssh/authorized_keys
-	cat $user_home/.ssh/config
+_install_help() {
+	_install_files $1/help $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/help
 }
-_expect_install() {
-	_timeout $_CONF_INSTALL_STEP_TIMEOUT "expect install" $1 >/dev/null 2>&1
+_install_cmds() {
+	if [ "$_TARGET_APPLICATION_NAME" = "$_APPLICATION_NAME" ]; then
+		printf '%s\n' "$_INSTALL_BIN_PATH/$(basename $0)" >>$2
+	fi
+	_install_files $1/bin $_INSTALL_BIN_PATH $2
 }
-_expect_uninstall() {
-	_warn "expect uninstall - Not implemented"
+_install_uninstall() {
+	_install_files $1/uninstall $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall
 }
-_expect_is_installed() {
+_install_files_files() {
+	_install_files $1/files/_ROOT_ $_ROOT $2
+	_install_files $1/files/_APPLICATION_ROOT_ "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME" $2
+}
+_install_update_files() {
+	if [ -n "$_ROOT" ] && [ "$_ROOT" != "/" ]; then
+		local root_sed_safe=$(_sed_safe $_ROOT)
+		$_CONF_GNU_SED -i "s/^$root_sed_safe//" $1
+	fi
+	_INSTALLED_FILES="$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files"
+	cat $1 | _write "$_INSTALLED_FILES"
+	rm -f $1
+	_sudo chmod 444 $_INSTALLED_FILES
+}
+_metadata_is_set() {
+	grep -cqm1 "$1" $_TARGET_APPLICATION_METADATA_PATH 2>/dev/null
+}
+_install_metadata_write() {
+	_write $_APPLICATION_METADATA_PATH
+}
+_APP_BOOTSTRAP() {
+	:
+}
+_APP_INSTALL() {
+	_DEPENDENCY=1 app-install $1
+}
+_APP_UNINSTALL() {
+	app-uninstall $1
+}
+_APP_IS_INSTALLED() {
+	[ -e $_CONF_LIBRARY_PATH/$1/.metadata ]
+}
+_APP_IS_FILE() {
 	return 1
 }
-_expect_is_file() {
+_CRONTAB_BOOTSTRAP() {
+	:
+}
+_CRONTAB_INSTALL() {
+	local osudo_user=$_SUDO_USER
+	_SUDO_USER=root
+	_CRONTAB_UNINSTALL
+	local temp_crontab=$(_mktemp)
+	_sudo cp $1 $temp_crontab
+	_sudo $_CONF_GNU_SED -i "s/$/ # app.$_TARGET_APPLICATION_NAME/" $temp_crontab
+	printf '\n' | _sudo tee -a $temp_crontab >/dev/null 2>&1
+	_sudo $_CONF_GNU_SED -i "1i # app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo $_CONF_GNU_SED -i "1i \\" $temp_crontab
+	_crontab_append $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$osudo_user
+}
+_CRONTAB_UNINSTALL() {
+	local osudo_user=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_CRONTAB_REMOVE $temp_crontab
+	_crontab_write $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$osudo_user
+}
+_CRONTAB_REMOVE() {
+	_crontab_get $_SUDO_USER $1
+	_sudo $_CONF_GNU_SED -i '/^$/d' $1
+	_sudo $_CONF_GNU_SED -i "/# app.$_TARGET_APPLICATION_NAME/d" $1
+}
+_CRONTAB_IS_INSTALLED() {
+	local osudo_user=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_crontab_get $_SUDO_USER $temp_crontab
+	_sudo grep -qm1 "# app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$osudo_user
+}
+_CRONTAB_ENABLED() {
 	return 0
 }
-_go_bootstrap() {
-	_go_bootstrap_is_go_available || {
-		_go_bootstrap_platform
-		_go_bootstrap_is_go_available || _GO_DISABLED=1
-	}
-	_go_setup_proxy
+_CRONTAB_IS_FILE() {
+	return 0
 }
-_go_bootstrap_is_go_available() {
+_EXPECT_BOOTSTRAP() {
+	_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || {
+		_PACKAGE_INSTALL $EXPECT_PACKAGE
+		_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || EXPECT_DISABLED=1
+	}
+}
+_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE() {
+	which expect >/dev/null 2>&1
+}
+_EXPECT_INSTALL() {
+	$1 >/dev/null 2>&1
+}
+_EXPECT_UNINSTALL() {
+	_WARN "expect uninstall - Not implemented"
+}
+_EXPECT_IS_INSTALLED() {
+	return 1
+}
+_EXPECT_IS_FILE() {
+	return 0
+}
+_GO_BOOTSTRAP() {
+	_GO_BOOTSTRAP_IS_GO_AVAILABLE || {
+		_PACKAGE_INSTALL $GO_PACKAGE
+		_GO_BOOTSTRAP_IS_GO_AVAILABLE || GO_DISABLED=1
+	}
+}
+_GO_BOOTSTRAP_IS_GO_AVAILABLE() {
 	which go >/dev/null 2>&1
 }
-_go_install() {
-	_USE_SUDO=1 _PRESERVE_ENV=1 GO111MODULE=on _timeout $_CONF_INSTALL_STEP_TIMEOUT "go install" go install $_GO_OPTIONS "$@" || {
-		_warn "go install failed: $_GO_OPTIONS $@"
-		_warn "  http_proxy: $http_proxy"
-		_warn "  git  proxy: $(git config --global http.proxy)"
+_GO_INSTALL() {
+	_GO_BOOTSTRAP
+	GO111MODULE=on GOPATH=$GO_INSTALL_PATH sudo_options="--preserve-env=GO111MODULE,GOPATH" _sudo go install $GO_OPTIONS "$@" || {
+		_WARN "go install failed: $GO_OPTIONS $@"
+		_WARN "  http_proxy: $http_proxy"
+		_WARN "  git  proxy: $(git config --global http.proxy)"
 	}
 }
-_go_update() {
+_GO_UPDATE() {
 	:
 }
-_go_uninstall() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "go uninstall" go uninstall "$@"
+_GO_UNINSTALL() {
+	_sudo go uninstall "$@"
 }
-_go_is_installed() {
+_GO_IS_INSTALLED() {
 	return 1
 }
-_go_is_file() {
+_GO_IS_FILE() {
 	return 1
 }
-_go_setup_proxy() {
-	if [ -n "$http_proxy" ]; then
-		_warn "Configuring git to use an HTTP proxy: $http_proxy"
-		git config --global http.proxy $http_proxy
-		git config --global https.proxy $http_proxy
-		#GOPROXY="$http_proxy"
-		_defer _go_clear_proxy
-	fi
-}
-_go_clear_proxy() {
-	_warn "Reverting git HTTP proxy: $http_proxy"
-	git config --unset --global http.proxy
-	git config --unset --global https.proxy
-	#unset GOPROXY
-}
-_npm_bootstrap() {
-	_npm_bootstrap_is_npm_available || {
-		_npm_bootstrap_platform
-		_npm_bootstrap_is_npm_available || _NPM_DISABLED=1
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
 	}
-	_npm_setup_proxy
+	_NPM_SETUP_PROXY
 }
-_npm_bootstrap_is_npm_available() {
+_NPM_BOOTSTRAP_IS_NPM_AVAILABLE() {
 	which npm >/dev/null 2>&1
 }
-_npm_install() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "npm install" npm install -s -g "$@"
+_NPM_INSTALL() {
+	local npm_package
+	for npm_package in "$@"; do
+		_NPM_IS_INSTALLED $npm_package || _sudo npm install -s -g "$npm_package"
+	done
 }
-_npm_uninstall() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "npm uninstall" npm uninstall -s -g "$@"
+_NPM_UNINSTALL() {
+	_sudo npm uninstall -s -g "$@"
 }
-_npm_is_installed() {
+_NPM_IS_INSTALLED() {
 	npm list -g $1 >/dev/null
 }
-_npm_is_file() {
+_NPM_IS_FILE() {
 	return 1
 }
-_npm_setup_proxy() {
+_NPM_SETUP_PROXY() {
 	if [ -n "$http_proxy" ]; then
-		_warn "Configuring NPM to use an HTTP proxy: $http_proxy"
+		_WARN "Configuring NPM to use an HTTP proxy: $http_proxy"
 		npm config set proxy $http_proxy
 		npm config set https-proxy $https_proxy
-		_defer _npm_clear_proxy
+		_defer _NPM_CLEAR_PROXY
 	fi
 }
-_npm_clear_proxy() {
-	_warn "Reverting NPM HTTP proxy: $http_proxy"
+_NPM_CLEAR_PROXY() {
+	_WARN "Reverting NPM HTTP proxy: $http_proxy"
 	npm config rm proxy
 	npm config rm https-proxy
 }
-_package_bootstrap() {
-	_${_INSTALL_INSTALLER}_bootstrap_is_${_INSTALL_INSTALLER}_available || {
-		_${_INSTALL_INSTALLER}_bootstrap_platform
-		_${_INSTALL_INSTALLER}_bootstrap_is_${_INSTALL_INSTALLER}_available || _PACKAGE_DISABLED=1
-	}
-	_${_INSTALL_INSTALLER}_bootstrap
+_PACKAGE_BOOTSTRAP() {
+	:
 }
-_package_bootstrap_is_package_available() {
-	_${_INSTALL_INSTALLER}_bootstrap_is_package_available
-}
-_package_install() {
-	_package_enabled || {
-		_warn "$_INSTALL_INSTALLER is disabled"
-		return
+_PACKAGE_INSTALL() {
+	[ $# -eq 0 ] && {
+		_WARN "no packages to install, none specified"
+		return 1
 	}
 	local packages
 	local package
 	for package in "$@"; do
-		_package_is_installed $package || {
+		_PACKAGE_IS_INSTALLED $package || {
 			if [ -n "$packages" ]; then
 				packages="$packages $package"
 			else
@@ -1079,113 +847,331 @@ _package_install() {
 		}
 	done
 	if [ -n "$packages" ]; then
-		_${_INSTALL_INSTALLER}_install "$packages"
-	fi
-}
-_package_uninstall() {
-	_package_enabled || {
-		_warn "$_INSTALL_INSTALLER is disabled"
-		return
-	}
-	_${_INSTALL_INSTALLER}_uninstall "$@"
-}
-_package_is_installed() {
-	_${_INSTALL_INSTALLER}_is_installed "$@"
-}
-_package_is_file() {
-	return 1
-}
-_package_enabled() {
-	if [ -z "$_PACKAGE_DISABLED" ] || [ $_PACKAGE_DISABLED -eq 0 ]; then
+		_PACKAGE_INSTALL_DO "$packages"
+	else
+		_WARN "Packages [$*] are already installed, skipping"
 		return 0
 	fi
+}
+_PACKAGE_IS_FILE() {
 	return 1
 }
-_pypi_bootstrap() {
-	_pypi_bootstrap_is_pypi_available || {
-		_pypi_bootstrap_platform
-		_pypi_bootstrap_is_pypi_available || _PYPI_DISABLED=1
+_PACKAGE_ENABLED() {
+	return 0
+}
+_PYPI_BOOTSTRAP() {
+	_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || {
+		_PACKAGE_INSTALL $PYPI_PACKAGE
+		_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || PYPI_DISABLED=1
 	}
 }
-_pypi_bootstrap_is_pypi_available() {
+_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE() {
 	which pip >/dev/null 2>&1
 }
-_pypi_install() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "pypi install" pip install -U --no-input "$@" >/dev/null
+_PYPI_INSTALL() {
+	_sudo pip install -U --no-input "$@" >/dev/null
 }
-_pypi_uninstall() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "pypi uninstall" pip uninstall -y "$@" >/dev/null
+_PYPI_UNINSTALL() {
+	_sudo pip uninstall -y "$@" >/dev/null
 }
-_pypi_is_installed() {
-	_error "PIP - is installed - NOT IMPLEMENTED"
+_PYPI_IS_INSTALLED() {
+	_ERROR "PIP - is installed - NOT IMPLEMENTED"
 }
-_pypi_is_file() {
+_PYPI_IS_FILE() {
 	return 1
 }
-_run_install() {
-	_timeout $_CONF_INSTALL_STEP_TIMEOUT "run install" sh $1
+_RUN_BOOTSTRAP() {
+	:
 }
-_run_uninstall() {
-	_warn "run uninstall - Not implemented"
+_RUN_INSTALL() {
+	sh $1
 }
-_run_is_installed() {
+_RUN_UNINSTALL() {
+	_WARN "run uninstall - Not implemented"
+}
+_RUN_IS_INSTALLED() {
 	return 1
 }
-_run_is_file() {
+_RUN_IS_FILE() {
 	return 0
 }
-_rust_bootstrap() {
-	_rust_bootstrap_is_rust_available || {
-		_rust_bootstrap_platform
-		_rust_bootstrap_is_rust_available || _RUST_DISABLED=1
+_RUST_BOOTSTRAP() {
+	_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || {
+		_PACKAGE_INSTALL $RUST_PACKAGE
+		_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || RUST_DISABLED=1
 	}
 }
-_rust_bootstrap_is_rust_available() {
+_RUST_BOOTSTRAP_IS_RUST_AVAILABLE() {
 	which cargo >/dev/null 2>&1
 }
-_rust_install() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "rust install" cargo install "$@"
+_RUST_INSTALL() {
+	local rust_root_dir=$(printf '%s' $_INSTALL_BIN_PATH | sed 's/\/bin//')
+	_sudo cargo install --root=$rust_root_dir "$@"
 }
-_rust_update() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "rust update" cargo update "$@"
+_RUST_UPDATE() {
+	_sudo cargo update "$@"
 }
-_rust_uninstall() {
-	_USE_SUDO=1 _timeout $_CONF_INSTALL_STEP_TIMEOUT "rust uninstall" cargo uninstall "$@"
+_RUST_UNINSTALL() {
+	_sudo cargo uninstall "$@"
 }
-_rust_is_installed() {
-	_error "RUST - is installed - NOT IMPLEMENTED"
+_RUST_IS_INSTALLED() {
+	_ERROR "RUST - is installed - NOT IMPLEMENTED"
 }
-_rust_is_file() {
+_RUST_IS_FILE() {
 	return 1
 }
-_user_bootstrap() {
-	:
-}
-_user_install() {
-	:
-}
-_user_uninstall() {
-	:
-}
-_user_is_installed() {
-	return 1
-}
-_user_is_file() {
+_USER_IS_FILE() {
 	return 0
 }
-_user_enabled() {
+_settings_init() {
+	if [ -z "$_ROOT" ]; then
+		_ROOT=/
+	fi
+	_ROOT=$(_readlink $_ROOT)
+	_INFO "Using root directory: $_ROOT"
+	_INSTALL_BIN_PATH=$(_SUDO_REQUIRED=1 _readlink $_ROOT/$_CONF_BIN_PATH)
+	_INSTALL_CONFIG_PATH=$(_SUDO_REQUIRED=1 _readlink $_ROOT/$_CONF_CONFIG_PATH)
+	_INSTALL_DATA_PATH=$(_SUDO_REQUIRED=1 _readlink $_ROOT/$_CONF_DATA_PATH)
+	_INSTALL_LIBRARY_PATH=$(_SUDO_REQUIRED=1 _readlink $_ROOT/$_CONF_LIBRARY_PATH)
+	_APPLICATION_METADATA_PATH=$_INSTALL_LIBRARY_PATH/install/.metadata
+	_include $_APPLICATION_METADATA_PATH
+	if [ "$_ROOT" != "/" ]; then
+		unset $(env | tr '\0' '\n' | $_CONF_GNU_GREP -P '^_BOOTSTRAP_[A-Z0-9_]+=' | sed -e 's/=.*$//' | tr '\n' ' ')
+	fi
+}
+_application_defaults() {
+	local default_file
+	for default_file in $(find $1/cfg -type f 2>/dev/null); do
+		_include $default_file
+	done
+}
+_setup_run_script() {
+	_SETUP_TYPE_NAME=$(basename $1)
+	_setup_contains_subtype $_SETUP_TYPE_NAME && {
+		_setup_sub_platform_matches $_SETUP_TYPE_NAME || {
+			_WARN "Ignoring $1, does not target this sub-platform"
+			return
+		}
+	}
+	case $_SETUP_TYPE_NAME in
+	*.*)
+		_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | sed -e "s/^.*\.//")
+		;;
+	[0-9][0-9]_[[:alnum:]]*)
+		_SETUP_TYPE_NAME=f_$_SETUP_TYPE_NAME
+		;;
+	esac
+	_SETUP_TYPE_NAME=${_SETUP_TYPE_NAME%_*}
+	_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | tr '[:lower:]' '[:upper:]')
+	type _${_SETUP_TYPE_NAME}_BOOTSTRAP >/dev/null 2>&1 || {
+		_WARN "Unknown type: $_SETUP_TYPE_NAME"
+		return
+	}
+	if [ ! -e $1 ]; then
+		_WARN "$1 no longer exists, ignoring"
+		return 0
+	fi
+	_variable_is_set _${_SETUP_TYPE_NAME}_DISABLED && return
+	_sudo mkdir -p "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type"
+	_setup_run_do_bootstrap $_SETUP_TYPE_NAME
+	_${_SETUP_TYPE_NAME}_IS_FILE
+	if [ $? -eq 0 ]; then
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $1 || {
+			local error=$?
+			_WARN "Error installing: $_SETUP_TYPE_NAME: $1"
+			return $error
+		}
+		_call _${_SETUP_TYPE_NAME}_GET_DATA $1 | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	else
+		local packages=$($_CONF_GNU_GREP -Pv '(^$|^#)' $1 | tr '\n' ' ')
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $packages || {
+			local error=$?
+			_WARN "Error installing $packages"
+			return $error
+		}
+		printf "$packages" | tr ' ' '\n' | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	fi
+	_call _${_SETUP_TYPE_NAME}_CLEANUP
+	return 0
+}
+_setup_contains_subtype() {
+	[ -z "$_SUB_PLATFORM" ] && return 1
+	case $1 in
+	*_*)
+		return 0
+		;;
+	esac
 	return 1
 }
-_require_file() {
-	if [ -z "$1" ]; then
-		_error "Filename is missing ($_FILE_DETAIL_MESSAGE)"
+_setup_sub_platform_matches() {
+	local setup_type_sub_platform=${1##*_}
+	setup_type_sub_platform=${setup_type_sub_platform%%.*}
+	[ -z "$setup_type_sub_platform" ] && return 0
+	[ "$setup_type_sub_platform" = "$_SUB_PLATFORM" ] && return 0
+	return 1
+}
+_setup_run_do_bootstrap() {
+	_setup_type_bootstrapped $1 || {
+		_call _${1}_BOOTSTRAP
+		_call _${1}_BOOTSTRAP_POST
+		printf '_BOOTSTRAP_%s=1\n' "$1" | _install_metadata_write
+	}
+}
+_setup_type_bootstrapped() {
+	_metadata_is_set "_BOOTSTRAP_${1}=1"
+}
+_uninstall() {
+	_require "$_TARGET_APPLICATION_NAME" "_TARGET_APPLICATION_NAME must be set"
+	_require "$_INSTALL_LIBRARY_PATH" "_INSTALL_LIBRARY_PATH must be set"
+	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME ] && return 1
+	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata ] && return 1
+	_uninstall_script
+	_uninstall_files
+	_uninstall_type
+	_sudo rm -Rf $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME
+	_INFO "Uninstalled $_TARGET_APPLICATION_NAME"
+}
+_uninstall_script() {
+	[ !-e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall ] && return
+	for script in $(find $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall -type f); do
+		_sudo $script
+	done
+}
+_uninstall_files() {
+	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files ] && return
+	if [ "$_ROOT" = "/" ]; then
+		_sudo rm -f $(cat $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files)
+	else
+		local sed_safe_root=$(_sed_safe $_ROOT)
+		_sudo rm -f $(sed -e "s/^/$sed_safe_root/" $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files)
 	fi
+	_sudo rm -f $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files
+}
+_uninstall_type() {
+	[ ! -e $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type ] && return 1
+	for _SETUP_TYPE_FILE in $(find $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type -type f -name '.*'); do
+		_SETUP_TYPE_NAME=$(basename $_SETUP_TYPE_FILE | sed -e 's/^.//')
+		_uninstall_type_do
+	done
+}
+_uninstall_type_do() {
+	local packages=$($_CONF_GNU_GREP -Pv '(^$|^#)' $_SETUP_TYPE_FILE)
+	if [ -z "$packages" ]; then
+		_DETAIL "No ${_SETUP_TYPE_NAME}(s) to uninstall"
+		return
+	fi
+	_INFO "Uninstalling $packages via ${_SETUP_TYPE_NAME}"
+	${_SETUP_TYPE_NAME}_uninstall $packages
+}
+_APP_DEFAULT_BOOTSTRAP() {
+	:
+}
+_APP_DEFAULT_INSTALL() {
+	if [ -n $_USER ]; then
+		_SUDO_USER="$USER" _sudo xdg-mime default $1.desktop $2
+		return $?
+	fi
+	xdg-mime default $1.desktop $2
+}
+_APP_DEFAULT_UNINSTALL() {
+	:
+}
+_APP_DEFAULT_IS_INSTALLED() {
+	:
+}
+_APP_DEFAULT_ENABLED() {
+	return 0
+}
+_GO_BOOTSTRAP_POST() {
+	[ -e /usr/local/bin/go123 ] && [ ! -e /usr/local/bin/go ] && {
+		ln -s /usr/local/bin/go123 /usr/local/bin/go
+		ln -s /usr/local/bin/gofmt123 /usr/local/bin/gofmt
+	}
+}
+_USER_UNINSTALL() {
+	. "$1"
+	_require "$username" "username"
+	rmuser -y $username
+}
+_PACKAGE_UPDATE() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS upgrade $_FREEBSD_PKG_OPTIONS $@
+	_sudo pkg $_PKG_OPTIONS autoremove $_FREEBSD_PKG_OPTIONS $@
+}
+_PACKAGE_INSTALL_DO() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS install $_FREEBSD_PKG_OPTIONS $@
+}
+_PACKAGE_UNINSTALL() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS delete $_FREEBSD_PKG_OPTIONS $@
+}
+_PACKAGE_IS_INSTALLED() {
+	_PACKAGE_BOOTSTRAP
+	pkg $_PKG_OPTIONS _INFO -e $1 2>/dev/null
+}
+_PACKAGE_BOOTSTRAP() {
+	[ $_PKG_BOOTSTRAPPED ] && return
+	ASSUME_ALWAYS_YES=yes
+	_PKG_BOOTSTRAPPED=1
+	if [ -n "$_ROOT" ] && [ "$_ROOT" != "/" ]; then
+		_package_cache_already_mounted || _package_cache_mount
+		_PKG_OPTIONS="-r $_ROOT"
+	fi
+	_package_enable_proxy
+	_sudo pkg $_PKG_OPTIONS update -q
+}
+_package_cache_already_mounted() {
+	mount | awk {'print$3'} | grep -q "$_ROOT/var/cache/pkg$"
+}
+_package_cache_mount() {
+	[ -e /sbin/mount_nullfs ] || return 1
+	[ -e /var/cache/pkg ] || return 1
+	_sudo mkdir -p $_ROOT/var/cache/pkg
+	_INFO "Mounting host's package cache"
+	_sudo mount -t nullfs /var/cache/pkg $_ROOT/var/cache/pkg || {
+		_WARN "Error mounting host's package cache"
+		_WARN "pkg cache mounts: $(mount | awk {'print$3'} | grep \"^$_ROOT/var/cache/pkg$\")"
+		_WARN "mounts: $(mount | awk {'print$3'})"
+		_WARN "/var/cache/pkg:"
+		return 1
+	}
+	_defer _package_cache_umount
+	_INFO "Mounted host's package cache"
+}
+_package_cache_umount() {
+	umount $_ROOT/var/cache/pkg
+}
+__PACKAGE_BOOTSTRAP_IS_PACKAGE_AVAILABLE() {
+	return 0
+}
+_package_enable_proxy() {
+	[ -z "$http_proxy" ] && return 1
+	[ $_PKG_PROXY_ENABLED ] && return 2
+	_PKG_PROXY_ENABLED=1
+	_defer _package_disable_proxy
+	_WARN "[install] Configuring pkg to use an HTTP proxy: $http_proxy"
+	local _updated_package_conf=$(_mktemp)
+	if [ -e $_ROOT/usr/local/etc/pkg.conf ]; then
+		grep -v '^pkg_env' $_ROOT/usr/local/etc/pkg.conf >$_updated_package_conf
+		mv $_updated_package_conf $_ROOT/usr/local/etc/pkg.conf
+	fi
+	mkdir -p $_ROOT/usr/local/etc
+	printf 'pkg_env: { http_proxy: "%s"}\n' "$http_proxy" >>$_ROOT/usr/local/etc/pkg.conf
+}
+_package_disable_proxy() {
+	[ -z "$http_proxy" ] && return 1
+	unset _PKG_PROXY_ENABLED
+	_WARN "[freebsd-installer] Disabling HTTP proxy: $http_proxy"
+	$_CONF_GNU_SED -i "s/^pkg_env/#pkg_env/" $_ROOT/usr/local/etc/pkg.conf
+}
+_require_file() {
+	_require "$1" filename _require_file
+	local level=_ERROR
+	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
 	if [ ! -e $1 ]; then
-		if [ $# -eq 2 ]; then
-			_warn "File: $1 does not exist ($_FILE_DETAIL_MESSAGE)"
-			return 1
-		fi
-		_error "File: $1 does not exist ($_FILE_DETAIL_MESSAGE)"
+		$level "File: $1 does not exist | $2"
+		return 1
 	fi
 }
 _readlink() {
@@ -1198,58 +1184,179 @@ _readlink() {
 	fi
 	if [ ! -e $1 ]; then
 		if [ -z $_MKDIR ] || [ $_MKDIR -eq 1 ]; then
-			local sudo
-			if [ -n "$_USE_SUDO" ]; then
-				sudo=$_SUDO_CMD
-			fi
-			$sudo mkdir -p $1 >/dev/null 2>&1
+			_sudo mkdir -p $1 >/dev/null 2>&1
 		fi
 	fi
 	readlink -f $1
 }
+_has_contents() {
+	_require_file "$1" "_has_contents:$1"
+	[ $(_sudo wc -l <$1) -gt 0 ] && return 0
+	return 1
+}
+_crontab_get() {
+	_require "$1" "Crontab User"
+	_require "$2" "Crontab Filename to write to"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_GET "$@"
+}
+_crontab_write() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE "$@"
+}
+_crontab_append() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_has_contents $2 || return 1
+	local current_crontab=$(_SUDO_USER=$1 _mktemp)
+	_crontab_get $1 $current_crontab
+	_sudo cat $2 | _sudo tee -a $current_crontab >/dev/null 2>&1
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE $1 $current_crontab
+	_sudo rm -f $current_crontab
+}
+_CRONTAB_DEFAULT_CLEAR() {
+	_SUDO_USER=$1 _sudo crontab -f -r 2>/dev/null
+}
+_CRONTAB_DEFAULT_GET() {
+	_SUDO_USER=$1 _sudo crontab -l >$2 2>/dev/null
+}
+_CRONTAB_DEFAULT_WRITE() {
+	_crontab_default_header $1 $2
+	_SUDO_USER=$1 _sudo crontab $2 || {
+		_WARN "_ERROR writing crontab"
+		_SUDO_USER=$1 _sudo cat $2
+	}
+}
+_crontab_default_header() {
+	if [ -n "$_OPTN_INSTALL_CRONTAB_HEADER" ]; then
+		printf '%s\n\n' "$_OPTN_INSTALL_CRONTAB_HEADER" | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo mv $2.new $2
+	fi
+	_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+	_SUDO_USER=$1 _sudo mv $2.new $2
+}
+_include logging platform context wait beep paths net install
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
-$_PLATFORM) ;;
-Darwin | FreeBSD | Linux | MINGW64_NT-*)
-	_error "Please use the appropriate platform-specific installer ($_DETECTED_PLATFORM)"
+Darwin)
+	_DETECTED_PLATFORM=Apple
 	;;
-*)
-	_error "Unsupported platform"
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
 	;;
 esac
+_PLATFORM="FreeBSD"
+_TAR_ARGS=" -f - "
+: ${_CONF_GNU_GREP:=/usr/local/bin/ggrep}
+: ${_CONF_GNU_SED:=gsed}
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='L32c'}
+: ${_CONF_LOG_BEEP_ALRT:='L32f'}
+: ${_CONF_LOG_BEEP_SCS:='L32a'}
+: ${_CONF_LOG_BEEP_WRN:=''}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='L32ab'}
+: ${_CONF_LOG_SUDO_BEEP_TONE:=L32aL8fL32c}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$HOME/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_INSTALL_NO_PAGER:=0}
+: ${_CONF_INSTALL_STEP_TIMEOUT:=300}
+: ${_CONF_INSTALL_IOSTAT_DURATION:=5}
+: ${_CONF_INSTALL_SUDO_TIMEOUT:=270}
+: ${_CONF_INSTALL_NETWORK_TEST_TARGET:=google.com}
+: ${_CONF_INSTALL_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_INSTALL_TEAMS_MESSAGE_PARALLELIZATION:=5}
+: ${_CONF_INSTALL_PARALLEL_BUILD:=8}
+: ${_CONF_APP_REGISTRY_GIT_URL:=https://github.com/walterjwhite/app.registry.git}
+: ${_CONF_INSTALL_AUTO_UPDATE_PACKAGES:=0}
+: ${_CONF_CLEAN_APP_REGISTRY_WORKSPACE:=1}
+: ${_CONF_INSTALL_RANDOM_DEFAULT_LENGTH:=8}
+[ "$_CONF_INSTALL_NO_PAGER" = "1" ] && PAGER=cat
+: ${_OPTN_INSTALL_BYPASS_UNINSTALL:=1}
+which shfmt >/dev/null 2>&1 || _DISABLE_SHFMT=1
+: ${_CONF_INSTALL_CHECKSUM_CMD:="sha256 -q"}
+: ${REMOVE_UNUSED_FUNCTIONS:=y}
+: ${_INSTALL_BUILD_PLATFORMS:=$_DETECTED_PLATFORM}
+_ARCHITECTURE=$(uname -m)
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin
+_CONF_INSTALL_STAT_ARGUMENTS='-f %OLp'
+_FREEBSD_PKG_OPTIONS="-yq"
+_SUDO_CMD="sudo"
+_PLATFORM_PACKAGES="git gsed gnugrep gtar gawk sudo shuf"
+NPM_PACKAGE="npm"
+RUST_PACKAGE="rust"
+PYPI_DISABLED=1
+PYPI_PACKAGE="python39 py39-pip"
+GO_PACKAGE="go"
+_include cron
+: ${_CONF_CRON_PROVIDER:=DEFAULT}
+_include install
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
 _APPLICATION_START_TIME=$(date +%s)
 _APPLICATION_CMD=$(basename $0)
-unset _DEFERS
+trap _on_hup 1
+trap _on_int 2
+trap _on_quit 3
+trap _on_illegal 4
+trap _on_abort 6
+trap _on_alarm 14
+trap _on_term 15
+trap _success 0
 for _ARG in "$@"; do
 	case $_ARG in
 	-h | --help)
 		_print_help_and_exit
-		;;
-	-kill-all)
-		_kill_all
-		_success "Killed all"
-		;;
-	-kill-all-group)
-		_kill_all_group
-		_success "Killed all group"
-		;;
-	-kill=*)
-		_kill ${_ARG#*=}
-		_success "Killed ${_ARG#*=}"
-		;;
-	-l)
-		_list
-		_success "listed running processes"
-		;;
-	-lg)
-		_list_group
-		_success "listed running processes"
 		;;
 	-w=*)
 		_WAITER_PID="${1#*=}"
 		shift
 		;;
 	-w)
-		_CONF_INSTALL_WAITER_LEVEL=_info
 		_WAITEE=1
 		shift
 		;;
@@ -1258,9 +1365,9 @@ for _ARG in "$@"; do
 		_configuration_name=${_configuration_name%%=*}
 		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
 			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
-				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/")
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
 			else
-				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/")
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
 			fi
 		fi
 		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
@@ -1278,42 +1385,38 @@ for _ARG in "$@"; do
 		;;
 	esac
 done
-trap _on_exit INT 0 1 2 3 4 6 15
-_init_logging
-_init_application_context
-_debug "REMAINING ARGS: $*"
-_log_app_init
-_init_pager
-_waiter
-_has_required_conf
-if [ -n "$_REQUIRED_ARGUMENTS" ]; then
-	_DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$_REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
-	_required_arguments_argument_log_level=debug
-	_ACTUAL_ARGUMENT_COUNT=$#
-	[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _required_arguments_argument_log_level=warn
-	_$_required_arguments_argument_log_level "Expecting $_DISCOVERED_ARGUMENT_COUNT, received $# arguments"
-	_INDEX=1
-	_ARGUMENT_LOG_LEVEL=info
-	while [ $_INDEX -le $_DISCOVERED_ARGUMENT_COUNT ]; do
-		_ARGUMENT_NAME=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_INDEX}p | sed -e 's/:.*$//')
-		_ARGUMENT_MESSAGE=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_INDEX}p | sed -e 's/^.*://')
-		if [ -z "$1" ]; then
-			_$_required_arguments_argument_log_level "$_INDEX:$_ARGUMENT_MESSAGE was not provided"
-		else
-			_$_required_arguments_argument_log_level "$_INDEX:$_ARGUMENT_NAME=$1"
-			export $_ARGUMENT_NAME="$1"
-			shift
-		fi
-		_INDEX=$(($_INDEX + 1))
-	done
-	[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _error "Missing arguments"
-	unset _INDEX _ARGUMENT_NAME _ARGUMENT_MESSAGE _required_arguments_argument_log_level
-	_DISCOVERED_REQUIRED_ARGUMENTS="$_REQUIRED_ARGUMENTS"
-	unset _REQUIRED_ARGUMENTS
-else
-	_debug "NO _REQUIRED_ARGUMENTS args"
-	unset _DISCOVERED_REQUIRED_ARGUMENTS _DISCOVERED_ARGUMENT_COUNT
+_ACTUAL_ARGUMENT_COUNT=$#
+_DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$_REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
+_required_arguments_argument_log_level=_DEBUG
+[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _required_arguments_argument_log_level=_WARN
+$_required_arguments_argument_log_level "Expecting $_DISCOVERED_ARGUMENT_COUNT, received $# arguments"
+_ARG_INDEX=1
+_ARGUMENT_LOG_LEVEL=_INFO
+while [ $_ARG_INDEX -le $_DISCOVERED_ARGUMENT_COUNT ]; do
+	_ARGUMENT_NAME=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_ARG_INDEX}p | sed -e 's/:.*$//')
+	_ARGUMENT_MESSAGE=$(printf '%s' "$_REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${_ARG_INDEX}p | sed -e 's/^.*://')
+	if [ -z "$1" ]; then
+		$_required_arguments_argument_log_level "$_ARG_INDEX:$_ARGUMENT_MESSAGE was not provided"
+	else
+		$_required_arguments_argument_log_level "$_ARG_INDEX:$_ARGUMENT_NAME=$1"
+		export $_ARGUMENT_NAME="$1"
+		shift
+	fi
+	_ARG_INDEX=$(($_ARG_INDEX + 1))
+done
+[ $_ACTUAL_ARGUMENT_COUNT -lt $_DISCOVERED_ARGUMENT_COUNT ] && _ERROR "Missing arguments"
+unset _ARG_INDEX _ARGUMENT_NAME _ARGUMENT_MESSAGE _required_arguments_argument_log_level
+_DISCOVERED_REQUIRED_ARGUMENTS="$_REQUIRED_ARGUMENTS"
+unset _REQUIRED_ARGUMENTS
+_DEBUG "REMAINING ARGS: $*"
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
 fi
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
 _settings_init
 for _TARGET_APPLICATION_NAME in "$_APPLICATIONS"; do
 	_uninstall

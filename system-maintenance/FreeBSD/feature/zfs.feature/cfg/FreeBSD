@@ -1,0 +1,14 @@
+_has_zfs() {
+	which zfs >/dev/null 2>&1 || return 1
+	if [ $(sysctl -n security.jail.jailed) -eq 1 ]; then
+		if [ $(sysctl -n security.jail.mount_zfs_allowed) -eq 1 ]; then
+			return 0
+		fi
+		return 1
+	fi
+	return 0
+}
+_has_zfs
+: ${_FEATURE_ZFS_DISABLED:=$?}
+: ${_CONF_SYSTEM_MAINTENANCE_ZFS_BACKUP_PATH:=/var/tmp/backups}
+: ${_CONF_SYSTEM_MAINTENANCE_ZFS_USER:=zap}

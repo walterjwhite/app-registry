@@ -1,0 +1,36 @@
+#!/usr/bin/env expect
+set BE [lindex $argv 0]
+set LAST_SEQUENCE_FILE [lindex $argv 1]
+set SYSTEM_UPDATES [lindex $argv 2]
+puts "Using BE: $BE"
+puts "Patch File: $LAST_SEQUENCE_FILE"
+puts "Patches: $SYSTEM_UPDATES"
+spawn beadm chroot $BE
+set timeout 2
+expect {
+  "Entered chroot(8) for '$BE' boot environment" {
+    send "_apply-patches $LAST_SEQUENCE_FILE $SYSTEM_UPDATES\r"
+  }
+  timeout {
+    puts "Timed out waiting to enter chroot"
+    exit 2
+  }
+}
+set timeout 3600
+expect {
+  "_apply-patches completed successfully" {
+    send "exit\r"
+  }
+  "please reboot to install updates " {
+    send "exit\r"
+  }
+  "Previous cmd failed: " {
+    puts "Updated failed, exiting chroot"
+    exit 3
+  }
+  timeout {
+    puts "Timed out waiting for updates to complete"
+    exit 4
+  }
+}
+expect eof

@@ -1,0 +1,5 @@
+git commit
+	-m='message'
+	-a
+	@see git commit arguments
+	NOTE: this makes use of the environmental variable _CONF_INSTALL_CONTEXT, -conf-install_context=* to inject contextual information into the commit message

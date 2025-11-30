@@ -1,0 +1,4 @@
+refactor the code with reusability, maintainability, and simplicity in mind
+individual files should be less than 100 lines
+individual methods should be less than 10 lines
+a package should contain the smallest logical unit or concept, if it contains more than 1 unit or concept, split it

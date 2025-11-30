@@ -1,4 +1,0 @@
-: ${_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL:=WARN}
-: ${_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL:=WARN}
-: ${_CONF_DEV_MAVEN_OPTIONS:="$_CONF_DEV_MAVEN_OPTIONS -Dorg.slf4j.simpleLogger.defaultLogLevel=$_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=$_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL"}
-: ${_CONF_DEV_MAVEN_DEPENDENCY_VERSION:=use-latest-releases}

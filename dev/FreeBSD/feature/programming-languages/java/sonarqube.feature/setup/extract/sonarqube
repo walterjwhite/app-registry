@@ -1,6 +1,0 @@
-SONAR_VERSION=7.9.1
-_SOURCE=sonarqube-${SONAR_VERSION}.zip
-_CONTENTS=sonarqube-${SONAR_VERSION}
-_TARGET=/opt/sonarqube.com/${SONAR_VERSION}
-_CLEAN=/opt/sonarqube.com
-#$_SUDO_CMD mkdir -p /var/cache/sonarqube

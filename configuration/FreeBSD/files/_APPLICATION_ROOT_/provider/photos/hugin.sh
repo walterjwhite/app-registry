@@ -1,0 +1,4 @@
+#!/bin/sh
+_APPLICATION_NAME=configuration
+_PLUGIN_CONFIGURATION_PATH=~/.hugin
+_PLUGIN_NO_ROOT_USER=1

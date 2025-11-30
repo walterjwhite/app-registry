@@ -1,0 +1,12 @@
+#!/usr/bin/env expect
+set _email [exec secrets get $::env(_CONF_CF)/email-address -stdout 2>/dev/null]
+set _password [exec secrets get $::env(_CONF_CF)/password -stdout 2>/dev/null]
+spawn cf login -a $::env(_CF_ENDPOINT)
+expect Email:
+send $_email\r
+expect "Password:"
+send $_password\r
+expect "Select a space:"
+send $::env(_CF_SPACE_INDEX)\r
+expect "space:"
+close

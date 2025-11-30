@@ -1,0 +1,2019 @@
+#!/bin/sh
+set -a
+_APPLICATION_NAME=freebsd-installer
+_beep() {
+	if [ -n "$_BEEPING" ]; then
+		_DEBUG "Another 'beep' is in progress"
+		return 1
+	fi
+	_BEEPING=1
+	_do_beep "$@" &
+}
+_do_beep() {
+	if [ -e /dev/speaker ]; then
+		printf '%s' "$1" >/dev/speaker
+	fi
+	unset _BEEPING
+}
+_sudo_precmd() {
+	_beep $_CONF_LOG_SUDO_BEEP_TONE
+}
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_filter() {
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
+}
+_environment_dump() {
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
+	mkdir -p $(dirname $_ENVIRONMENT_FILE)
+	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
+}
+_call() {
+	local _function_name=$1
+	type $_function_name >/dev/null 2>&1 || {
+		_DEBUG "${_function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$_function_name "$@"
+		return $?
+	}
+	$_function_name
+}
+_() {
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local _successfulExitStatus=0
+	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
+		_successfulExitStatus=$_SUCCESSFUL_EXIT_STATUS
+		unset _SUCCESSFUL_EXIT_STATUS
+	fi
+	_INFO "## $*"
+	local exit_status
+	if [ -z "$_DRY_RUN" ]; then
+		"$@"
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $_successfulExitStatus ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
+		fi
+	fi
+}
+_ERROR() {
+	if [ $# -ge 2 ]; then
+		_EXIT_STATUS=$2
+	else
+		_EXIT_STATUS=1
+	fi
+	_EXIT_LOG_LEVEL=4
+	_EXIT_STATUS_CODE="ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
+	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_ERR
+	_defer _environment_dump
+	_defer _log_app_exit
+	exit $_EXIT_STATUS
+}
+_success() {
+	_EXIT_STATUS=0
+	_EXIT_LOG_LEVEL=1
+	_EXIT_STATUS_CODE="SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
+	_EXIT_MESSAGE="$1"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_SCS
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	[ -z "$_EXIT" ] && exit 0
+}
+_on_exit() {
+	[ $_EXIT ] && return 1
+	_EXIT=0
+	[ -z "$_EXIT_STATUS" ] && _success "completed successfully"
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			_call $defer
+		done
+		unset _DEFERS
+	fi
+	return $_EXIT
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
+	fi
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
+}
+_print_help() {
+	if [ -e $2 ]; then
+		_INFO "$1:"
+		cat $2
+		printf '\n'
+	fi
+}
+_print_help_and_exit() {
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
+	if [ "$_APPLICATION_NAME" != "install" ]; then
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+	fi
+	exit 0
+}
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/$include_file ] && . $HOME/.config/walterjwhite/$include_file
+	done
+}
+_init_logging() {
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
+	0)
+		local logfile=$(_mktemp debug)
+		_WARN "Writing debug contents to: $logfile"
+		_set_logfile "$logfile"
+		set -x
+		;;
+	esac
+}
+_set_logfile() {
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
+}
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
+}
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
+}
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
+}
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
+}
+_sed_remove_nonprintable_characters() {
+	sed -e 's/[^[:print:]]//g'
+}
+_print_log() {
+	if [ -z "$5" ]; then
+		if test ! -t 0; then
+			local _line
+			cat - | _sed_remove_nonprintable_characters |
+				while read _line; do
+					_print_log $1 $2 $3 $4 "$_line"
+				done
+			return
+		fi
+		return
+	fi
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
+	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
+}
+_reset_indent() {
+	unset _LOG_INDENT
+}
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
+}
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+}
+_log_app() {
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
+}
+_interactive_alert_if() {
+	_is_interactive_alert_enabled && _interactive_alert "$@"
+}
+_is_interactive_alert_enabled() {
+	grep -cq '^_OPTN_INSTALL_INTERACTIVE_ALERT=1$' $_CONF_APPLICATION_CONFIG_PATH 2>/dev/null
+}
+_continue_if() {
+	_read_if "$1" _PROCEED "$2"
+	local proceed="$_PROCEED"
+	unset _PROCEED
+	if [ -z "$proceed" ]; then
+		_DEFAULT=$(printf '%s' $2 | awk -F'/' {'print$1'})
+		proceed=$_DEFAULT
+	fi
+	local proceed=$(printf '%s' "$proceed" | tr '[:lower:]' '[:upper:]')
+	if [ $proceed = "N" ]; then
+		return 1
+	fi
+	return 0
+}
+_read_if() {
+	if [ $(env | grep -c "^$2=.*") -eq 1 ]; then
+		_DEBUG "$2 is already set"
+		return 1
+	fi
+	[ -z "$INTERACTIVE" ] && _ERROR "Running in non-interactive mode and user input was requested: $@" 10
+	_print_log 9 STDI "$_CONF_LOG_C_STDIN" "$_CONF_LOG_BEEP_STDIN" "$1 $3"
+	_interactive_alert_if $1 $3
+	read -r $2
+}
+_syslog() {
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	if [ -n "$_WAITEE" ] && [ -e $_APPLICATION_PIPE ]; then
+		_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+		printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+		_INFO "$0 downstream process picked up"
+	fi
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while [ 1 ]; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local _UPSTREAM_STATUS=$?
+		if [ $_UPSTREAM_STATUS -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
+}
+_mail() {
+	if [ $# -lt 3 ]; then
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		return 1
+	fi
+	local recipients=$(printf '%s' "$1" | tr '|' ' ')
+	shift
+	local subject="$1"
+	shift
+	local message="$1"
+	shift
+	printf "$message" | mail -s "$subject" $recipients
+}
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
+		return 1
+	fi
+	_mail "$recipients" "$subject" "$2"
+}
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
+	fi
+	_alert "$subject" "$message"
+}
+_bootconfig() {
+	[ -z "$(awk '{if ($2=="/boot/efi") printf("%s\n",$1);}' $BSDINSTALL_CHROOT/etc/fstab)" ] && {
+		_WARN "ESP not detected"
+		return 1
+	}
+	case $(uname -m) in
+	arm64) ARCHBOOTNAME=aa64 ;;
+	amd64) ARCHBOOTNAME=x64 ;;
+	riscv) ARCHBOOTNAME=riscv64 ;;
+	*) _ERROR "Unsupported arch $(uname -m) for UEFI install" ;;
+	esac
+	_INFO "Installing loader.efi onto ESP"
+	mkdir -p "$BSDINSTALL_CHROOT/boot/efi/efi/freebsd" "$BSDINSTALL_CHROOT/boot/efi/efi/boot"
+	cp "$BSDINSTALL_CHROOT/boot/loader.efi" "$BSDINSTALL_CHROOT/boot/efi/efi/freebsd/loader.efi"
+	[ ! -f "$BSDINSTALL_CHROOT/boot/efi/efi/boot/boot${ARCHBOOTNAME}.efi" ] && {
+		_ cp "$BSDINSTALL_CHROOT/boot/loader.efi" "$BSDINSTALL_CHROOT/boot/efi/efi/boot/boot${ARCHBOOTNAME}.efi"
+	}
+	_INFO "Creating UEFI boot entry"
+	_WARN_ON_ERROR=1
+	_require_file "$BSDINSTALL_CHROOT/boot/efi/efi/freebsd/loader.efi"
+	_ efibootmgr --create --activate --label "FreeBSD" --loader "$BSDINSTALL_CHROOT/boot/efi/efi/freebsd/loader.efi" >/dev/null
+	unset _WARN_ON_ERROR
+	_INFO "Finished configuring ESP"
+}
+_MODULE_RUN_BUILD() {
+	local module_name=$1
+	local MODULE_FUNCTION_NAME=$(printf '%s' $module_name | tr '[[:lower:]]' '[[:upper:]]')
+	local module_exec=$(env | grep ^_${MODULE_FUNCTION_NAME}_EXEC= | sed -e "s/^_${MODULE_FUNCTION_NAME}_EXEC=//")
+	local module_type=$(env | grep ^_${MODULE_FUNCTION_NAME}_TYPE= | sed -e "s/^_${MODULE_FUNCTION_NAME}_TYPE=//")
+	local module_options=$(env | grep ^_${MODULE_FUNCTION_NAME}_OPTIONS= | sed -e "s/^_${MODULE_FUNCTION_NAME}_OPTIONS=//")
+	local module_is_file=$(env | grep ^_${MODULE_FUNCTION_NAME}_IS_FILE= | sed -e "s/^_${MODULE_FUNCTION_NAME}_IS_FILE=//")
+	local module_path=$(env | grep ^_${MODULE_FUNCTION_NAME}_PATH= | sed -e "s/^_${MODULE_FUNCTION_NAME}_PATH=//")
+	local module_supports_jails=$(env | grep ^_${MODULE_FUNCTION_NAME}_SUPPORTS_JAILS= | sed -e "s/^_${MODULE_FUNCTION_NAME}_SUPPORTS_JAILS=//")
+	[ -z "$module_type" ] && module_type=f
+	[ -z "$module_path" ] && module_path="$1/*"
+	[ $module_is_file ] && module_path=$module_name
+	if [ -n "$module_supports_jails" ] && [ -z "$_IN_JAIL" ]; then
+		_call _${MODULE_FUNCTION_NAME}_JAILS
+	fi
+	if [ $(_module_find $module_type $module_path $module_options -print -quit | wc -l) -eq 0 ]; then
+		_INFO "no patches found"
+		return 1
+	fi
+	_INFO "start"
+	_call _${MODULE_FUNCTION_NAME}_PRE
+	local module_status
+	if [ -n "$module_is_file" ]; then
+		module_path=$module_name
+		_$MODULE_FUNCTION_NAME $(_module_find $module_type $module_path $module_options -exec $_CONF_GNU_GREP -Pvh '(^#|^$)' {} + | tr '\n' ' ' | sed -e 's/ $/\n/')
+		module_status=$?
+	else
+		if [ -z "$module_exec" ]; then
+			_$MODULE_FUNCTION_NAME $(_module_find $module_type $module_path $module_options | sort)
+			module_status=$?
+		else
+			_CHILD=1 _PRESERVE_LOG=1 _module_find $module_type $module_path $module_options -exec $module_exec
+			module_status=$?
+		fi
+	fi
+	_call _${MODULE_FUNCTION_NAME}_POST
+	_module_log_status $module_status
+}
+_module_find() {
+	local module_type=$1
+	shift
+	local module_path=$1
+	shift
+	local patch_path=physical
+	[ -n "$_IN_JAIL" ] && patch_path=jail
+	find -s . -type $module_type \( -path '*/patches/any/*' -or -path "*/patches/$patch_path/*" \) -and \( -path "*/*.patch/$module_path" \) "$@" 2>/dev/null
+	return 0
+}
+_prepare_chroot() {
+	_ROOT=$BSDINSTALL_CHROOT _PRESERVE_LOG=1 _CHILD=1 app-install install freebsd-installer
+	mkdir -p $BSDINSTALL_CHROOT/root/.config/walterjwhite
+	cp /root/.config/walterjwhite/* $BSDINSTALL_CHROOT/root/.config/walterjwhite
+	mkdir -p $BSDINSTALL_CHROOT/tmp/HOST-SSH
+	cp $_SSH_KEY $_SSH_KEY.pub $BSDINSTALL_CHROOT/tmp/HOST-SSH
+	cp /etc/ssh/sshd_config $BSDINSTALL_CHROOT/etc/ssh/sshd_config
+	cp /etc/resolv.conf $BSDINSTALL_CHROOT/etc/resolv.conf
+	chroot $BSDINSTALL_CHROOT /usr/bin/newaliases >/dev/null 2>&1
+}
+_dist() {
+	_dist_freebsd_version
+	FREEBSD_BASE_DISTRIBUTION_URL=$(printf '%s/pub/FreeBSD/%s/%s/%s/%s' "$FREEBSD_MIRROR_SITE" $FREEBSD_VERSION_TYPE "$(uname -m)" "$(uname -p)" $FREEBSD_VERSION)
+	_CONF_CACHE_PATH=$BSDINSTALL_CHROOT/var/cache/pkg _download "$FREEBSD_BASE_DISTRIBUTION_URL/MANIFEST" || _ERROR "Unable to download manifest"
+	local manifest_file=$_DOWNLOADED_FILE
+	local distribution distribution_checksum
+	for distribution in $FREEBSD_DISTRIBUTIONS; do
+		_CONF_CACHE_PATH=$BSDINSTALL_CHROOT/var/cache/pkg _download "$FREEBSD_BASE_DISTRIBUTION_URL/$distribution.txz" || _ERROR "Unable to download distribution"
+		distribution_checksum=$(sha256 -q $_DOWNLOADED_FILE)
+		awk -v checksum=$distribution_checksum -v dist=$distribution.txz -v found=0 '{
+      if (dist == $1) {
+        found = 1
+        if (checksum == $2)
+          exit(0)
+        else
+          exit(2)
+      }
+    } END {if (!found) exit(1);}' $manifest_file || _ERROR "Checksum failed: $distribution"
+		_DETAIL "Extracting $distribution"
+		tar -xf "$_DOWNLOADED_FILE" -C $BSDINSTALL_CHROOT --exclude boot/efi
+	done
+	mkdir -p $BSDINSTALL_CHROOT/boot/efi
+}
+_dist_freebsd_version() {
+	case $FREEBSD_VERSION in
+	*-RELEASE)
+		FREEBSD_VERSION_TYPE=releases
+		;;
+	*)
+		FREEBSD_VERSION_TYPE=snapshots
+		;;
+	esac
+}
+_entropy() {
+	umask 077
+	for i in /entropy /boot/entropy; do
+		i="$BSDINSTALL_CHROOT/$i"
+		dd if=/dev/random of="$i" bs=4096 count=1
+		chown 0:0 "$i"
+	done
+}
+_environment_filter() {
+	grep -v '^PWD=.*$'
+}
+_module_log_status() {
+	local module_status=success
+	local level=_INFO
+	if [ $1 -gt 0 ]; then
+		module_status="error ($1)"
+		level=_WARN
+	fi
+	$level "end - $module_status"
+}
+_module_get_patch_name() {
+	_module_get_patch_path "$1" |
+		sed -e "s/^\.\///" -e "s/\.patch$//" -e "s/^patches\///"
+}
+_module_get_patch_path() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Po '^.*.\.patch'
+}
+[ -z "$_INDEX" ] && _INDEX=0
+_mount() {
+	mkdir $BSDINSTALL_CHROOT/dev 2>/dev/null
+	mount -t devfs devfs $BSDINSTALL_CHROOT/dev && _defer _umount_dev
+	mkdir -p $BSDINSTALL_CHROOT/etc
+	printf '# efi partition\n' >$BSDINSTALL_CHROOT/etc/fstab
+	printf '%s /boot/efi msdosfs rw 2 2\n' $FREEBSD_ESP_DEVICE >>$BSDINSTALL_CHROOT/etc/fstab
+	_ chroot $BSDINSTALL_CHROOT mount -a
+	_defer _umount_chroot
+}
+_mount_remote_pkg_cache() {
+	mkdir -p $BSDINSTALL_CHROOT/var/cache/pkg
+	ssh $_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE ls /var/cache/pkg >/dev/null 2>&1 || return $?
+	sshfs -o StrictHostKeyChecking=no $_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE:/var/cache/pkg $BSDINSTALL_CHROOT/var/cache/pkg && _defer _umount_pkg_cache
+}
+_umount_dev() {
+	umount "$BSDINSTALL_CHROOT/dev"
+}
+_umount_chroot() {
+	chroot $BSDINSTALL_CHROOT umount -a
+}
+_umount_pkg_cache() {
+	umount "$BSDINSTALL_CHROOT/var/cache/pkg"
+}
+_MODULE_RUN_SETUP() {
+	local MODULE_FUNCTION_NAME=$(printf '%s' $1 | tr '[[:lower:]]' '[[:upper:]]')
+	local module_supports_jails=$(env | grep ^_${MODULE_FUNCTION_NAME}_JAIL= | sed -e "s/^_${MODULE_FUNCTION_NAME}_JAIL=//")
+	[ -n "$_IN_JAIL" ] && {
+		_WARN "$MODULE_FUNCTION_NAME - in jail"
+		[ -n "$module_supports_jails" ] && {
+			_WARN "$MODULE_FUNCTION_NAME - does not support jails"
+			return 1
+		}
+	}
+	_SETUP_${MODULE_FUNCTION_NAME}
+	_module_log_status $?
+}
+_disk_zfs() {
+	FREEBSD_DISK=$_CONF_FREEBSD_INSTALLER_DEV
+	_disk_gpart
+	[ -n "$FREEBSD_GELI_PASSPHRASE" ] && _zfs_geli
+	_zfs_zpool_create
+	_zfs_create_datasets
+}
+_disk_gpart() {
+	_DETAIL "Partitioning disk: $FREEBSD_DISK"
+	gpart destroy -F ${FREEBSD_DISK}
+	zpool labelclear -f ${FREEBSD_DISK}
+	gpart create -s gpt ${FREEBSD_DISK}
+	gpart add -a 4k -l efiboot0 -t efi -s 260M ${FREEBSD_DISK}
+	FREEBSD_ESP_DEVICE=/dev/gpt/efiboot0
+	newfs_msdos -c 1 -F 32 $FREEBSD_ESP_DEVICE
+	gpart add -a 1m -l zfs0 -t freebsd-zfs ${FREEBSD_DISK}
+}
+_zfs_geli() {
+	_DETAIL "Setting up geli on $FREEBSD_DISK"
+	FREEBSD_RAW_ZFS_DISK=${FREEBSD_DISK}p2
+	FREEBSD_ZFS_DISK=${FREEBSD_DISK}p2.eli
+	printf '%s\n' "$FREEBSD_GELI_PASSPHRASE" | geli init -g -b -J - -l 256 -s 4096 $FREEBSD_RAW_ZFS_DISK
+	printf '%s\n' "$FREEBSD_GELI_PASSPHRASE" | geli attach -j - $FREEBSD_RAW_ZFS_DISK
+	_defer _zfs_geli_cleanup
+}
+_zfs_geli_cleanup() {
+	geli detach $FREEBSD_RAW_ZFS_DISK
+}
+_zfs_zpool_create() {
+	_DETAIL "Creating zpool $ZFSBOOT_POOL_NAME"
+	zpool create -O compress=lz4 -O atime=off -o ashift=12 -o altroot="$BSDINSTALL_CHROOT" -m none -f $ZFSBOOT_POOL_NAME $FREEBSD_ZFS_DISK
+	_defer _zfs_cleanup
+}
+_zfs_cleanup() {
+	zpool export $ZFSBOOT_POOL_NAME
+}
+_zfs_create_datasets() {
+	_DETAIL "Creating zfs datasets"
+	zfs create -o mountpoint=none $ZFSBOOT_POOL_NAME/ROOT
+	zfs create -o mountpoint=/ $ZFSBOOT_POOL_NAME/ROOT/default
+	zfs create -o mountpoint=/home -o setuid=off $ZFSBOOT_POOL_NAME/home
+	zfs create -o mountpoint=/tmp -o exec=on -o setuid=off $ZFSBOOT_POOL_NAME/tmp
+	zfs create -o mountpoint=/usr -o canmount=off $ZFSBOOT_POOL_NAME/usr
+	zfs create -o setuid=off $ZFSBOOT_POOL_NAME/usr/ports
+	zfs create $ZFSBOOT_POOL_NAME/usr/src
+	zfs create -o mountpoint=/var -o canmount=off $ZFSBOOT_POOL_NAME/var
+	zfs create -o exec=off -o setuid=off $ZFSBOOT_POOL_NAME/var/audit
+	zfs create -o exec=off -o setuid=off $ZFSBOOT_POOL_NAME/var/crash
+	zfs create -o exec=off -o setuid=off $ZFSBOOT_POOL_NAME/var/log
+	zfs create -p -o exec=off -o setuid=off $ZFSBOOT_POOL_NAME/var/cache/pkg
+	zfs create -o atime=on $ZFSBOOT_POOL_NAME/var/mail
+	zfs create -o setuid=off $ZFSBOOT_POOL_NAME/var/tmp
+	zpool set bootfs=$ZFSBOOT_POOL_NAME/ROOT/default $ZFSBOOT_POOL_NAME
+	zfs set canmount=noauto $ZFSBOOT_POOL_NAME/ROOT/default
+}
+_cleanup_prior_installation() {
+	_cleanup_is_mounted && {
+		_INFO "Cleaning up previous installation ..."
+		umount $(mount | grep /mnt | awk {'print$1'}) >/dev/null 2>&1
+	}
+	_require $ZFSBOOT_POOL_NAME "ZFSBOOT_POOL_NAME _cleanup_prior_installation"
+	zpool list -H $ZFSBOOT_POOL_NAME >/dev/null 2>&1
+	if [ $? -gt 0 ]; then
+		_WARN "exporting $ZFSBOOT_POOL_NAME"
+		zpool export -f $ZFSBOOT_POOL_NAME
+	else
+		_WARN "no need to export $ZFSBOOT_POOL_NAME, not imported"
+	fi
+	_INFO "detaching geli: $_CONF_FREEBSD_INSTALLER_DEV"
+	find /dev/$_CONF_FREEBSD_INSTALLER_DEV -name "*.eli" -type c -depth 1 2>/dev/null | while read _GELI_DEVICE; do
+		geli detach -f $_GELI_DEVICE
+	done
+}
+_cleanup_is_mounted() {
+	mount | grep -c /mnt >/dev/null 2>&1
+}
+_cli() {
+	_determine_network_interface
+	_require "$FREEBSD_GELI_PASSPHRASE" FREEBSD_GELI_PASSPHRASE
+	_require "$_CONF_FREEBSD_INSTALLER_NET" _CONF_FREEBSD_INSTALLER_NET
+	_require "$_CONF_FREEBSD_INSTALLER_DEV" _CONF_FREEBSD_INSTALLER_DEV
+	_require "$_CONF_FREEBSD_INSTALLER_DEV_NAME" _CONF_FREEBSD_INSTALLER_DEV_NAME
+	_require "$_CONF_FREEBSD_INSTALLER_SYSTEM_GIT" _CONF_FREEBSD_INSTALLER_SYSTEM_GIT
+	_require "$_CONF_FREEBSD_INSTALLER_SYSTEM_REF" _CONF_FREEBSD_INSTALLER_SYSTEM_REF
+	_require "$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME" _CONF_FREEBSD_INSTALLER_SYSTEM_NAME
+	_require "$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE" _CONF_FREEBSD_INSTALLER_PACKAGE_CACHE
+	ifconfig $_CONF_FREEBSD_INSTALLER_NET 2>&1 >/dev/null
+	[ "$?" -gt "0" ] && _ERROR "$_CONF_FREEBSD_INSTALLER_NET does not appear to exist"
+	local incorrect_prefix=$(printf '%s' "$_CONF_FREEBSD_INSTALLER_DEV_NAME" | grep -c ^z_)
+	[ "$incorrect_prefix" -gt "0" ] && _CONF_FREEBSD_INSTALLER_DEV_NAME=$(printf '%s' "$_CONF_FREEBSD_INSTALLER_DEV_NAME" | sed -e "s/^z_//")
+}
+_net() {
+	ifconfig $_CONF_FREEBSD_INSTALLER_NET up
+	killall dhclient 2>/dev/null
+	dhclient $_CONF_FREEBSD_INSTALLER_NET >/dev/null 2>&1 || _ERROR "Unable to bring up $_CONF_FREEBSD_INSTALLER_NET"
+	mkdir -p /tmp/bsdinstall_etc
+	resolvconf -u
+}
+_determine_network_interface() {
+	[ -n "$_CONF_FREEBSD_INSTALLER_NET" ] && return
+	_CONF_FREEBSD_INSTALLER_NET=$(ifconfig -l | tr ' ' '\n' | grep -v ^lo | grep -v ^pf)
+}
+_setup() {
+	_INSTALLATION_PATH=$(_MKTEMP_OPTIONS=d _mktemp)
+	_INSTALLATION_SCRIPT=$_INSTALLATION_PATH/bsdinstall.script
+	PARTITIONS=$_CONF_FREEBSD_INSTALLER_DEV
+	[ -z "$ZFSBOOT_POOL_NAME" ] && ZFSBOOT_POOL_NAME=z_${_CONF_FREEBSD_INSTALLER_DEV_NAME}
+	ZFSBOOT_DISKS=${_CONF_FREEBSD_INSTALLER_DEV}
+	IN_CHROOT=1
+	env | $_CONF_GNU_GREP -P '[_A-Z0-9]{3,}=".*"' | $_CONF_GNU_GREP -Pv '(^_REQUIRED_APP_CONF=.*)' | _sed_remove_nonprintable_characters | sed -e 's/^/export /' -e 's/=/="/' -e 's/$/"/' >>$_INSTALLATION_SCRIPT
+}
+_setup_dev_name_using_map() {
+	[ -z "$_CONF_FREEBSD_INSTALLER_DEV_NAME_MAP" ] && return 1
+	local device_serial_number=$(geom disk list $_CONF_FREEBSD_INSTALLER_DEV | grep ident | awk {'print$2'})
+	local device_serial_number_entry
+	local device_serial_number_entry_key
+	local device_serial_number_entry_value
+	for device_serial_number_entry in $(printf '%s\n' $_CONF_FREEBSD_INSTALLER_DEV_NAME_MAP); do
+		device_serial_number_entry_key=${device_serial_number_entry%%:*}
+		device_serial_number_entry_value=${device_serial_number_entry#*:}
+		if [ "$device_serial_number_entry_key" = "$device_serial_number" ]; then
+			ZFSBOOT_POOL_NAME=z_${device_serial_number_entry_value}
+			_CONF_FREEBSD_INSTALLER_DEV_NAME=$device_serial_number_entry_value
+			_INFO "Using $_CONF_FREEBSD_INSTALLER_DEV [$ZFSBOOT_POOL_NAME|$_CONF_FREEBSD_INSTALLER_DEV_NAME]"
+			_setup_check_if_failing_dev $device_serial_number_entry_value
+			return
+		fi
+	done
+}
+_setup_check_if_failing_dev() {
+	[ -z "$_CONF_FREEBSD_INSTALLER_FAILING_DEVS" ] && return
+	local failing_dev
+	local failing_dev_id
+	for failing_dev in $(printf '%s\n' $_CONF_FREEBSD_INSTALLER_FAILING_DEVS); do
+		failing_dev_id=$(printf '%s' $failing_dev | sed -e 's/:.*$//')
+		if [ "$_CONF_FREEBSD_INSTALLER_DEV" == "$failing_dev_id" ]; then
+			_WARN "Installing to a device marked as failing: $failing_dev"
+			return 1
+		fi
+	done
+}
+_ssh_keys() {
+	_SSH_KEY=/root/.ssh/id_ed25519
+	ssh-keygen -R $_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE
+}
+_PACKAGE_UPDATE() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS upgrade $_PACKAGE_OPTIONS $@
+	_sudo pkg $_PKG_OPTIONS autoremove $_PACKAGE_OPTIONS $@
+}
+_PACKAGE_INSTALL_DO() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS install $_PACKAGE_OPTIONS $@
+}
+_PACKAGE_UNINSTALL() {
+	_PACKAGE_BOOTSTRAP
+	_sudo pkg $_PKG_OPTIONS delete $_PACKAGE_OPTIONS $@
+}
+_PACKAGE_IS_INSTALLED() {
+	_PACKAGE_BOOTSTRAP
+	pkg $_PKG_OPTIONS _INFO -e $1 2>/dev/null
+}
+_PACKAGE_BOOTSTRAP() {
+	[ $_PKG_BOOTSTRAPPED ] && return
+	ASSUME_ALWAYS_YES=yes
+	_PKG_BOOTSTRAPPED=1
+	if [ -n "$_ROOT" ] && [ "$_ROOT" != "/" ]; then
+		_package_cache_already_mounted || _package_cache_mount
+		_PKG_OPTIONS="-r $_ROOT"
+	fi
+	_package_enable_proxy
+	_sudo pkg $_PKG_OPTIONS update -q
+}
+_package_cache_already_mounted() {
+	mount | awk {'print$3'} | grep -q "$_ROOT/var/cache/pkg$"
+}
+_package_cache_mount() {
+	[ -e /sbin/mount_nullfs ] || return 1
+	[ -e /var/cache/pkg ] || return 1
+	_sudo mkdir -p $_ROOT/var/cache/pkg
+	_INFO "Mounting host's package cache"
+	_sudo mount -t nullfs /var/cache/pkg $_ROOT/var/cache/pkg || {
+		_WARN "Error mounting host's package cache"
+		_WARN "pkg cache mounts: $(mount | awk {'print$3'} | grep \"^$_ROOT/var/cache/pkg$\")"
+		_WARN "mounts: $(mount | awk {'print$3'})"
+		_WARN "/var/cache/pkg:"
+		return 1
+	}
+	_defer _package_cache_umount
+	_INFO "Mounted host's package cache"
+}
+_package_cache_umount() {
+	umount $_ROOT/var/cache/pkg
+}
+__PACKAGE_BOOTSTRAP_IS_PACKAGE_AVAILABLE() {
+	return 0
+}
+_package_enable_proxy() {
+	[ -z "$http_proxy" ] && return 1
+	[ $_PKG_PROXY_ENABLED ] && return 2
+	_PKG_PROXY_ENABLED=1
+	_defer _package_disable_proxy
+	_WARN "[install] Configuring pkg to use an HTTP proxy: $http_proxy"
+	local _updated_package_conf=$(_mktemp)
+	if [ -e $_ROOT/usr/local/etc/pkg.conf ]; then
+		grep -v '^pkg_env' $_ROOT/usr/local/etc/pkg.conf >$_updated_package_conf
+		mv $_updated_package_conf $_ROOT/usr/local/etc/pkg.conf
+	fi
+	mkdir -p $_ROOT/usr/local/etc
+	printf 'pkg_env: { http_proxy: "%s"}\n' "$http_proxy" >>$_ROOT/usr/local/etc/pkg.conf
+}
+_package_disable_proxy() {
+	[ -z "$http_proxy" ] && return 1
+	unset _PKG_PROXY_ENABLED
+	_WARN "[freebsd-installer] Disabling HTTP proxy: $http_proxy"
+	$_CONF_GNU_SED -i "s/^pkg_env/#pkg_env/" $_ROOT/usr/local/etc/pkg.conf
+}
+_require_file() {
+	_require "$1" filename _require_file
+	local level=_ERROR
+	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+	if [ ! -e $1 ]; then
+		$level "File: $1 does not exist | $2"
+		return 1
+	fi
+}
+_has_contents() {
+	_require_file "$1" "_has_contents:$1"
+	[ $(_sudo wc -l <$1) -gt 0 ] && return 0
+	return 1
+}
+_APP_IS_FILE=1
+_APP() {
+	local app
+	for app in $@; do
+		_PRESERVE_LOG=1 _CHILD=1 app-install $app
+	done
+}
+_BOOT_LOADER_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_key_value /boot/loader.conf {} sysctl ;"
+_BOOT_LOADER_SUPPORTS_JAILS=1
+_BOOT_LOADER_POST() {
+	[ -z "$_IN_JAIL" ] && return 1
+	_WARN "Moving configuration to /tmp/jail/boot_loader to be picked up by host"
+	mkdir -p /tmp/jail
+	mv /boot/loader.conf /tmp/jail/boot_loader
+}
+_BOOT_LOADER_JAILS() {
+	_DETAIL "Appending jail boot loader confs"
+	local jail_mountpoint
+	for jail_mountpoint in $(_jail_mount_points); do
+		local boot_loader_jail_conf=$jail_mountpoint/tmp/jail/boot_loader
+		if [ -e $boot_loader_jail_conf ]; then
+			_DETAIL "Appending jail boot loader conf: $jail_mountpoint"
+			printf '\n\n# %s jail boot_loader configuration\n' $jail_mountpoint >>/boot/loader.conf
+			cat $boot_loader_jail_conf >>/boot/loader.conf
+		fi
+	done
+}
+_CHMOD() {
+	local chmod_file
+	for chmod_file in $@; do
+		. $chmod_file
+		chmod $options $mode $path
+		unset mode path options
+	done
+}
+_CHOWN() {
+	local chown_file
+	for chown_file in $@; do
+		. $chown_file
+		chown $options $owner:$group $path
+		unset owner group path options
+	done
+}
+_CRONTAB_TYPE=d
+_CRONTAB() {
+	local crontabs_temp_path=$(_MKTEMP_OPTIONS=d _mktemp)
+	local crontab_file
+	local crontab_user_file
+	local crontab_user
+	local crontabs_directory
+	for crontabs_directory in $@; do
+		crontab_user=$(basename $crontabs_directory)
+		crontab_user_file=$crontabs_temp_path/$crontab_user
+		local crontab_path
+		for crontab_path in $(find -s $crontabs_directory -type f); do
+			printf '# %s\n' "$crontab_path" >>$crontab_user_file
+			cat $crontab_path >>$crontab_user_file
+		done
+	done
+	for crontab_user_file in $(find -s $crontabs_temp_path -type f | sort -u); do
+		crontab_user=$(basename $crontab_user_file)
+		_INFO "Updating $crontab_user crontab"
+		_crontab_append $crontab_user $crontab_user_file
+		rm -f $crontab_user_file
+	done
+	unset user
+}
+_CUPS_PRINTER() {
+	local cups_printer_conf
+	for cups_printer_conf in $@; do
+		_cups_printer_add $cups_printer_conf
+	done
+}
+_cups_printer_add() {
+	_cups_printer_exists $1 || {
+		_INFO "Adding $1"
+		cat $1 >>/usr/local/etc/cups/printers.conf
+	}
+}
+_cups_printer_exists() {
+	[ ! -e /usr/local/etc/cups/printers.conf ] && return 1
+	local printer_uuid=$(grep ^UUID $1 | sed -e 's/UUID urn:uuid://')
+	if [ $(grep -c $printer_uuid /usr/local/etc/cups/printers.conf) -eq 0 ]; then
+		return 1
+	fi
+	_WARN "Printer ($printer_uuid) already exists"
+	return 0
+}
+_DOWNLOAD() {
+	local download_conf
+	for download_conf in $@; do
+		_do_download $download_conf
+	done
+}
+_do_download() {
+	mkdir -p /tmp/downloads
+	. $1
+	_download $uri
+	_OUTPUT=/tmp/downloads/$(basename $_DOWNLOADED_FILE)
+	cp $_DOWNLOADED_FILE $_OUTPUT
+	if [ -n "$signature" ]; then
+		sha256 -c $signature $_OUTPUT 2>/dev/null
+		if [ $? -eq 0 ]; then
+			printf '\tOK\n'
+		else
+			printf '\tFAIL\n'
+		fi
+	fi
+	_extract $_OUTPUT
+}
+_FILE_TYPE=d
+_FILE_PATH='file'
+_FILE_EXEC="rsync -lmrt {}/ / ;"
+_FSTAB() {
+	local fstab
+	local patch_name
+	for fstab in $@; do
+		patch_name=$(_module_get_patch_name $fstab)
+		printf '# %s\n' "$patch_name" >>/etc/fstab
+		cat $fstab >>/etc/fstab
+		printf '\n' >>/etc/fstab
+	done
+}
+_GO_IS_FILE=1
+_GO() {
+	_GO_BOOTSTRAP
+	_GO_INSTALL "$@"
+}
+_GROUP() {
+	local group_conf
+	for group_conf in $@; do
+		_group_add $group_conf
+	done
+}
+_group_add() {
+	. $1
+	_DETAIL " add group: $1 $groupName $gid"
+	pw groupadd -n $groupName -g $gid
+	unset groupName gid
+}
+_JAIL_JAIL=0
+_JAIL_OPTIONS='-name *.jail'
+_JAIL_EXEC='jail-setup {} ;'
+_JAIL_PRE() {
+	[ -e $ZFSBOOT_POOL_NAME/jails ] && return 1
+	_jail_init
+	_jail_init_networking
+	_jail_init_ssh
+	_jail_init_dns
+	_jail_init_proxy
+}
+_jail_init() {
+	_JAIL_ZFS_DATASET=$ZFSBOOT_POOL_NAME/jails
+	zfs list $_JAIL_ZFS_DATASET >/dev/null 2>&1
+	[ $? -gt 0 ] && zfs create $_JAIL_ZFS_DATASET
+	zfs set mountpoint=/jails $_JAIL_ZFS_DATASET
+	_JAIL_ZFS_MOUNTPOINT=$(zfs list -H -o mountpoint $_JAIL_ZFS_DATASET)
+	_JAIL_ZFS_MOUNTPOINT_SED_SAFE=$(_sed_safe $_JAIL_ZFS_MOUNTPOINT)
+	rm -f /etc/jail.conf /etc/jail.conf.d/*
+	sysrc -f /etc/rc.conf jail_enable=YES
+	_ARCHITECTURE=$(sysctl -a | grep -i 'hw.machine_arch' | awk '{print$2}')
+	_SYSTEM_VERSION=$(uname -r | sed -e "s/\-p.*//")
+	if [ ! -e $_JAIL_ZFS_MOUNTPOINT/base.txz ]; then
+		if [ ! -e /usr/freebsd-dist/base.txz ]; then
+			fetch https://ftp.freebsd.org/pub/FreeBSD/releases/$_ARCHITECTURE/$_ARCHITECTURE/$_SYSTEM_VERSION/base.txz -o $_JAIL_ZFS_MOUNTPOINT/base.txz
+		else
+			cp /usr/freebsd-dist/base.txz $_JAIL_ZFS_MOUNTPOINT/base.txz
+		fi
+	fi
+	_PACKAGE_INSTALL unbound tinyproxy || _ERROR "Error setting up jail proxy"
+}
+_jail_init_networking() {
+	ifconfig lo1 create
+	ifconfig lo1 $_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP netmask $_CONF_FREEBSD_INSTALLER_JAIL_SUBNET up
+}
+_jail_init_ssh() {
+	printf 'Port %s\n' "$_CONF_FREEBSD_INSTALLER_JAIL_SSH_HOST_PORT" >>/etc/ssh/sshd_config
+	service sshd onestart
+	_DEBUG "Appending SSH key to authorized keys"
+	cat ~/.ssh/id_*.pub >>~/.ssh/authorized_keys
+	chmod 600 ~/.ssh/authorized_keys
+	mkdir -p ~/.ssh/socket
+	chmod 700 ~/.ssh/socket
+}
+_jail_init_dns() {
+	_UPSTREAM_DNS_SERVER=$(grep nameserver /etc/resolv.conf | cut -f2 -d ' ')
+	printf 'server:\n' >/usr/local/etc/unbound/unbound.conf
+	printf '\tinterface: %s\n' "$_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP" >>/usr/local/etc/unbound/unbound.conf
+	printf '\taccess-control: %s allow\n' $_CONF_FREEBSD_INSTALLER_JAIL_ACCESS_NETWORK >>/usr/local/etc/unbound/unbound.conf
+	printf 'forward-zone:\n' >>/usr/local/etc/unbound/unbound.conf
+	printf '\tname: "."\n' >>/usr/local/etc/unbound/unbound.conf
+	printf '\tforward-addr: %s\n' "$_UPSTREAM_DNS_SERVER" >>/usr/local/etc/unbound/unbound.conf
+	_WARN "Using $_UPSTREAM_DNS_SERVER as the upstream DNS server"
+	service unbound onestart
+}
+_jail_init_proxy() {
+	printf 'Allow %s\n' $_CONF_FREEBSD_INSTALLER_JAIL_ACCESS_NETWORK >>/usr/local/etc/tinyproxy.conf
+	printf 'upstream none "."\n' >>/usr/local/etc/tinyproxy.conf
+	service tinyproxy onestart
+	http_proxy=$_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP:$_CONF_FREEBSD_INSTALLER_JAIL_PROXY_PORT
+	https_proxy=$_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP:$_CONF_FREEBSD_INSTALLER_JAIL_PROXY_PORT
+}
+_JAIL_POST() {
+	unset http_proxy https_proxy
+	service sshd onestop
+	service tinyproxy onestop
+	service unbound onestop
+	_PACKAGE_UNINSTALL unbound tinyproxy
+	rm -rf /usr/local/etc/unbound
+	rm -rf /usr/local/etc/tinyproxy.conf
+	rm -f /var/log/tinyproxy.log
+	rmuser -y unbound
+	$_CONF_GNU_SED -i 's/^Port/# Port/' /etc/ssh/sshd_config
+	unset _JAIL_ZFS_DATASET _JAIL_ZFS_MOUNTPOINT _JAIL_ZFS_MOUNTPOINT_SED_SAFE
+}
+_jail_mount_points() {
+	zfs list -H | awk {'print$5'} | grep jails | grep -v jails$
+}
+__KERNEL_TYPE=d
+__KERNEL_PATH=_kernel
+__KERNEL() {
+	_require_file "$1"
+	__kernel_source
+	printf '# build a kernel targetted for this hardware only\nCPUTYPE?=native\n\n' >>/etc/make.conf
+	__kernel_modules_conf $1
+	__kernel_kernel_conf $1
+	__kernel_build
+	$_CONF_GNU_SED -i "s/Components src world kernel/Components src world/" /etc/freebsd-update.conf
+	_INFO "kernel build complete"
+}
+__kernel_source() {
+	_SYSTEM_VERSION=$(uname -r | sed -e "s/\-.*//")
+	_SYSTEM_ARCHITECTURE=$(uname -m)
+	_SYSTEM_CONFIGURATION=/usr/src/sys/$_SYSTEM_ARCHITECTURE/conf
+	if [ ! -e $_SYSTEM_CONFIGURATION ]; then
+		git clone -b releng/$_SYSTEM_VERSION --depth 1 https://git.freebsd.org/src.git /usr/src
+	fi
+}
+__kernel_modules_conf() {
+	if [ -e $1/modules ]; then
+		grep -cq cpuctl $1/modules || {
+			_WARN "Enabling CPU microcode update support by including cpuctl as a kernel module"
+			printf 'cpuctl\n' >>$1/modules
+		}
+		printf 'MODULES_OVERRIDE=%s\n\n' "$($_CONF_GNU_GREP -Pvh '(^$|^#)' $1/modules | tr '\n' ' ')" >>/etc/make.conf
+	fi
+}
+__kernel_kernel_conf() {
+	cp $1/kernel $_SYSTEM_CONFIGURATION/custom
+}
+__kernel_build() {
+	mkdir -p /tmp/kernel-build
+	_INFO "Building $_SYSTEM_ARCHITECTURE kernel"
+	cd /usr/src
+	__kernel_build_do build
+	__kernel_build_do install
+	_kernel_output
+}
+__kernel_build_do() {
+	make ${1}kernel KERNCONF=custom >/tmp/kernel-build/$1.out 2>/tmp/kernel-build/$1.err || {
+		_kernel_output $1
+		return 2
+	}
+}
+_kernel_output() {
+	if [ $# -gt 0 ]; then
+		_WARN "$1 kernel failed"
+		cat /tmp/kernel-build/$1.out /tmp/kernel-build/$1.err
+	fi
+}
+_KERNEL_TYPE=d
+_KERNEL_PATH=kernel
+_KERNEL_SUPPORTS_JAILS=1
+_KERNEL() {
+	if [ -z "$_IN_JAIL" ]; then
+		_KERNEL_PATCH_PATH=$_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME/patches/physical/kernel-auto-generated.patch/_kernel _kernel_append "$@"
+	else
+		_KERNEL_PATCH_PATH="/tmp/jail/kernel" _kernel_append "$@"
+	fi
+}
+_KERNEL_JAILS() {
+	_DETAIL "Processing jail kernel configurations"
+	local jail_mountpoint
+	for jail_mountpoint in $(_jail_mount_points); do
+		local kernel_jail_conf=$jail_mountpoint/tmp/jail/kernel
+		_KERNEL_PATCH_PATH=$_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME/patches/physical/kernel-auto-generated.patch/_kernel _kernel_append $kernel_jail_conf
+	done
+}
+_kernel_append() {
+	mkdir -p $_KERNEL_PATCH_PATH
+	_DETAIL "Appending kernel conf to: $_KERNEL_PATCH_PATH"
+	find "$@" -type f -path '*/kernel/kernel' -exec $_CONF_GNU_GREP -Pvh '(^#|^$)' {} + >>$_KERNEL_PATCH_PATH/kernel 2>/dev/null
+	find "$@" -type f -path '*/kernel/modules' -exec $_CONF_GNU_GREP -Pvh '(^#|^$)' {} + >>$_KERNEL_PATCH_PATH/modules 2>/dev/null
+}
+_LINK() {
+	local link_conf
+	for link_conf in $@; do
+		_link_do $link_conf
+	done
+}
+_link_do() {
+	. $1
+	for _TARGET in $targets; do
+		_DETAIL "ln -sf $path -> $_TARGET"
+		local parent=$(dirname $_TARGET)
+		if [ ! -e $path ]; then
+			_WARN "$path does NOT exist"
+			continue
+		elif [ ! -e $parent ]; then
+			mkdir -p $parent
+		fi
+		ln -sf $path $_TARGET
+	done
+	unset _TARGET path targets
+}
+_NPM_IS_FILE=1
+_NPM() {
+	_NPM_INSTALL $@
+}
+_PACKAGE_IS_FILE=1
+_PACKAGE() {
+	[ $# -eq 0 ] && _ERROR 'No packages'
+	_PACKAGE_OPTIONS="-y" _CONF_INSTALL_STEP_TIMEOUT=$_CONF_FREEBSD_INSTALLER_PACKAGE_TIMEOUT _PACKAGE_INSTALL "$@"
+}
+_PERIODIC_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_key_value /etc/periodic.conf {} sysrc ;"
+_PF_ANCHOR_SCHEDULE_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_pf_anchor_schedule {} ;"
+_PF_TABLE_SCHEDULE_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_pf_table_schedule {} ;"
+_POST_RUN() {
+	local post_run_conf
+	for post_run_conf in $@; do
+		cd $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME
+		. $post_run_conf
+	done
+}
+_PYPI_IS_FILE=1
+_PYPI() {
+	_PYPI_INSTALL "$@"
+}
+_RC_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_key_value /etc/rc.conf {} sysrc ;"
+_RUN() {
+	local run_conf
+	for run_conf in $@; do
+		cd $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME
+		. $run_conf || _WARN "Error running $_CONF_FREEBSD_INSTALLER_SYSTEM_NAME $run_conf"
+	done
+}
+_RUST_IS_FILE=1
+_RUST() {
+	_RUST_INSTALL "$@"
+}
+_SYSCTL_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_key_value /etc/sysctl.conf {} sysctl ;"
+_USER() {
+	_user_bootstrap
+	local user_conf
+	for user_conf in $@; do
+		_BACKUP_SSH=1 _users_add $user_conf
+		unset _CONFIGURATION_INSTALLED _BACKUP_SSH
+	done
+}
+_ZFS_SUPPORTS_JAILS=1
+_ZFS() {
+	local zfs_volume_configuration
+	for zfs_volume_configuration in $@; do
+		if [ -n "$_IN_JAIL" ]; then
+			mkdir -p /tmp/jail/zfs
+			cp $zfs_volume_configuration /tmp/jail/zfs
+			local zfs_volume_configuration_name=$(basename $zfs_volume_configuration)
+			printf '_ZFS_JAILED=1\n' >>/tmp/jail/zfs/$zfs_volume_configuration_name
+			printf '_ZFS_JAIL=%s\n' $_JAIL_NAME >>/tmp/jail/zfs/$zfs_volume_configuration_name
+			printf '_ZFS_VOLUME_NAME=jails/%s/$_ZFS_VOLUME_NAME\n' $_JAIL_NAME >>/tmp/jail/zfs/$zfs_volume_configuration_name
+		else
+			_zfs_restore $zfs_volume_configuration
+			unset _ZFS_DEV_NAME _ZFS_SOURCE_HOST _ZFS_VOLUME_NAME _ZFS_VOLUME_ABORT_CREATE _ZFS_ZAP_SNAP _ZFS_ZAP_TTL _ZFS_ZAP_BACKUP _ZFS_MOUNT_POINT _ZFS_VOLUME
+		fi
+	done
+}
+_ZFS_JAILS() {
+	_DETAIL "Processing jail ZFS configurations"
+	local jail_mountpoint
+	for jail_mountpoint in $(_jail_mount_points); do
+		local zfs_jail_conf=$jail_mountpoint/tmp/jail/zfs
+		if [ -e $zfs_jail_conf ]; then
+			_DETAIL "Processing jail ZFS configuration: $zfs_jail"
+			_ZFS $(find $zfs_jail_conf -type f 2>/dev/null)
+		fi
+	done
+}
+_zfs_restore() {
+	_INFO "_zfs_restore: $1"
+	mkdir -p ~/.ssh/socket
+	chmod 700 ~/.ssh/socket
+	. $1
+	[ -z "$_ZFS_DEV_NAME" ] && {
+		_WARN "_ZFS_DEV_NAME is empty"
+		return 1
+	}
+	[ -z "$_ZFS_SOURCE_HOST" ] && {
+		_WARN "_ZFS_SOURCE_HOST is empty"
+		return 1
+	}
+	[ -z "$_ZFS_VOLUME_NAME" ] && {
+		_WARN "_ZFS_VOLUME_NAME is empty"
+		return 1
+	}
+	_ZFS_VOLUME=${_ZFS_DEV_NAME}/$_ZFS_VOLUME_NAME
+	_ZFS_SOURCE_SNAPSHOT=$(ssh $_ZFS_SOURCE_HOST zfs list -H -t snapshot | grep $_ZFS_VOLUME_NAME@ | grep -v backups | tail -1 | awk {'print$1'})
+	[ -z "$_ZFS_SOURCE_SNAPSHOT" ] && {
+		_WARN "No snapshots available, unable to setup clone: $_ZFS_VOLUME"
+		return 1
+	}
+	_zfs_has_sufficient_space || return 1
+	_INFO "zfs create $_ZFS_VOLUME"
+	zfs create -p $_ZFS_VOLUME
+	[ -n "$_ZFS_MOUNT_POINT" ] && zfs set mountpoint=$_ZFS_MOUNT_POINT $_ZFS_VOLUME
+	[ -n "$_ZFS_JAILED" ] && zfs set jailed=on $_ZFS_VOLUME
+	zfs set readonly=on $_ZFS_VOLUME
+	ssh $_ZFS_SOURCE_HOST zfs send -v $_ZFS_SOURCE_SNAPSHOT | zfs receive -F $_ZFS_VOLUME
+	zfs allow -g wheel bookmark,diff,hold,send,snapshot $_ZFS_VOLUME
+	if [ -n "$_ZFS_SNAPSHOT_USER" ]; then
+		mkdir -p $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/
+		printf 'zfs allow -u %s bookmark,diff,hold,send,snapshot %s' $_ZFS_SNAPSHOT_USER $_ZFS_VOLUME \
+			>>$_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/allow-zfs-snapshot-user
+		chmod +x $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/allow-zfs-snapshot-user
+	fi
+	_zfs_zap
+	_zfs_rclone
+	_INFO "zfs create $_ZFS_VOLUME - done"
+}
+_zfs_has_sufficient_space() {
+	_ZFS_SNAPSHOT_SPACE=$(ssh $_ZFS_SOURCE_HOST zfs list -t snapshot $_ZFS_SOURCE_SNAPSHOT | awk '{print$4}' | grep "G$" | sed -e "s/G$//")
+	_ZFS_SNAPSHOT_REQUIRED_SPACE=$(printf '2 * %s\n' "$_ZFS_SNAPSHOT_SPACE" | bc)
+	_ZPOOL_FREE_SPACE=$(zpool list -H $_ZFS_DEV_NAME | awk '{print$4}' | grep "G$" | sed -e "s/G$//")
+	if [ $(printf '%s < %s\n' "$_ZFS_SNAPSHOT_REQUIRED_SPACE" "$_ZPOOL_FREE_SPACE" | bc) -eq 0 ]; then
+		_WARN "Insufficient free space: $_ZFS_VOLUME_NAME - $_ZFS_SNAPSHOT_SPACE $_ZFS_SNAPSHOT_REQUIRED_SPACE $_ZPOOL_FREE_SPACE"
+		return 1
+	fi
+	_INFO "Setting up $_ZFS_VOLUME_NAME - $_ZFS_SNAPSHOT_SPACE $_ZFS_SNAPSHOT_REQUIRED_SPACE $_ZPOOL_FREE_SPACE"
+}
+_SETUP_CONFIGURE() {
+	local configure_patch configure_patch_path configure_status
+	for configure_patch in $(find $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME -type f -name configure); do
+		configure_patch_path=$(dirname $configure_patch)
+		$configure_patch
+		configure_status=$?
+		if [ $configure_status -eq 0 ]; then
+			_DETAIL "Keeping $configure_patch"
+		else
+			_configure_remove_patch $configure_status $configure_patch_path
+		fi
+	done
+}
+_configure_remove_patch() {
+	_WARN "Configure returned $1 - disabling $2"
+	rm -rf $2
+}
+_GELI_JAIL=0
+_SETUP_GELI() {
+	[ -z "$_CONF_FREEBSD_INSTALLER_GELI_GIT" ] && {
+		_WARN "_CONF_FREEBSD_INSTALLER_GELI_GIT is not configured, not backing up GELI metadata - $geli_device_file"
+		return 1
+	}
+	local geli_device=$FREEBSD_ZFS_DISK
+	local geli_device_file=/dev/$geli_device
+	[ ! -e $geli_device_file ] && {
+		_WARN "Unable to backup GELI metadata - $geli_device_file"
+		return 2
+	}
+	_INFO "Backing up GELI metadata - $geli_device_file"
+	local geli_workspace=$(_MKTEMP_OPTIONS=d _mktemp)
+	git clone $_CONF_FREEBSD_INSTALLER_GELI_GIT $geli_workspace
+	if [ $? -eq 0 ]; then
+		cd $geli_workspace
+		local geli_device_arg=$FREEBSD_RAW_ZFS_DISK
+		mkdir -p $_CONF_FREEBSD_INSTALLER_DEV_NAME/activity
+		geli backup $geli_device_arg $_CONF_FREEBSD_INSTALLER_DEV_NAME/geli
+		_geli_capture_smart_metrics
+		_geli_capture_gpt
+		git config --global user.email "$(whoami)@$(hostname)"
+		git config --global user.name "$(whoami)@$(hostname)"
+		git add $_CONF_FREEBSD_INSTALLER_DEV_NAME
+		git commit $_CONF_FREEBSD_INSTALLER_DEV_NAME -m "$_CONF_FREEBSD_INSTALLER_DEV_NAME - $_CONF_FREEBSD_INSTALLER_SYSTEM_REF - $_CONF_FREEBSD_INSTALLER_SYSTEM_NAME -  $(date)"
+		git push
+	else
+		_WARN "Unable to backup GELI metadata - $geli_device_file - error cloning $_CONF_FREEBSD_INSTALLER_GELI_GIT"
+	fi
+	cd /tmp
+	rm -rf $geli_workspace
+}
+_geli_capture_smart_metrics() {
+	local drive_smart_activity_file=$_CONF_FREEBSD_INSTALLER_DEV_NAME/activity/$(date +%Y/%m/%d-%H.%M.%S)
+	mkdir -p $(dirname $drive_smart_activity_file)
+	smartctl -a /dev/${_CONF_FREEBSD_INSTALLER_DEV} |
+		$_CONF_GNU_GREP -P '^[\s]*[\d]+ [\w-]{3,}' \
+			>$drive_smart_activity_file
+}
+_geli_capture_gpt() {
+	gpart backup $_CONF_FREEBSD_INSTALLER_DEV >$_CONF_FREEBSD_INSTALLER_DEV_NAME/gpart
+}
+_SETUP_GIT() {
+	_SYSTEM_REPOSITORY_PATH=/tmp/system
+	mkdir -p $_CONF_FREEBSD_INSTALLER_CONFIGURATION_DIRECTORY $_CONF_FREEBSD_INSTALLER_LOG_DIRECTORY $(dirname $_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION)
+	[ -n "$_IN_JAIL" ] && {
+		_HOST_IP=$_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP
+		_SSH_HOST_PORT=$_CONF_FREEBSD_INSTALLER_JAIL_SSH_HOST_PORT
+		_PACKAGE_CACHE=$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE
+		_GIT_MIRROR=$_CONF_FREEBSD_INSTALLER_GIT_MIRROR
+	}
+	_prepare_ssh_conf $HOME $USER
+	_prepare_etc_hosts
+	_git_setup $_CONF_FREEBSD_INSTALLER_SYSTEM_GIT $_SYSTEM_REPOSITORY_PATH $_CONF_FREEBSD_INSTALLER_SYSTEM_NAME -b $_CONF_FREEBSD_INSTALLER_SYSTEM_REF
+	cd $_SYSTEM_REPOSITORY_PATH/$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME
+	_git_write_system
+	_SYSTEM_HASH=$(git rev-parse HEAD)
+	_defer _git_cleanup
+}
+_git_write_system() {
+	printf '%s\n' $_CONF_FREEBSD_INSTALLER_SYSTEM_NAME >$_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION
+	git branch --no-color --show-current >>$_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION
+	printf '%s\n' $_CONF_FREEBSD_INSTALLER_SYSTEM_GIT >>$_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION
+	git ls-remote $_CONF_FREEBSD_INSTALLER_SYSTEM_GIT -b $_CONF_FREEBSD_INSTALLER_SYSTEM_BRANCH | grep "ref/heads/$_CONF_FREEBSD_INSTALLER_SYSTEM_BRANCH" | awk {'print$1'} >>$_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION
+	printf 'Provision Date: %s\n' "$(date)" >>$_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION
+}
+_git_setup() {
+	local git_remote_url=$1
+	shift
+	local git_path=$1
+	shift
+	local system_name=$1
+	shift
+	git clone $git_remote_url "$@" $git_path || _ERROR "Error cloning $git_remote_url [$@] | $git_path | $system_name"
+	cd $git_path/$system_name || _ERROR "Unable to change to $git_path/$system_name"
+	_git_handle_imports
+}
+_git_handle_imports() {
+	[ -e import ] || {
+		_DETAIL "No imports detected - $PWD"
+		return 1
+	}
+	_DETAIL "Setting up import - $PWD"
+	local git_import_contents=$(head -1 import)
+	local git_import_name
+	_git_is_git_remote "$git_import_contents"
+	if [ $? -eq 0 ]; then
+		local git_import_remote=$(printf '%s' "$git_import_contents" | cut -f1 -d'|')
+		git_import_name=$(printf '%s' "$git_import_contents" | cut -f2 -d'|')
+		local git_import_ref=$(printf '%s' "$git_import_contents" | cut -f3 -d'|')
+		_git_setup $git_import_remote $git_import_name $git_import_name -b $git_import_ref
+	else
+		_require_file ../$git_import_contents
+		cp -R ../$git_import_contents .
+		cd $git_import_contents
+		_git_handle_imports
+	fi
+}
+_git_is_git_remote() {
+	printf '%s' "$1" | grep -cq ':/'
+}
+_prepare_etc_hosts() {
+	if [ "$_CONF_FREEBSD_INSTALLER_GIT_MIRROR" = "$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE" ]; then
+		printf '%s git freebsd-package-cache\n' "$_CONF_FREEBSD_INSTALLER_GIT_MIRROR" >>/etc/hosts
+	else
+		printf '%s git\n' "$_CONF_FREEBSD_INSTALLER_GIT_MIRROR" >>/etc/hosts
+		printf '%s freebsd-package-cache\n' "$_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE" >>/etc/hosts
+	fi
+}
+_git_cleanup() {
+	if [ -n "$_SYSTEM_REPOSITORY_PATH" ]; then
+		cd /tmp
+		rm -rf $_SYSTEM_REPOSITORY_PATH
+	fi
+	[ -n "$_INSTALLATION_PATH" ] && rm -rf $_INSTALLATION_PATH
+}
+_SETUP_HOSTNAME() {
+	if [ -n "$_JAIL_NAME" ]; then
+		_FREEBSD_INSTALL_HOSTNAME=$_JAIL_NAME
+	else
+		_FREEBSD_INSTALL_HOSTNAME=$(_hostname_from_branch)-$(_hostname_from_serial_number)
+	fi
+	printf 'hostname=%s\n' "$_FREEBSD_INSTALL_HOSTNAME" >>/etc/rc.conf.local
+}
+_hostname_from_branch() {
+	printf '%s@%s' "$_CONF_FREEBSD_INSTALLER_SYSTEM_NAME" "$_CONF_FREEBSD_INSTALLER_SYSTEM_REF" | sed -e 's/^.*\///'
+}
+_hostname_from_serial_number() {
+	dmidecode 2>/dev/null | grep 'Base Board Information' -A10 | grep 'Serial Number' | cut -f2 -d':' |
+		sed -e 's/^ //' -e 's/\//./g' -e 's/^\.//' -e 's/\.$//'
+}
+_MICROCODE_JAIL=0
+_SETUP_MICROCODE() {
+	_PACKAGE_INSTALL $_CONF_FREEBSD_INSTALLER_REQUIRED_MICROCODE_PACKAGES || {
+		_ERROR "Error installing $_CONF_FREEBSD_INSTALLER_REQUIRED_MICROCODE_PACKAGES"
+		return 1
+	}
+	_enable_cpu_microcode_patches
+	_patch_microcode
+}
+_enable_cpu_microcode_patches() {
+	local cpu_vendor=intel
+	if [ $(sysctl -a | egrep -i 'hw.model' | grep -ic amd) -gt 0 ]; then
+		cpu_vendor=amd
+	fi
+	printf 'microcode_update_enable="YES"\n' >>/etc/rc.conf
+	printf '# freebsd-installer - microcode updates\n' >>/boot/loader.conf
+	printf 'cpu_microcode_load="YES"\n' >>/boot/loader.conf
+	printf 'cpu_microcode_name="/boot/firmware/%s-ucode.bin"\n' "$cpu_vendor" >>/boot/loader.conf
+	_INFO "installed support for patching CPU microcode ($cpu_vendor)"
+}
+_patch_microcode() {
+	_WARN "Patching CPU microcode"
+	service microcode_update start
+}
+_SETUP_PACKAGES() {
+	local packages=$_CONF_FREEBSD_INSTALLER_REQUIRED_PACKAGES
+	if [ -z "$_IN_JAIL" ]; then
+		packages="$_CONF_FREEBSD_INSTALLER_REQUIRED_BASE_PACKAGES $packages"
+	fi
+	_PACKAGE_INSTALL $packages || {
+		_ERROR "Error installing $packages"
+		return 1
+	}
+	_INFO "Installed: $packages"
+}
+_SWAP_JAIL=0
+_SETUP_SWAP() {
+	local swap_device=$(grep swap /etc/fstab 2>/dev/null | awk {'print$1'})
+	[ -n "$swap_device" ] && {
+		_DETAIL "Activating swap: $swap_device"
+		swapon $swap_device
+		return 0
+	}
+	_WARN "No swap detected"
+}
+_UPDATE_JAIL=0
+_SETUP_UPDATE() {
+	_freebsd_update
+}
+_crontab_get() {
+	_require "$1" "Crontab User"
+	_require "$2" "Crontab Filename to write to"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_GET "$@"
+}
+_crontab_append() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_has_contents $2 || return 1
+	local current_crontab=$(_SUDO_USER=$1 _mktemp)
+	_crontab_get $1 $current_crontab
+	_sudo cat $2 | _sudo tee -a $current_crontab >/dev/null 2>&1
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE $1 $current_crontab
+	_sudo rm -f $current_crontab
+}
+_CRONTAB_DEFAULT_CLEAR() {
+	_SUDO_USER=$1 _sudo crontab -f -r 2>/dev/null
+}
+_CRONTAB_DEFAULT_GET() {
+	_SUDO_USER=$1 _sudo crontab -l >$2 2>/dev/null
+}
+_CRONTAB_DEFAULT_WRITE() {
+	_crontab_default_header $1 $2
+	_SUDO_USER=$1 _sudo mkdir -p $HOME/.cache/crontab
+	_SUDO_USER=$1 _sudo crontab $2 || {
+		_WARN "_ERROR writing crontab"
+		_SUDO_USER=$1 _sudo cat $2
+	}
+}
+_crontab_default_header() {
+	if [ -n "$_OPTN_INSTALL_CRONTAB_HEADER" ]; then
+		printf '%s\n\n' "$_OPTN_INSTALL_CRONTAB_HEADER" | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo mv $2.new $2
+	fi
+	_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+	_SUDO_USER=$1 _sudo mv $2.new $2
+}
+_extract() {
+	if [ $# -lt 2 ]; then
+		_WARN "Expecting 2 arguments, source file, and target to extract to"
+		return 1
+	fi
+	_INFO "### Extracting $1"
+	local _extension=$(printf '%s' "$1" | $_CONF_GNU_GREP -Po "\\.(tar\\.gz|tar\\.bz2|tbz2|tgz|zip|tar\\.xz)$")
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] && sudo=_sudo
+	[ -n "$_CLEAN" ] && {
+		$sudo rm -rf $2
+		$sudo mkdir -p $2
+	}
+	case $_extension in
+	".tar.gz" | ".tgz" | ".tar.bz2" | ".tbz2" | ".tar.xz")
+		$sudo tar xf $1 -C $2
+		;;
+	".zip")
+		$sudo unzip -q $1 -d $2
+		;;
+	*)
+		_WARN "extension unsupported - $_extension $1"
+		return 2
+		;;
+	esac
+}
+_freebsd_update() {
+	local freebsd_update_configuration_file=$freebsd_root/etc/freebsd-update.conf
+	local freebsd_update_options
+	[ -n "$$freebsd_root" ] && freebsd_update_options="-b $_JAIL_ZFS_MOUNTPOINT/$_JAIL_NAME"
+	grep -qs '^CreateBootEnv yes' $freebsd_update_configuration_file || {
+		printf '# disable creation of boot environments, will be handled automatically via system-maintenance app\n' >>$freebsd_update_configuration_file
+		printf 'CreateBootEnv no\n' >>$freebsd_update_configuration_file
+	}
+	env PAGER=cat freebsd-update $freebsd_update_options "$@" --not-running-from-cron fetch install
+}
+_GO_BOOTSTRAP() {
+	_GO_BOOTSTRAP_IS_GO_AVAILABLE || {
+		_PACKAGE_INSTALL $GO_PACKAGE
+		_GO_BOOTSTRAP_IS_GO_AVAILABLE || GO_DISABLED=1
+	}
+}
+_GO_BOOTSTRAP_IS_GO_AVAILABLE() {
+	which go >/dev/null 2>&1
+}
+_GO_INSTALL() {
+	_GO_BOOTSTRAP
+	GO111MODULE=on GOPATH=$GO_INSTALL_PATH sudo_options="--preserve-env=GO111MODULE,GOPATH" _sudo go install $GO_OPTIONS "$@" || {
+		_WARN "go install failed: $GO_OPTIONS $@"
+		_WARN "  http_proxy: $http_proxy"
+		_WARN "  git  proxy: $(git config --global http.proxy)"
+	}
+}
+_GO_UPDATE() {
+	:
+}
+_GO_UNINSTALL() {
+	_sudo go uninstall "$@"
+}
+_GO_IS_INSTALLED() {
+	return 1
+}
+_GO_IS_FILE() {
+	return 1
+}
+_GO_BOOTSTRAP_POST() {
+	[ -e /usr/local/bin/go123 ] && [ ! -e /usr/local/bin/go ] && {
+		ln -s /usr/local/bin/go123 /usr/local/bin/go
+		ln -s /usr/local/bin/gofmt123 /usr/local/bin/gofmt
+	}
+}
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
+	}
+	_NPM_SETUP_PROXY
+}
+_NPM_BOOTSTRAP_IS_NPM_AVAILABLE() {
+	which npm >/dev/null 2>&1
+}
+_NPM_INSTALL() {
+	local npm_package
+	for npm_package in "$@"; do
+		_NPM_IS_INSTALLED $npm_package || _sudo npm install -s -g "$npm_package"
+	done
+}
+_NPM_UNINSTALL() {
+	_sudo npm uninstall -s -g "$@"
+}
+_NPM_IS_INSTALLED() {
+	npm list -g $1 >/dev/null
+}
+_NPM_IS_FILE() {
+	return 1
+}
+_NPM_SETUP_PROXY() {
+	if [ -n "$http_proxy" ]; then
+		_WARN "Configuring NPM to use an HTTP proxy: $http_proxy"
+		npm config set proxy $http_proxy
+		npm config set https-proxy $https_proxy
+		_defer _NPM_CLEAR_PROXY
+	fi
+}
+_NPM_CLEAR_PROXY() {
+	_WARN "Reverting NPM HTTP proxy: $http_proxy"
+	npm config rm proxy
+	npm config rm https-proxy
+}
+_PYPI_BOOTSTRAP() {
+	_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || {
+		_PACKAGE_INSTALL $PYPI_PACKAGE
+		_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || PYPI_DISABLED=1
+	}
+}
+_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE() {
+	which pip >/dev/null 2>&1
+}
+_PYPI_INSTALL() {
+	_sudo pip install -U --no-input "$@" >/dev/null
+}
+_PYPI_UNINSTALL() {
+	_sudo pip uninstall -y "$@" >/dev/null
+}
+_PYPI_IS_INSTALLED() {
+	_ERROR "PIP - is installed - NOT IMPLEMENTED"
+}
+_PYPI_IS_FILE() {
+	return 1
+}
+_RUST_BOOTSTRAP() {
+	_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || {
+		_PACKAGE_INSTALL $RUST_PACKAGE
+		_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || RUST_DISABLED=1
+	}
+}
+_RUST_BOOTSTRAP_IS_RUST_AVAILABLE() {
+	which cargo >/dev/null 2>&1
+}
+_RUST_INSTALL() {
+	_sudo cargo install "$@"
+}
+_RUST_UPDATE() {
+	_sudo cargo update "$@"
+}
+_RUST_UNINSTALL() {
+	_sudo cargo uninstall "$@"
+}
+_RUST_IS_INSTALLED() {
+	_ERROR "RUST - is installed - NOT IMPLEMENTED"
+}
+_RUST_IS_FILE() {
+	return 1
+}
+_USER_IS_FILE() {
+	return 0
+}
+_user_bootstrap() {
+	_DETAIL "Bootstrapping user module"
+	_sudo mkdir -p /root/.ssh/socket
+	_sudo chmod -R 700 /root/.ssh/socket
+	app-install configuration
+	_DETAIL "bootstrapped user module"
+}
+_USER_UNINSTALL() {
+	. "$1"
+	_require "$username" "username"
+	rmuser -y $username
+}
+_users_add_argument() {
+	[ -n "$2" ] && user_options="$user_options $1 $2"
+}
+_users_add() {
+	. $1
+	if [ "root" != "$username" ]; then
+		_sudo pw user show $username >/dev/null 2>&1 || {
+			_INFO "### Add User: $1: $username"
+			user_options="-n $username -m"
+			_users_add_argument "-g" "$gid"
+			_users_add_argument "-G" "$grouplist"
+			_users_add_argument "-s" "$shell"
+			_users_add_argument "-u" "$uid"
+			_sudo pw useradd $user_options
+		}
+	else
+		[ -n "$shell" ] && {
+			_INFO "# Setting shell to $shell for root"
+			_sudo chsh -s "$shell"
+		}
+	fi
+	if [ -n "$password" ]; then
+		_INFO "# Setting password for $username"
+		_sudo chpass -p "$password" $username
+	fi
+	_users_configure
+	_users_cleanup
+}
+_users_cleanup() {
+	unset user_options username gid grouplist shell uid password system
+}
+_users_configure() {
+	local user_home=$(grep "^$username:" /etc/passwd | cut -f6 -d':')
+	_prepare_ssh_conf $user_home $username
+	local original_pwd=$PWD
+	cd /tmp
+	if [ -n "$system" ]; then
+		_WARN "$username is a system user, bypassing configuration"
+	else
+		_WARN_ON_ERROR=1 _CHILD=1 _PRESERVE_LOG=1 _SUDO_USER=$username \
+			sudo_options="--preserve-env=_CHILD,_PRESERVE_LOG,_CONF_GIT_MIRROR,_WARN_ON_ERROR,_LOG_TARGET,_BACKUP_SSH,http_proxy,https_proxy -H" \
+			_ _sudo conf restore || _user_configure_debug
+	fi
+	cd $original_pwd
+}
+_user_configure_debug() {
+	_WARN "Error restoring configuration for $username"
+	cat $user_home/.ssh/id_*.pub
+	cat $user_home/.ssh/authorized_keys
+	cat $user_home/.ssh/config
+}
+_download() {
+	mkdir -p $_CONF_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	_DOWNLOADED_FILE=$_CONF_CACHE_PATH/$_cached_filename
+	if [ -e $_DOWNLOADED_FILE ]; then
+		_DETAIL "$1 already downloaded to: $_DOWNLOADED_FILE"
+		return
+	fi
+	if [ -z "$_DOWNLOAD_DISABLED" ]; then
+		_INFO "Downloading $1 -> $_DOWNLOADED_FILE"
+		curl $_CURL_OPTIONS -o $_DOWNLOADED_FILE -s -L "$1"
+	else
+		_continue_if "Please manually download: $1 and place it in $_DOWNLOADED_FILE" "Y/n"
+	fi
+}
+_download_install_file() {
+	_WARN_ON_ERROR=1 _require "$1" "1 (_download_install_file) target filename" && return 1
+	_INFO "Installing $_DOWNLOADED_FILE -> $1"
+	_sudo mkdir -p $(dirname $1)
+	_sudo cp $_DOWNLOADED_FILE $1
+	_sudo chmod 444 $1
+	unset _DOWNLOADED_FILE
+	[ ! -e $1 ] && return 1
+	return 0
+}
+_sed_safe() {
+	printf '%s' $1 | sed -e "s/\//\\\\\//g"
+}
+_prepare_ssh_conf() {
+	_sudo mkdir -p $1/.ssh/socket
+	_sudo chmod 700 $1/.ssh/socket
+	printf 'StrictHostKeyChecking no\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	[ -n "$_HOST_IP" ] && _ssh_init_bastion_host $1
+	if [ -e /tmp/HOST-SSH ]; then
+		_INFO "Copying host ssh -> $1/.ssh"
+		_sudo cp /tmp/HOST-SSH/id* $1/.ssh
+	fi
+	if [ -e /tmp/CONFIG-WALTERJWHITE ]; then
+		_INFO "Copying walterjwhite conf -> $1/.config/walterjwhite"
+		_sudo mkdir -p $1/.config
+		_sudo cp -r /tmp/CONFIG-WALTERJWHITE $1/.config/walterjwhite
+	fi
+	[ "$2" != "root" ] && _sudo chown -R $2:$2 $1
+}
+_ssh_init_bastion_host() {
+	_INFO "Setting up SSH Bastion host: $1"
+	printf 'Host host-proxy\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' Hostname %s\n' "$_HOST_IP" | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host git\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host freebsd-package-cache\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host %s\n' "$_PACKAGE_CACHE" | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	if [ "$_PACKAGE_CACHE" != "$_GIT_MIRROR" ]; then
+		printf 'Host %s\n' "$_GIT_MIRROR" | _sudo tee -a $1/.ssh/config >/dev/null
+		printf ' ProxyJump host-proxy\n' | _sudo tee -a $1/.ssh/config >/dev/null
+		printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	fi
+	_sudo chmod 600 $1/.ssh/config
+}
+_timeout() {
+	local timeout=$1
+	shift
+	local message=$1
+	shift
+	local timeout_units='s'
+	if [ $(printf '%s' "$timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+		unset timeout_units
+	fi
+	local timeout_level=_ERROR
+	[ $_WARN ] && timeout_level=_WARN
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
+	$sudo timeout $_OPTIONS $timeout "$@" || {
+		local error_status=$?
+		local error_message="Other error"
+		if [ $error_status -eq 124 ]; then
+			error_message="Timed Out"
+		fi
+		[ $_TIMEOUT_ERR_FUNCTION ] && $_TIMEOUT_ERR_FUNCTION
+		$timeout_level "_timeout: $error_message: ${timeout}${timeout_units} - $message ($error_status): $sudo timeout $_OPTIONS $timeout $* ($USER)"
+		return $error_status
+	}
+}
+_ZFS_RCLONE_PACKAGE=rclone
+_zfs_rclone() {
+	local rclone_patch_path=patches/zfs-rclone.patch/rclone.post-run
+	mkdir -p $(dirname $rclone_patch_path)
+	if [ -n "$_ZFS_RCLONE_TARGET" ]; then
+		_INFO "Configuring ZFS rclone target: $_ZFS_RCLONE_TARGET on $_ZFS_VOLUME"
+		[ ! -e $rclone_patch_path ] && printf 'pkg install -yq %s\n' $_ZFS_RCLONE_PACKAGE >>$rclone_patch_path
+		zfs set rclone:target=$_ZFS_RCLONE_TARGET $_ZFS_VOLUME
+	fi
+	[ -n "$_ZFS_RCLONE_PATH" ] && zfs set rclone:path=$_ZFS_RCLONE_PATH $_ZFS_VOLUME
+	unset _ZFS_RCLONE_PATH _ZFS_RCLONE_TARGET
+}
+_ZFS_ZAP_PACKAGE=zap
+_zfs_zap() {
+	local zap_patch_path=patches/zfs-zap.patch/zap.post-run
+	mkdir -p $(dirname $zap_patch_path)
+	if [ -n "$_ZFS_ZAP_SNAP" ]; then
+		_WARN "Detected ZFS ZAP, setting up zap"
+		[ ! -e $zap_patch_path ] && printf 'pkg install -yq %s\n' $_ZFS_ZAP_PACKAGE >>$zap_patch_path
+		printf 'zfs allow -u zap bookmark,diff,hold,send,snapshot %s\n' $_ZFS_VOLUME >>$zap_patch_path
+		zfs set zap:snap=on $_ZFS_VOLUME
+	fi
+	[ -n "$_ZFS_ZAP_TTL" ] && zfs set zap:ttl=$_ZFS_ZAP_TTL $_ZFS_VOLUME
+	[ -n "$_ZFS_ZAP_BACKUP" ] && zfs set zap:backup=$_ZFS_ZAP_BACKUP $_ZFS_VOLUME
+	unset _ZFS_ZAP_TTL _ZFS_ZAP_BACKUP _ZFS_ZAP_SNAP
+}
+_include logging platform context wait beep paths net . freebsd-installer
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
+case $_DETECTED_PLATFORM in
+Darwin)
+	_DETECTED_PLATFORM=Apple
+	;;
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
+	;;
+esac
+_PLATFORM="FreeBSD"
+_SUDO_CMD="sudo"
+_TAR_ARGS=" -f - "
+: ${_CONF_GNU_GREP:=/usr/local/bin/ggrep}
+: ${_CONF_GNU_SED:=gsed}
+_PLATFORM_PACKAGES="git gsed gnugrep gtar gawk sudo shuf"
+NPM_PACKAGE="npm"
+RUST_PACKAGE="rust"
+PYPI_DISABLED=1
+PYPI_PACKAGE="python39 py39-pip"
+GO_PACKAGE="go"
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='L32c'}
+: ${_CONF_LOG_BEEP_ALRT:='L32f'}
+: ${_CONF_LOG_BEEP_SCS:='L32a'}
+: ${_CONF_LOG_BEEP_WRN:=''}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='L32ab'}
+: ${_CONF_LOG_SUDO_BEEP_TONE:=L32aL8fL32c}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$_CONF_DATA_PATH/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_FREEBSD_INSTALLER_APP_INSTALL_TIMEOUT:=600}
+: ${FREEBSD_VDEV_TYPE:=stripe}
+: ${ZFSBOOT_BOOT_TYPE:=UEFI}
+: ${ZFSBOOT_PARTITION_SCHEME:=GPT}
+: ${ZFSBOOT_SWAP_SIZE:=0}
+: ${BSDINSTALL_CHROOT:=/mnt}
+: ${FREEBSD_MIRROR_SITE:=http://ftp.freebsd.org}
+: ${FREEBSD_VERSION:=14.2-RELEASE}
+: ${FREEBSD_DISTRIBUTIONS:=base kernel}
+: ${_CONF_FREEBSD_INSTALLER_SYSTEM_BRANCH:=master}
+: ${DISTRIBUTIONS:="kernel.txz base.txz"}
+: ${ZFSBOOT_PARTITION_SCHEME:="GPT"}
+: ${ZFSBOOT_BOOT_TYPE:="BIOS+UEFI"}
+: ${ZFSBOOT_SWAP_ENCRYPTION:=yes}
+: ${ZFSBOOT_SWAP_SIZE:=0}
+: ${ZFSBOOT_GELI_ENCRYPTION:=yes}
+: ${ZFSBOOT_GELI_KEY_FILE:=/boot/encryption.key}
+: ${ZFSBOOT_CONFIRM_LAYOUT:=0}
+: ${nonInteractive:=YES}
+: ${_CONF_FREEBSD_INSTALLER_CONFIGURATION_DIRECTORY:=/usr/local/etc/walterjwhite/system-configuration/status}
+: ${_CONF_FREEBSD_INSTALLER_LOG_DIRECTORY:=/var/log/walterjwhite}
+: ${_CONF_FREEBSD_INSTALLER_SYSTEM_IDENTIFICATION:=/usr/local/etc/walterjwhite/system}
+: ${_CONF_INSTALL_NO_PAGER:=1}
+: ${_CONF_FREEBSD_INSTALLER_PACKAGE_CACHE_PACKAGES:="fusefs-sshfs"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_PACKAGES:="git gnugrep gsed rsync checkrestart sudo dmidecode shuf"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_BASE_PACKAGES:="beadm smartmontools"}
+: ${_CONF_FREEBSD_INSTALLER_REQUIRED_MICROCODE_PACKAGES:="cpu-microcode"}
+: ${_CONF_FREEBSD_INSTALLER_PACKAGE_TIMEOUT:="1800"}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_HOST_IP:=10.0.0.254}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_GUEST_IP:=10.0.0.1}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_ACCESS_NETWORK:=10.0.0.0/8}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_SUBNET:=255.255.255.0}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_SSH_HOST_PORT:=2222}
+: ${_CONF_FREEBSD_INSTALLER_JAIL_PROXY_PORT:=8888}
+_include cron
+: ${_CONF_CRON_PROVIDER:=DEFAULT}
+_REQUIRED_APP_CONF="_CONF_FREEBSD_INSTALLER_DEV _CONF_FREEBSD_INSTALLER_FAILING_DEVS _CONF_FREEBSD_INSTALLER_GELI_GIT _CONF_FREEBSD_INSTALLER_GIT_MIRROR _CONF_FREEBSD_INSTALLER_PACKAGE_CACHE _CONF_FREEBSD_INSTALLER_SYSTEM_GIT _CONF_FREEBSD_INSTALLER_SYSTEM_NAME _CONF_FREEBSD_INSTALLER_SYSTEM_REF"
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
+trap _on_exit INT 0 1 2 3 4 6 15
+for _ARG in "$@"; do
+	case $_ARG in
+	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]* | --[a-z0-9][a-z0-9][a-z0-9]*)
+		_configuration_name=${_ARG#*-}
+		_configuration_name=${_configuration_name%%=*}
+		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
+			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
+			else
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
+			fi
+		fi
+		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
+			_configuration_value=1
+		else
+			_configuration_value=${_ARG#*=}
+		fi
+		export _$_configuration_name="$_configuration_value"
+		unset _configuration_name
+		shift
+		;;
+	-h | --help)
+		_print_help_and_exit
+		;;
+	-w=*)
+		_WAITER_PID="${1#*=}"
+		shift
+		;;
+	-w)
+		_WAITEE=1
+		shift
+		;;
+	*)
+		break
+		;;
+	esac
+done
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
+fi
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
+BSD_LOGFILE=/tmp/bsdinstall.log
+_set_logfile $BSD_LOGFILE
+printf '\n\n'
+_INFO "Installing FreeBSD $(uname -r) (walterjwhite)"
+_setup_dev_name_using_map
+_cleanup_prior_installation
+_cli
+_net
+_ssh_keys
+_setup
+_disk_zfs
+_mount_remote_pkg_cache
+_dist
+_mount
+_bootconfig
+_prepare_chroot
+_CHILD=1 chroot $BSDINSTALL_CHROOT $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/bin/bootstrap $@ 2>&1
+_entropy

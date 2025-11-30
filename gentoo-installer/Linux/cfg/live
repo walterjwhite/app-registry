@@ -1,0 +1,19 @@
+: ${_CONF_GENTOO_INSTALLER_LIVE_PATH:=/run/root-volume}
+: ${_CONF_GENTOO_INSTALLER_LIVE_OVERLAY_PATH:=/mnt/overlay}
+: ${_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE:=zstd}
+: ${GENTOO_ROOT_SQUASH_OUTPUT_FILE=$_CONF_APPLICATION_DATA_PATH/gentoo-root.img.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE}
+: ${_CONF_GENTOO_INSTALLER_LIVE_USE_ENCRYPTION:=y}
+: ${GENTOO_DRACUT_MODULES:="dmsquash-live"}
+: ${_CONF_GENTOO_INSTALLER_UPDATE_EFI:=n}
+: ${GENTOO_BOOT_LOADER_ARGS:="consoleblank=300 quiet"}
+: ${BUSYBOX_CMDS:="awk basename cat cp dd df dirname dmesg find grep insmod losetup ln ls lsmod mkdir modprobe mount readlink rm sh sleep stat switch_root umount uname"}
+: ${INIT_CMDS:="/usr/bin/busybox /usr/bin/cryptsetup /usr/bin/findfs /usr/bin/rsync /usr/bin/tar /usr/bin/udevadm /usr/lib/systemd/systemd-udevd"}
+: ${OVERLAYFS_SIZE:=1073741824}
+: ${INIT_COMPRESSION:=zstd}
+: ${INIT_OUTPUT_FILE:=$_CONF_APPLICATION_DATA_PATH/initramfs.cpio.$INIT_COMPRESSION}
+: ${INIT_COMPRESSION_CMD:="zstd --ultra"}
+: ${INIT_REQUIRED_MODULES:="loop overlay squashfs usb_storage uas"}
+: ${INIT_MODULE_PATHS:="crypto fs lib drivers/{block,ata,nvme,md} drivers/usb/{host,storage}"}
+GENTOO_LIVE_DATA_FILE=$_CONF_GENTOO_INSTALLER_LIVE_PATH/data.tar.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE
+GENTOO_LUKS_KEY_HEADER_PATH=/run/.luks-header
+[ -n "$INTERACTIVE" ] && LUKS_OPTIONS="-q"

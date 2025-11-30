@@ -1,0 +1,6 @@
+#!/bin/sh
+[ -n "$_OPTN_SYSTEM_MAINTENANCE_DELAY_START" ] && {
+    _WARN "delaying execution: $_OPTN_SYSTEM_MAINTENANCE_DELAY_START"
+    sleep $_OPTN_SYSTEM_MAINTENANCE_DELAY_START
+}
+update-system

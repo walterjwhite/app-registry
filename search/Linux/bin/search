@@ -1,0 +1,846 @@
+#!/bin/sh
+set -a
+_APPLICATION_NAME=search
+_beep() {
+	beep $1 &
+}
+_sudo_precmd() {
+	_beep "$_CONF_LOG_SUDO_BEEP_TONE"
+}
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_filter() {
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
+}
+_environment_dump() {
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
+	mkdir -p $(dirname $_ENVIRONMENT_FILE)
+	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
+}
+_call() {
+	local function_name=$1
+	type $function_name >/dev/null 2>&1 || {
+		_DEBUG "${function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$function_name "$@"
+		return $?
+	}
+	$function_name
+}
+_() {
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local successful_exit_status=0
+	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
+		successful_exit_status=$_SUCCESSFUL_EXIT_STATUS
+		unset _SUCCESSFUL_EXIT_STATUS
+	fi
+	_INFO "## $*"
+	local exit_status
+	if [ -z "$_DRY_RUN" ]; then
+		"$@"
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $successful_exit_status ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
+		fi
+	fi
+}
+_ERROR() {
+	if [ $# -ge 2 ]; then
+		_EXIT_STATUS=$2
+	else
+		_EXIT_STATUS=1
+	fi
+	_EXIT_LOG_LEVEL=4
+	_EXIT_STATUS_CODE="ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
+	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP="$_CONF_LOG_BEEP_ERR"
+	_defer _environment_dump
+	_defer _log_app_exit
+	_run_defers
+	exit $_EXIT_STATUS
+}
+_success() {
+	_EXIT_STATUS=0
+	_EXIT_LOG_LEVEL=1
+	_EXIT_STATUS_CODE="SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
+	_EXIT_MESSAGE="$1"
+	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	_run_defers
+	exit $_EXIT_STATUS
+}
+_on_hup() {
+	:
+}
+_on_int() {
+	_ERROR "interrupted"
+}
+_on_quit() {
+	_ERROR "quit"
+}
+_on_illegal() {
+	_ERROR "illegal instruction"
+}
+_on_abort() {
+	_ERROR "abort"
+}
+_on_alarm() {
+	_ERROR "alarm"
+}
+_on_term() {
+	_ERROR "term"
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
+	fi
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_run_defers() {
+	[ -z "$_DEFERS" ] && return 1
+	local defer
+	for defer in $_DEFERS; do
+		_call $defer
+	done
+	unset _DEFERS
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
+}
+_print_help() {
+	if [ -e $2 ]; then
+		_INFO "$1:"
+		cat $2
+		printf '\n'
+	fi
+}
+_print_help_and_exit() {
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
+	if [ "$_APPLICATION_NAME" != "install" ]; then
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+	fi
+	exit 0
+}
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/shell/$include_file ] && . $HOME/.config/walterjwhite/shell/$include_file
+	done
+}
+_init_logging() {
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
+	0)
+		local logfile=$(_mktemp debug)
+		_WARN "Writing debug contents to: $logfile"
+		_set_logfile "$logfile"
+		set -x
+		;;
+	esac
+}
+_set_logfile() {
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	_log_to_console "$_CONF_LOG_C_WRN" "writing logs to $_LOGFILE"
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
+}
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
+}
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
+}
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
+}
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
+}
+_sed_remove_nonprintable_characters() {
+	sed -e 's/[^[:print:]]//g'
+}
+_print_log() {
+	if [ -z "$5" ]; then
+		if test ! -t 0; then
+			local log_line
+			cat - | _sed_remove_nonprintable_characters |
+				while read log_line; do
+					_print_log $1 $2 $3 $4 "$log_line"
+				done
+			return
+		fi
+		return
+	fi
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
+	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
+}
+_reset_indent() {
+	unset _LOG_INDENT
+}
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
+}
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+}
+_log_app() {
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}.XXXXXXXX
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
+}
+_syslog() {
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_timeout() {
+	local timeout=$1
+	shift
+	local message=$1
+	shift
+	local timeout_units='s'
+	if [ $(printf '%s' "$timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+		unset timeout_units
+	fi
+	local timeout_level=_ERROR
+	[ $_WARN ] && timeout_level=_WARN
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
+	$sudo timeout $_OPTIONS $timeout "$@" || {
+		local error_status=$?
+		local error_message="Other error"
+		if [ $error_status -eq 124 ]; then
+			error_message="Timed Out"
+		fi
+		[ $_TIMEOUT_ERR_FUNCTION ] && $_TIMEOUT_ERR_FUNCTION
+		$timeout_level "_timeout: $error_message: ${timeout}${timeout_units} - $message ($error_status): $sudo timeout $_OPTIONS $timeout $* ($USER)"
+		return $error_status
+	}
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	[ -z "$_WAITEE" ] && return
+	[ -e $_APPLICATION_PIPE ] || return
+	_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+	printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+	_INFO "$0 downstream process picked up"
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while :; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local upstream_status=$?
+		if [ $upstream_status -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($upstream_status)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
+}
+_mail() {
+	if [ $# -lt 3 ]; then
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		return 1
+	fi
+	local recipients=$(printf '%s' "$1" | tr '|' ' ')
+	shift
+	local subject="$1"
+	shift
+	local message="$1"
+	shift
+	printf "$message" | mail -s "$subject" $recipients
+}
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
+		return 1
+	fi
+	_mail "$recipients" "$subject" "$2"
+}
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
+	fi
+	_alert "$subject" "$message"
+}
+_GET_SEARCH_FILENAMES_SCOPE() {
+	_SEARCH_SCOPE=.
+}
+_SEARCH_FILENAMES_WD() {
+	_SEARCH_FILENAMES_PATH=.
+	_search_filenames_do "$@"
+}
+_SEARCH_FILENAMES_ALL() {
+	_SEARCH_FILENAMES_PATH="$_PROJECT_BASE_PATH $_CONF_DATA_PATH"
+	_search_filenames_do "$@"
+}
+_SEARCH_FILENAMES_SYSTEM() {
+	if [ ! -e $_CONF_SEARCH_LOCATE_DATABASE ]; then
+		_WARN "Initializing locate database"
+		$_CONF_SEARCH_LOCATE_UPDATEDB_CMD
+	fi
+	locate "$@"
+}
+_search_filenames_do() {
+	[ "$_SEARCH_EDIT" ] && _POST_ARGS="-exec $_CONF_SEARCH_EDITOR {} +"
+	[ "$_SEARCH_XEDIT" ] && _POST_ARGS="-exec $_CONF_SEARCH_XEDITOR {} +"
+	[ "$_SEARCH_FILES" ] && _POST_ARGS="-execdir $_CONF_SEARCH_FILE_MANAGER {} ;"
+	set -o noglob
+	for _ARG in "$@"; do
+		case $_ARG in
+		-i)
+			_CASE_INSENSITIVE_SEARCH=i
+			;;
+		-l) ;;
+		*)
+			_FIND_ARGS="-${_CASE_INSENSITIVE_SEARCH}path $_ARG"
+			;;
+		esac
+	done
+	find $_SEARCH_FILENAMES_PATH \
+		\( -type f -or -type l \) -and ! -path '*/.git/*' \
+		$_FIND_ARGS $_POST_ARGS
+}
+_SEARCH_GIT_ACTIVITY() {
+	if [ ! -e $_PROJECT_PATH/.activity ]; then
+		_WARN "No activity in $_PROJECT_PATH/.activity"
+		return
+	fi
+}
+_SEARCH_GIT_BRANCH_CONTAINS_FILE() {
+	[ $# -ne 2 ] && {
+		_WARN "2 arguments are required, branch / ref and file path."
+		return
+	}
+	git ls-tree --full-tree -r "$1" "$2" | grep -cqm1 '.'
+}
+_SEARCH_GIT_BRANCHES() {
+	git branch -a | grep --color $_OPTIONS "$1"
+}
+_SEARCH_GIT_CHANGES() {
+	if [ $# -eq 0 ]; then
+		_WARN "Not searching changes as no search argument was provided."
+		return
+	fi
+	for _ARG in "$@"; do
+		case $_ARG in
+		-i)
+			_OPTIONS="${_OPTIONS:+$_OPTIONS }$_ARG"
+			;;
+		*)
+			if [ -n "$_CHANGE_SEARCH" ]; then
+				_WARN "Excluding arg: $_ARG"
+				continue
+			fi
+			_CHANGE_SEARCH=$(printf "$_ARG" | sed -e 's/^-/\\-/')
+			;;
+		esac
+	done
+	if [ "$_SEARCH_ALL_BRANCHES" ]; then
+		_search_git_changes_all
+		return
+	fi
+	_search_git_changes_do
+}
+_search_git_changes_do() {
+	git log $_SEARCH_BRANCH -p $_OPTIONS -G "$_CHANGE_SEARCH"
+}
+_search_git_changes_all() {
+	for _SEARCH_BRANCH in $(git branch); do
+		_DETAIL "Searching changes in $_SEARCH_BRANCH"
+		_search_git_changes_do
+	done
+}
+_SEARCH_GIT_CONTENTS() {
+	if [ $# -eq 0 ]; then
+		_WARN "Not searching contents as no search argument was provided."
+		return
+	fi
+	for _ARG in "$@"; do
+		case $_ARG in
+		--before=*)
+			shift
+			;;
+		--after=*)
+			shift
+			;;
+		-i | -v | -l)
+			_OPTIONS="${_OPTIONS:+$_OPTIONS }$_ARG"
+			shift
+			;;
+		*)
+			break
+			;;
+		esac
+	done
+	for _ARG in "$@"; do
+		case $_ARG in
+		*)
+			if [ -n "$_CONTENTS_SEARCH" ]; then
+				_WARN "Excluding arg: $_ARG"
+				continue
+			fi
+			_CONTENTS_SEARCH=$(printf "$_ARG" | sed -e 's/^-/\\-/')
+			;;
+		esac
+	done
+	: ${_SEARCH_COMMITS:=CURRENT}
+	_search_git_contents_get_type
+	if [ $_CONF_SEARCH_CONTENTS_RECURSE_SUBMODULES -eq 1 ]; then
+		_OPTIONS="${_OPTIONS:+$_OPTIONS }--recurse-submodules"
+	fi
+	if [ "$_SEARCH_XEDIT" ]; then
+		_git_contents_xedit
+	elif [ "$_SEARCH_EDIT" ]; then
+		_git_contents_edit
+	elif [ "$_SEARCH_FILES" ]; then
+		_git_contents_files
+	else
+		_git_contents_search
+	fi
+}
+_git_contents_search() {
+	_OPTIONS="${_OPTIONS:+$_OPTIONS }-n"
+	_GIT_CONTENTS_SEARCH_$_SEARCH_COMMITS
+}
+_GIT_CONTENTS_SEARCH_CURRENT() {
+	git grep -I $_OPTIONS "$_CONTENTS_SEARCH" $_SEARCH_BRANCH
+}
+_GIT_CONTENTS_SEARCH_ANY() {
+	git rev-list --all | xargs _GIT_CONTENTS_SEARCH_CURRENT
+}
+_GIT_CONTENTS_SEARCH_ALL() {
+	for _SEARCH_BRANCH in $(git branch); do
+		_DETAIL " searching contents in $_SEARCH_BRANCH"
+		_GIT_CONTENTS_SEARCH_CURRENT
+	done
+}
+_git_contents_edit() {
+	_OPTIONS="${_OPTIONS:+$_OPTIONS }-l"
+	$_CONF_SEARCH_EDITOR $(_GIT_CONTENTS_SEARCH_CURRENT)
+}
+_git_contents_xedit() {
+	_OPTIONS="${_OPTIONS:+$_OPTIONS }-l"
+	$_CONF_SEARCH_XEDITOR $(_GIT_CONTENTS_SEARCH_CURRENT)
+}
+_git_contents_files() {
+	_OPTIONS="${_OPTIONS:+$_OPTIONS }-l"
+	$_CONF_SEARCH_FILE_MANAGER $(dirname $(_GIT_CONTENTS_SEARCH_CURRENT) | sort -u)
+}
+_search_git_contents_get_type() {
+	case $_CONF_SEARCH_CONTENTS_TYPE in
+	string)
+		_OPTIONS="${_OPTIONS:+$_OPTIONS }-F"
+		;;
+	regex)
+		_OPTIONS="${_OPTIONS:+$_OPTIONS }-G"
+		;;
+	*)
+		_ERROR "Unknown search type: $_CONF_SEARCH_CONTENTS_TYPE"
+		;;
+	esac
+}
+_SEARCH_GIT_LOGS() {
+	if [ $# -eq 0 ]; then
+		_WARN "Not searching logs as no search argument was provided."
+		return
+	fi
+	for _ARG in "$@"; do
+		case $_ARG in
+		-i)
+			_OPTIONS="${_OPTIONS:+$_OPTIONS }$_ARG"
+			;;
+		*)
+			if [ -n "$_LOGS_SEARCH" ]; then
+				_WARN "Excluding arg: $_ARG"
+				continue
+			fi
+			_LOGS_SEARCH="$_ARG"
+			;;
+		esac
+	done
+	if [ "$_SEARCH_ALL_BRANCHES" ]; then
+		_search_git_logs_all
+		return
+	fi
+	_search_git_logs_do
+}
+_search_git_logs_do() {
+	git log $_SEARCH_BRANCH $_OPTIONS --grep="$_LOGS_SEARCH"
+}
+_search_git_logs_all() {
+	for _SEARCH_BRANCH in $(git branch); do
+		_DETAIL "Searching logs in $_SEARCH_BRANCH"
+		_search_logs_do
+	done
+}
+_GET_SEARCH_GIT_SCOPE() {
+	_GIT_WARN=1 _get_project_directory && {
+		_SEARCH_SCOPE=.
+		return
+	}
+	_in_path "$_PROJECT_BASE_PATH" && {
+		_SEARCH_SCOPE=recursive
+		return
+	}
+	_in_path "$_CONF_DATA_PATH" && {
+		_SEARCH_SCOPE=recursive
+		return
+	}
+	_SEARCH_SCOPE=all
+}
+_SEARCH_GIT_WD() {
+	[ $_CONF_SEARCH_CWD_ONLY -eq 0 ] && unset _GIT_NO_INIT_PROJECT_DIRECTORY
+	[ $_SEARCH_RECURSIVE ] || _DETAIL "Searching $_SEARCH_FUNCTION @ $_PROJECT: $*"
+	_SEARCH_${_SEARCH_FUNCTION_NAME} "$@"
+}
+_SEARCH_GIT_RECURSIVE() {
+	_CONF_INSTALL_NO_PAGER=$_CONF_SEARCH_RECURSIVE_PAGER
+	_SEARCH_RECURSIVE=1
+	[ -z "$_SEARCH_PATH" ] && _SEARCH_PATH=.
+	_SEARCH_SCOPE=. find $_SEARCH_PATH \( -type d -or -type f \) -name '.git' -execdir search "$@" \;
+}
+_SEARCH_GIT_ALL() {
+	if [ -z "$_PROJECT_BASE_PATH" ] && [ -z "$_CONF_DATA_PATH" ]; then
+		_SEARCH_PATH="."
+	else
+		_SEARCH_PATH="$_PROJECT_BASE_PATH $_CONF_DATA_PATH"
+	fi
+	_SEARCH_GIT_RECURSIVE "$@"
+}
+_SEARCH_GIT_TAGS() {
+	git tag | grep --color $_OPTIONS "$1"
+}
+_get_project_directory() {
+	_PROJECT_PATH=$(git rev-parse --show-toplevel 2>/dev/null)
+	local status=$?
+	if [ $status -gt 0 ]; then
+		unset _PROJECT_PATH
+		return $status
+	fi
+	_PROJECT=$(basename $_PROJECT_PATH)
+	return 0
+}
+_in_path() {
+	_require "$1" _in_path
+	local test_path=$(readlink -f $1)
+	readlink -f $PWD | grep -c "^$test_path" >/dev/null 2>&1
+}
+_require_file() {
+	_require "$1" filename _require_file
+	local level=_ERROR
+	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+	if [ ! -e $1 ]; then
+		$level "File: $1 does not exist | $2"
+		return 1
+	fi
+}
+_include logging platform context wait beep paths net search
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
+case $_DETECTED_PLATFORM in
+Darwin)
+	_DETECTED_PLATFORM=Apple
+	;;
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
+	;;
+esac
+_PLATFORM="Linux"
+: ${_CONF_GNU_GREP:=grep}
+: ${_CONF_GNU_SED:=sed}
+_ARCHITECTURE=$(uname -m)
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='-f 1000 -l 1000'}
+: ${_CONF_LOG_BEEP_ALRT:='-f 1000 -l 100 -n -f 1000 -l 100'}
+: ${_CONF_LOG_BEEP_SCS:='-f 1600 -l 100'}
+: ${_CONF_LOG_BEEP_WRN:='-f 1500 -l 100 -n -f 1000'}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='-f 1000 -l 100 -n -f 1400'}
+: ${_CONF_LOG_SUDO_BEEP_TONE:='-f 1000 -l 100 -n -f 1400 -l 50 -n -f 1200'}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$HOME/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_SEARCH_CONTENTS_RECURSE_SUBMODULES:=1}
+: ${_CONF_SEARCH_CONTENTS_TYPE:=string}
+: ${_CONF_SEARCH_CWD_ONLY:=0}
+: ${_CONF_SEARCH_RECURSIVE_PAGER:=1}
+: ${_CONF_SEARCH_SCOPE_MAX_DEPTH:=3}
+: ${_SEARCH_TYPE:=git/contents}
+: ${_CONF_SEARCH_EDITOR:=$EDITOR}
+: ${_CONF_SEARCH_LOCATE_UPDATEDB_CMD:=/usr/bin/updatedb}
+: ${_CONF_SEARCH_LOCATE_DATABASE:=/var/lib/plocate/plocate.db}
+_include git
+: ${_CONF_GIT_SYSTEM_TEMPLATE_PATH:=/usr/share/git/templates}
+: ${_CONF_GIT_CLONE_TIMEOUT:=30}
+: ${_CONF_GIT_COMPRESSION_FORMAT:=xz}
+: ${_CONF_GIT_COMPRESSION_CMD:="xz -z"}
+: ${_CONF_GIT_SQUASH_COMMITS:=2}
+: ${_CONF_GIT_BACKUP_DATE_TIME_FORMAT:=%Y.%m.%d-%H.%M.%S}
+: ${_CONF_GIT_DELETE_PERIOD_IN_DAYS:=365}
+: ${_CONF_GIT_DELETE_DRYRUN:=0}
+_PROJECT_BASE_PATH=$HOME/projects
+_REQUIRED_APP_CONF="_CONF_SEARCH_FILE_MANAGER _CONF_SEARCH_XEDITOR"
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
+trap _on_hup 1
+trap _on_int 2
+trap _on_quit 3
+trap _on_illegal 4
+trap _on_abort 6
+trap _on_alarm 14
+trap _on_term 15
+trap _success 0
+for _ARG in "$@"; do
+	case $_ARG in
+	-h | --help)
+		_print_help_and_exit
+		;;
+	-w=*)
+		_WAITER_PID="${1#*=}"
+		shift
+		;;
+	-w)
+		_WAITEE=1
+		shift
+		;;
+	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
+		_configuration_name=${_ARG#*-}
+		_configuration_name=${_configuration_name%%=*}
+		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
+			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
+			else
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
+			fi
+		fi
+		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
+			_configuration_value=1
+		else
+			_configuration_value=${_ARG#*=}
+		fi
+		export _$_configuration_name="$_configuration_value"
+		unset _configuration_name
+		shift
+		;;
+	*)
+		break
+		;;
+	esac
+done
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
+fi
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
+[ $# -eq 0 ] && _ERROR "Expecting at least 1 argument, search term"
+_SEARCH_FUNCTION=$(printf '%s' "$_SEARCH_TYPE" | tr '/' '_')
+_SEARCH_FUNCTION_NAME=$(printf '%s' "$_SEARCH_FUNCTION" | tr '[:lower:]' '[:upper:]')
+_SEARCH_SUPER_TYPE=$(printf '%s' "$_SEARCH_TYPE" | sed -e 's/\/.*$//')
+_SEARCH_SUPER_TYPE_NAME=$(printf '%s' "$_SEARCH_SUPER_TYPE" | tr '[:lower:]' '[:upper:]')
+[ -z "$_SEARCH_SCOPE" ] && _GET_SEARCH_${_SEARCH_SUPER_TYPE_NAME}_SCOPE
+_INFO "Search ($_SEARCH_SCOPE | $(basename $PWD)): $*"
+_SEARCH_SCOPE_FUNCTION=$(printf '%s' "$_SEARCH_SCOPE" | sed -e 's/\./wd/')
+_SEARCH_SCOPE_FUNCTION_NAME=$(printf '%s' "$_SEARCH_SCOPE_FUNCTION" | tr '[:lower:]' '[:upper:]')
+_call _SEARCH_${_SEARCH_SUPER_TYPE_NAME}_${_SEARCH_SCOPE_FUNCTION_NAME} "$@" || {
+	[ $? -eq 127 ] && _ERROR "Invalid search type or search scope: ${_SEARCH_SUPER_TYPE} | ${_SEARCH_SCOPE_FUNCTION}"
+}

@@ -1,0 +1,1 @@
+automatically detects programming language type and selects appropriate build tool (go, maven / Java) to build the code

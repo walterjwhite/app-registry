@@ -1,0 +1,2553 @@
+#!/bin/sh
+set -a
+_APPLICATION_NAME=gentoo-installer
+_beep() {
+	[ ! -e /dev/speaker ] && return 1
+	flock -n -w 0 $RSRC_BEEP printf '%s' "$1" >/dev/speaker || {
+		_DEBUG "Another 'beep' is in progress"
+		return 2
+	}
+}
+_sudo_precmd() {
+	_beep $_CONF_LOG_SUDO_BEEP_TONE
+}
+_context_id_is_valid() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_variable_is_set() {
+	env | grep -cqm1 "^$1=.*$"
+}
+_environment_filter() {
+	$_CONF_GNU_GREP -P "(^_CONF_|^_OPTN_|^_INSTALL_|^${_TARGET_APPLICATION_NAME}_)"
+}
+_environment_dump() {
+	[ -z "$_APPLICATION_PIPE_DIR" ] && return
+	[ -z "$_ENVIRONMENT_FILE" ] && _ENVIRONMENT_FILE=$_APPLICATION_PIPE_DIR/environment
+	mkdir -p $(dirname $_ENVIRONMENT_FILE)
+	env | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$_ENVIRONMENT_FILE
+}
+_call() {
+	local _function_name=$1
+	type $_function_name >/dev/null 2>&1 || {
+		_DEBUG "${_function_name} does not exist"
+		return 255
+	}
+	[ $# -gt 1 ] && {
+		shift
+		$_function_name "$@"
+		return $?
+	}
+	$_function_name
+}
+_() {
+	_reset_indent
+	if [ -n "$_EXEC_ATTEMPTS" ]; then
+		local attempt=1
+		while [ $attempt -le $_EXEC_ATTEMPTS ]; do
+			_WARN_ON_ERROR=1 _do_exec "$@" && return
+			attempt=$(($attempt + 1))
+		done
+		_ERROR "Failed after $attempt attempts: $*"
+	fi
+	_do_exec "$@"
+}
+_do_exec() {
+	local _successfulExitStatus=0
+	if [ -n "$_SUCCESSFUL_EXIT_STATUS" ]; then
+		_successfulExitStatus=$_SUCCESSFUL_EXIT_STATUS
+		unset _SUCCESSFUL_EXIT_STATUS
+	fi
+	_INFO "## $*"
+	local exit_status
+	if [ -z "$_DRY_RUN" ]; then
+		"$@"
+		exit_status=$?
+	else
+		_WARN "using dry run status: $_DRY_RUN"
+		exit_status=$_DRY_RUN
+	fi
+	if [ $exit_status -ne $_successfulExitStatus ]; then
+		if [ -n "$_ON_FAILURE" ]; then
+			$_ON_FAILURE
+			return
+		fi
+		if [ -z "$_WARN_ON_ERROR" ]; then
+			_ERROR "Previous cmd failed: $* - $exit_status"
+		else
+			unset _WARN_ON_ERROR
+			_WARN "Previous cmd failed: $* - $exit_status"
+			_ENVIRONMENT_FILE=$(_mktemp error) _environment_dump
+			return $exit_status
+		fi
+	fi
+}
+_ERROR() {
+	if [ $# -ge 2 ]; then
+		_EXIT_STATUS=$2
+	else
+		_EXIT_STATUS=1
+	fi
+	_EXIT_LOG_LEVEL=4
+	_EXIT_STATUS_CODE="ERR"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
+	_EXIT_MESSAGE="$1 ($_EXIT_STATUS)"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_ERR
+	_defer _environment_dump
+	_defer _log_app_exit
+	exit $_EXIT_STATUS
+}
+_success() {
+	_EXIT_STATUS=0
+	_EXIT_LOG_LEVEL=1
+	_EXIT_STATUS_CODE="SCS"
+	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
+	_EXIT_MESSAGE="$1"
+	_EXIT_BEEP=$_CONF_LOG_BEEP_SCS
+	_defer _long_running_cmd
+	_defer _log_app_exit
+	[ -z "$_EXIT" ] && exit 0
+}
+_on_exit() {
+	[ $_EXIT ] && return 1
+	_EXIT=0
+	[ -z "$_EXIT_STATUS" ] && _success "completed successfully"
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			_call $defer
+		done
+		unset _DEFERS
+	fi
+	return $_EXIT
+}
+_defer() {
+	if [ -n "$_DEFERS" ]; then
+		local defer
+		for defer in $_DEFERS; do
+			[ "$defer" = "$1" ] && {
+				_DEBUG "not deferring: $1 as it was already deferred"
+				return
+			}
+		done
+	fi
+	_DEBUG "deferring: $1"
+	_DEFERS="$1 $_DEFERS"
+}
+_log_app_exit() {
+	[ "$_EXIT_MESSAGE" ] && {
+		local current_time=$(date +%s)
+		local timeout=$(($_APPLICATION_START_TIME + $_CONF_LOG_BEEP_TIMEOUT))
+		[ $current_time -le $timeout ] && unset _EXIT_BEEP
+		_print_log $_EXIT_LOG_LEVEL "$_EXIT_STATUS_CODE" "$_EXIT_COLOR_CODE" "$_EXIT_BEEP" "$_EXIT_MESSAGE"
+	}
+	_log_app exit
+	[ -n "$_LOGFILE" ] && [ -n "$_OPTN_LOG_EXIT_CMD" ] && {
+		$_OPTN_LOG_EXIT_CMD -file $_LOGFILE
+	}
+}
+_print_help() {
+	if [ -e $2 ]; then
+		_INFO "$1:"
+		cat $2
+		printf '\n'
+	fi
+}
+_print_help_and_exit() {
+	_print_help 'system-wide options' $_CONF_LIBRARY_PATH/install/help/default
+	if [ "$_APPLICATION_NAME" != "install" ]; then
+		_print_help $_APPLICATION_NAME $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/default
+		_print_help "$_APPLICATION_NAME/$_APPLICATION_CMD" $_CONF_LIBRARY_PATH/$_APPLICATION_NAME/help/$_APPLICATION_CMD
+	fi
+	exit 0
+}
+_include() {
+	local include_file
+	for include_file in "$@"; do
+		[ -f $HOME/.config/walterjwhite/$include_file ] && . $HOME/.config/walterjwhite/$include_file
+	done
+}
+_init_logging() {
+	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	case $_CONF_LOG_LEVEL in
+	0)
+		local logfile=$(_mktemp debug)
+		_WARN "Writing debug contents to: $logfile"
+		_set_logfile "$logfile"
+		set -x
+		;;
+	esac
+}
+_set_logfile() {
+	[ -z "$1" ] && return 1
+	_LOGFILE=$1
+	mkdir -p $(dirname $1)
+	_reset_indent
+	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+		exec 3>&1 4>&2
+		_CONF_LOG_CONSOLE=4
+	}
+	exec >>$_LOGFILE 2>&1
+	[ -n "$_PRESERVE_LOG" ] && return
+	truncate -s 0 $1 >/dev/null 2>&1
+}
+_WARN() {
+	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
+}
+_INFO() {
+	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
+}
+_DETAIL() {
+	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
+}
+_DEBUG() {
+	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
+}
+_sed_remove_nonprintable_characters() {
+	sed -e 's/[^[:print:]]//g'
+}
+_print_log() {
+	if [ -z "$5" ]; then
+		if test ! -t 0; then
+			local _line
+			cat - | _sed_remove_nonprintable_characters |
+				while read _line; do
+					_print_log $1 $2 $3 $4 "$_line"
+				done
+			return
+		fi
+		return
+	fi
+	local message="$5"
+	[ $1 -lt $_CONF_LOG_LEVEL ] && return
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
+		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
+	fi
+	[ -n "$4" ] && _beep "$4"
+	_log_to_file "$2" "${_LOG_INDENT}$message"
+	_log_to_console "$3" "${_LOG_INDENT}$message"
+	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	return 0
+}
+_reset_indent() {
+	unset _LOG_INDENT
+}
+_log_to_file() {
+	[ -z "$_LOGFILE" ] && return
+	printf '%s\n' "$2" >>$_LOGFILE
+}
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+}
+_log_app() {
+	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
+}
+_mktemp() {
+	local suffix=$1
+	[ -n "$suffix" ] && suffix=".$suffix"
+	local sudo_prefix
+	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
+	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}.XXXXXXXX
+}
+_sub_platform() {
+	which lsb_release >/dev/null 2>&1 && {
+		_SUB_PLATFORM=$(lsb_release -a | grep ID | cut -f2 -d: | tr -d '\t')
+		return
+	}
+	[ -e $_ROOT/etc/os-release ] && {
+		_SUB_PLATFORM=$(grep ^NAME= $_ROOT/etc/os-release | cut -f2 -d= | sed -e 's/"//g' -e 's/ Linux//')
+	}
+	[ -e $_ROOT/etc/gentoo-release ] && _SUB_PLATFORM=Gentoo
+}
+_setup_app_pipe() {
+	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
+	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
+	mkdir -p $_APPLICATION_PIPE_DIR
+	mkfifo $_APPLICATION_PIPE
+	_defer _cleanup_app_pipe
+}
+_cleanup_app_pipe() {
+	rm -rf $_APPLICATION_PIPE_DIR
+}
+_parent_processes_pgrep() {
+	pgrep -P $1
+}
+_is_backgrounded() {
+	case $(ps -o stat= -p $$) in
+	*+*)
+		return 1
+		;;
+	esac
+	return 0
+}
+_interactive_alert_if() {
+	_is_interactive_alert_enabled && _interactive_alert "$@"
+}
+_is_interactive_alert_enabled() {
+	grep -cq '^_OPTN_INSTALL_INTERACTIVE_ALERT=1$' $_CONF_APPLICATION_CONFIG_PATH 2>/dev/null
+}
+_continue_if() {
+	_read_if "$1" _PROCEED "$2"
+	local proceed="$_PROCEED"
+	unset _PROCEED
+	if [ -z "$proceed" ]; then
+		_DEFAULT=$(printf '%s' $2 | awk -F'/' {'print$1'})
+		proceed=$_DEFAULT
+	fi
+	local proceed=$(printf '%s' "$proceed" | tr '[:lower:]' '[:upper:]')
+	if [ $proceed = "N" ]; then
+		return 1
+	fi
+	return 0
+}
+_read_if() {
+	if [ $(env | grep -c "^$2=.*") -eq 1 ]; then
+		_DEBUG "$2 is already set"
+		return 1
+	fi
+	[ -z "$INTERACTIVE" ] && _ERROR "Running in non-interactive mode and user input was requested: $@" 10
+	_print_log 9 STDI "$_CONF_LOG_C_STDIN" "$_CONF_LOG_BEEP_STDIN" "$1 $3"
+	_interactive_alert_if $1 $3
+	read -r $2
+}
+_syslog() {
+	logger -i -t "$_APPLICATION_NAME.$_APPLICATION_CMD" "$1"
+}
+_sudo() {
+	[ $# -eq 0 ] && _ERROR 'No arguments were provided to _sudo'
+	_sudo_is_required || {
+		"$@"
+		return
+	}
+	_require "$_SUDO_CMD" "_SUDO_CMD - $*"
+	[ -n "$INTERACTIVE" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || _sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	unset sudo_options
+}
+_sudo_is_required() {
+	[ -n "$_SUDO_USER" ] && {
+		[ "$_SUDO_USER" = "$USER" ] && return 1
+		sudo_options="$sudo_options -u $_SUDO_USER"
+		return 0
+	}
+	[ "$USER" = "root" ] && return 1
+	return 0
+}
+_waitee_init() {
+	[ -z "$_WAITEE" ] && return
+	_setup_app_pipe
+	_WARN "($_APPLICATION_CMD) Please use -w=$$"
+	_defer _waitee_done
+}
+_waitee_done() {
+	if [ -n "$_WAITEE" ] && [ -e $_APPLICATION_PIPE ]; then
+		_INFO "$0 process completed, notifying ($_EXIT_STATUS)"
+		printf '%s\n' "$_EXIT_STATUS" >$_APPLICATION_PIPE
+		_INFO "$0 downstream process picked up"
+	fi
+}
+_waiter() {
+	[ -z "$_WAITER_PID" ] && return
+	_UPSTREAM_APPLICATION_PIPE=$(find $_APPLICATION_CONTEXT_GROUP -type p -name $_WAITER_PID 2>/dev/null | head -1)
+	[ -z "$_UPSTREAM_APPLICATION_PIPE" ] && _ERROR "$_WAITER_PID not found"
+	[ ! -e $_UPSTREAM_APPLICATION_PIPE ] && {
+		_WARN "$_UPSTREAM_APPLICATION_PIPE does not exist, did upstream start?"
+		return
+	}
+	_INFO "Waiting for upstream to complete: $_WAITER_PID"
+	while [ 1 ]; do
+		if [ ! -e $_UPSTREAM_APPLICATION_PIPE ]; then
+			_ERROR "Upstream pipe no longer exists"
+		fi
+		_UPSTREAM_APPLICATION_STATUS=$(_timeout $_CONF_WAIT_INTERVAL "_waiter:upstream" cat $_UPSTREAM_APPLICATION_PIPE 2>/dev/null)
+		local _UPSTREAM_STATUS=$?
+		if [ $_UPSTREAM_STATUS -eq 0 ]; then
+			if [ -z "$_UPSTREAM_APPLICATION_STATUS" ] || [ $_UPSTREAM_APPLICATION_STATUS -gt 0 ]; then
+				_ERROR "Upstream exited with _ERROR ($_UPSTREAM_APPLICATION_STATUS)"
+			fi
+			_WARN "Upstream finished: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+			break
+		fi
+		_DETAIL " Upstream is still running: $_UPSTREAM_APPLICATION_PIPE ($_UPSTREAM_STATUS)"
+		sleep 1
+	done
+}
+_require() {
+	local level=_ERROR
+	if [ -z "$1" ]; then
+		[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+		$level "$2 required $_REQUIRE_DETAILED_MESSAGE" $3
+		return 1
+	fi
+	unset _REQUIRE_DETAILED_MESSAGE
+}
+_mail() {
+	if [ $# -lt 3 ]; then
+		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		return 1
+	fi
+	local recipients=$(printf '%s' "$1" | tr '|' ' ')
+	shift
+	local subject="$1"
+	shift
+	local message="$1"
+	shift
+	printf "$message" | mail -s "$subject" $recipients
+}
+_alert() {
+	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
+	local subject="Alert: $0 - $1"
+	if [ -z "$recipients" ]; then
+		_WARN "recipients is empty, aborting"
+		return 1
+	fi
+	_mail "$recipients" "$subject" "$2"
+}
+_long_running_cmd() {
+	[ -n "$_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION" ] && return
+	_APPLICATION_END_TIME=$(date +%s)
+	_APPLICATION_RUNTIME=$(($_APPLICATION_END_TIME - $_APPLICATION_START_TIME))
+	[ $_APPLICATION_RUNTIME -lt $_CONF_LOG_LONG_RUNNING_CMD ] && return
+	local subject="[$_APPLICATION_NAME] - $_EXIT_MESSAGE - ($_EXIT_STATUS)"
+	local message=""
+	if [ -n "$_LOGFILE" ]; then
+		message=$(tail -$_CONF_LOG_LONG_RUNNING_CMD_LINES $_LOGFILE | _sed_remove_nonprintable_characters)
+	fi
+	_alert "$subject" "$message"
+}
+_file() {
+	[ ! -e $1/file ] && {
+		_WARN 'No files to extract'
+		return
+	}
+	tar cp -C $1/file | tar xp -C /
+}
+_import_gentoo_gpg_keys() {
+	gpg --import /usr/share/openpgp-keys/gentoo-release.asc
+	_defer _gpg_kill
+}
+_gpg_verify() {
+	_require "$1" "File to verify with GPG"
+	local gpg_output=$(gpg --verify "$1" 2>&1)
+	local gpg_status=$?
+	[ $gpg_status -gt 0 ] && {
+		_ERROR "$gpg_output" $gpg_status
+	}
+	_DETAIL "GPG verification completed"
+}
+_gpg_kill() {
+	killall gpg-agent >/dev/null 2>&1
+	killall keyboxd >/dev/null 2>&1
+}
+_prepare_chroot() {
+	cp -R /tmp/gentoo $_CONF_GENTOO_INSTALL_PATH/tmp
+	rm -rf $_CONF_GENTOO_INSTALL_PATH/root/.config && mkdir -p $_CONF_GENTOO_INSTALL_PATH/root/.config
+	cp -R /root/.config/walterjwhite $_CONF_GENTOO_INSTALL_PATH/root/.config
+	mkdir -p $_CONF_GENTOO_INSTALL_PATH/root/.ssh
+	cp /root/.ssh/id* \
+		/root/.ssh/authorized_keys \
+		/root/.ssh/known_hosts \
+		$_CONF_GENTOO_INSTALL_PATH/root/.ssh
+	cp -R /root/.ssh $_CONF_GENTOO_INSTALL_PATH/tmp/HOST-SSH
+	cp -R /root/.config/walterjwhite $_CONF_GENTOO_INSTALL_PATH/tmp/CONFIG-WALTERJWHITE
+	mkdir -p $_CONF_GENTOO_INSTALL_PATH/root/.ssh/socket
+	mkdir -p $_CONF_GENTOO_INSTALL_PATH/$_CONF_BIN_PATH
+	_ROOT=$_CONF_GENTOO_INSTALL_PATH _PRESERVE_LOG=1 _CHILD=1 app-install install gentoo-installer
+	[ "$_APPLICATION_CMD" = "_gentoo-installer-incus" ] && return 0
+	_INFO "$_APPLICATION_CMD - preparing chroot"
+	grep -m1 '^GENTOO_MIRRORS=.*' /etc/portage/make.conf >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+	cp /etc/resolv.conf $_CONF_GENTOO_INSTALL_PATH/etc
+	[ -e /etc/hostid ] && cp /etc/hostid $_CONF_GENTOO_INSTALL_PATH/etc
+	return 0
+}
+_portage_write_package_license() {
+	mkdir -p $_CONF_GENTOO_INSTALL_PATH/etc/portage/package.license
+	printf '\n\nACCEPT_LICENSE="-* %s"\n' "$GENTOO_SOFTWARE_LICENSE" >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+}
+_portage_system_use_flags() {
+	printf '# system use flags\n' >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+	find . -type f -path '*/system/use' -exec $_CONF_GNU_GREP -Pvh '(^$|^#)' {} + |
+		tr '\n' ' ' |
+		sed -e 's/^/USE="$USE /' -e 's/$/"\n\n/' >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+}
+_configure() {
+	_configure_system .
+	_configure_patches
+}
+_configure_system() {
+	[ -e $1/system/conf ] && . $1/system/conf
+	[ -n "$GENTOO_SYSTEM_IMPORTS" ] && {
+		local system_import
+		for system_import in $GENTOO_SYSTEM_IMPORTS; do
+			[ -e $system_import/system/conf ] && . $system_import/system/conf
+		done
+	}
+}
+_configure_patches() {
+	local configuration_script patch_path
+	for configuration_script in $(find . -type f -path '*/.patch/configure'); do
+		patch_path=$(dirname $configuration_script)
+		$configuration_script || {
+			_WARN "$configuration_script [$?], disabling patch"
+			rm -rf $patch_path
+			continue
+		}
+		_DETAIL "Keeping $patch_path"
+	done
+}
+_disk_partition_get_uuid() {
+	lsblk -o name,uuid $1 | sed 1d | cut -f2 -d' '
+}
+_setup_git() {
+	rm -rf $GENTOO_REPOSITORY_PREFIX/tmp/gentoo
+	_setup_git_clone $GENTOO_SYSTEM_NAME $GENTOO_REPOSITORY_PREFIX/tmp/gentoo
+	cd $GENTOO_REPOSITORY_PREFIX/tmp/gentoo
+}
+_setup_git_clone() {
+	mkdir -p $2
+	git archive --remote $_CONF_GENTOO_INSTALLER_GIT_URL $1 | tar xp -C $2 || {
+		ping -c1 git >/dev/null 2>&1 || _WARN "Unable to ping git"
+		ping -c1 google.com >/dev/null 2>&1 || _WARN "Unable to ping google"
+		_ERROR "Error setting up git $_CONF_GENTOO_INSTALLER_GIT_URL [$*]"
+	}
+	cd $2
+	[ -e .import ] || {
+		_DETAIL "No imports detected - $2"
+		return
+	}
+	_DETAIL "Setting up import"
+	local git_import_contents=$(head -1 .import)
+	GENTOO_SYSTEM_IMPORTS="$GENTOO_SYSTEM_IMPORTS imports/$git_import_contents"
+	_setup_git_clone $git_import_contents $GENTOO_REPOSITORY_PREFIX/tmp/gentoo/imports/$git_import_contents
+}
+_hardware() {
+	_write_cpu_flags
+	[ -z "$GENTOO_VIDEO_CARDS" ] && _get_video_cards
+	_write_video_cards
+	_makeopts
+}
+_makeopts() {
+	local system_memory=$(free -g | awk '/^Mem:/{print $2}')
+	local allowed_jobs=$(($system_memory / 2))
+	local load_average=$(($allowed_jobs + 1))
+	printf '# @see: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Stage#MAKEOPTS\n' >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+	printf 'MAKEOPTS="-j%s -l%s"\n' $allowed_jobs $load_average >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+}
+_get_video_cards() {
+	oIFS="$IFS"
+	IFS=$'\n'
+	local lspci_line
+	local video_api="vulkan"
+	for lspci_line in $(lspci | $_CONF_GNU_GREP -Pi '(VGA compatible controller|Display controller)'); do
+		case $lspci_line in
+		*AMD/ATI*)
+			GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS radeon radeonsi"
+			mkdir -p $_CONF_GENTOO_INSTALL_PATH/etc/portage/package.use
+			printf 'x11-libs/libdrm video_cards_amdgpu\n' >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/package.use/amdgpu
+			;;
+		*Intel\ Corporation*)
+			GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS intel"
+			;;
+		*Intel\ Corporation*)
+			GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS intel"
+			;;
+		*NVIDIA\ Corporation*)
+			case $lspci_line in
+			*K3100M*)
+				GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS nouveau"
+				video_api="$video_api vaapi"
+				;;
+			*)
+				if [ -n "$GENTOO_PROPRIETARY_NVIDIA" ]; then
+					GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS nvidia"
+				else
+					GENTOO_VIDEO_CARDS="$GENTOO_VIDEO_CARDS nouveau"
+					video_api="$video_api vaapi"
+				fi
+				;;
+			esac
+			video_api="$video_api cuda vdpau nvenc"
+			;;
+		*)
+			printf 'Other: %s\n' "$lspci_line"
+			;;
+		esac
+	done
+	printf '# video cards\nUSE="$USE %s"\n\n' "$video_api" >>$_CONF_GENTOO_INSTALL_PATH/etc/portage/make.conf
+	IFS="$oIFS"
+}
+_write_cpu_flags() {
+	mkdir -p $_CONF_GENTOO_INSTALL_PATH/etc/portage/package.use
+	printf '*/* %s\n' "$(cpuid2cpuflags)" >$_CONF_GENTOO_INSTALL_PATH/etc/portage/package.use/00cpu-flags
+}
+_write_video_cards() {
+	printf '*/* VIDEO_CARDS: -* %s\n' "$GENTOO_VIDEO_CARDS" >$_CONF_GENTOO_INSTALL_PATH/etc/portage/package.use/00video
+}
+_pre_chroot() {
+	_WARN "Executing pre_chroot"
+	find . -type f -path '*/system/pre_chroot' -type f -exec {} \;
+}
+_stage3() {
+	_stage3_fetch || {
+		[ -n "$stage3_retry" ] && _ERROR "Stage3 failed: already retried"
+		_WARN "File failed verification, discarding: $_DOWNLOADED_FILE"
+		rm -f $STAGE3_VERSION_FILE $STAGE3_FILE $STAGE3_SIGNATURE_FILE
+		stage3_retry=1 _stage3
+	}
+	_stage3_extract $STAGE3_FILE
+}
+_stage3_fetch() {
+	LATEST_STAGE3_NAME=$(_stage3_latest_version)
+	_require "$LATEST_STAGE3_NAME" LATEST_STAGE3_NAME
+	_download https://distfiles.gentoo.org/releases/$GENTOO_CPU_ARCHITECTURE/autobuilds/current-stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE/stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE-$LATEST_STAGE3_NAME.tar.xz
+	STAGE3_FILE=$_DOWNLOADED_FILE
+	_download https://distfiles.gentoo.org/releases/$GENTOO_CPU_ARCHITECTURE/autobuilds/current-stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE/stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE-$LATEST_STAGE3_NAME.tar.xz.asc
+	STAGE3_SIGNATURE_FILE=$_DOWNLOADED_FILE
+	_gpg_verify $STAGE3_SIGNATURE_FILE
+}
+_stage3_latest_version() {
+	_download https://distfiles.gentoo.org/releases/$GENTOO_CPU_ARCHITECTURE/autobuilds/current-stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE/latest-stage3-$GENTOO_CPU_ARCHITECTURE-$GENTOO_STAGE3_TYPE.txt
+	STAGE3_VERSION_FILE=$_DOWNLOADED_FILE
+	_gpg_verify $STAGE3_VERSION_FILE
+	grep "$GENTOO_STAGE3_TYPE" $STAGE3_VERSION_FILE | sed -e 's/\.tar\.xz.*$//' -e 's/^.*\-//'
+}
+_stage3_extract() {
+	tar ${_CONF_GENTOO_VERBOSE_TAR}xpf $1 --xattrs-include='*.*' --numeric-owner -C $_CONF_GENTOO_INSTALL_PATH
+}
+_write_system() {
+	local gentoo_system_id_file=$_CONF_GENTOO_INSTALL_PATH/$_CONF_GENTOO_INSTALLER_SYSTEM_IDENTIFICATION
+	mkdir -p $(dirname $gentoo_system_id_file)
+	printf '%s\n' $GENTOO_SYSTEM_NAME >$gentoo_system_id_file
+	printf '%s\n' $GENTOO_SYSTEM_BRANCH >>$gentoo_system_id_file
+	printf '%s\n' $_CONF_GENTOO_INSTALLER_GIT_URL >>$gentoo_system_id_file
+	git ls-remote $_CONF_GENTOO_INSTALLER_GIT_URL -b $GENTOO_SYSTEM_NAME | awk {'print$1'} >>$gentoo_system_id_file
+	printf 'Provision Date: %s\n' "$(date)" >>$gentoo_system_id_file
+}
+_configure_patches() {
+	local configure_script configure_script_path configure_script_status
+	for configure_script in $(find /tmp/gentoo/ -type f -name configure); do
+		configure_script_path=$(dirname $configure_script)
+		$configure_script
+		configure_script_status=$?
+		if [ $configure_script_status -eq 0 ]; then
+			_DETAIL "Keeping - $configure_script_path"
+		else
+			_configure_remove_patch $configure_script_status $configure_script_path
+		fi
+	done
+}
+_configure_remove_patch() {
+	_WARN "Disabling - $2 ($1)"
+	rm -rf $2
+}
+_hostname() {
+	_PACKAGE_INSTALL sys-apps/dmidecode
+	GENTOO_SYSTEM_IDENTIFIER=$(dmidecode 2>/dev/null | grep 'Base Board Information' -A10 | grep 'Serial Number' | cut -f2 -d':' | sed -e 's/^ //' -e 's/ //g' -e 's/\//./g' -e 's/\.//g')
+	printf '%s\n' $GENTOO_SYSTEM_NAME-$GENTOO_SYSTEM_IDENTIFIER >/etc/hostname
+	$_CONF_GNU_SED -i "s/^127.0.0.1 localhost$/127.0.0.1  localhost $GENTOO_SYSTEM_NAME-$GENTOO_SYSTEM_IDENTIFIER/" /etc/hosts
+}
+_setup_chroot() {
+	source /etc/profile
+	_CONF_GENTOO_INSTALL_PATH=/
+	cd /tmp/gentoo
+	[ -z "$container" ] && {
+		_import_gentoo_gpg_keys
+		grep -qm1 '^GENTOO_MIRRORS=.*' /etc/portage/make.conf || {
+			mirrorselect -s3 -b10 -o >>/etc/portage/make.conf
+		}
+		_write_fetch_command
+		_write_fstab
+	}
+	printf 'L10N="%s"\n' "$GENTOO_L10N" >>/etc/portage/make.conf
+	printf '# run emerge with lower priority\n' >>/etc/portage/make.conf
+	printf 'PORTAGE_NICENESS="%s"\n' "$GENTOO_PORTAGE_NICENESS" >>/etc/portage/make.conf
+	printf 'PORTAGE_SCHEDULING_POLICY=%s\n' "$GENTOO_PORTAGE_SCHEDULING_POLICY" >>/etc/portage/make.conf
+	return 0
+}
+_write_fetch_command() {
+	_WARN "Setting FETCHCOMMAND for quiet fetches"
+	printf '# portage - quiet fetch\n' >>/etc/portage/make.conf
+	printf "FETCHCOMMAND = 'wget -c -v -t 1 --passive-ftp --no-check-certificate --timeout=60 -O \"%s/%s\" \"%s\"'\n" '\${DISTDIR}' '\${FILE}' '\${URI}' >>/etc/portage/make.conf
+}
+_write_fstab() {
+	[ -f /etc/fstab ] && mv /etc/fstab /etc/fstab.0
+	local esp_uuid=$(_disk_partition_get_uuid $GENTOO_DISK_DEVICE_EFI_PARTITION)
+	printf '# <fs>      <mountpoint>  <type>    <opts>    <dump> <pass>\n' >>/etc/fstab
+	printf '# ESP\n' >>/etc/fstab
+	printf 'UUID=%s /boot/efi vfat defaults 0 0\n' $esp_uuid >>/etc/fstab
+	printf 'UUID=%s /efi vfat defaults 0 0\n\n' $esp_uuid >>/etc/fstab
+}
+_APP_IS_FILE=1
+_PATCH_APP() {
+	local app
+	for app in $@; do
+		_PRESERVE_LOG=1 _CHILD=1 app-install $app
+	done
+}
+_PATCH_CHMOD() {
+	local chmod_file
+	for chmod_file in $@; do
+		. $chmod_file
+		chmod $options $mode $path
+		unset mode path options
+	done
+}
+_PATCH_CHOWN() {
+	local chown_file
+	for chown_file in $@; do
+		. $chown_file
+		chown $options $owner:$group $path
+		unset owner group path options
+	done
+}
+_CRONTAB_TYPE=d
+_PATCH_CRONTAB() {
+	local crontabs_temp_path=$(_MKTEMP_OPTIONS=d _mktemp)
+	local crontab_file
+	local crontab_user_file
+	local crontab_user
+	local crontabs_directory
+	for crontabs_directory in $@; do
+		crontab_user=$(basename $crontabs_directory)
+		crontab_user_file=$crontabs_temp_path/$crontab_user
+		local crontab_path
+		for crontab_path in $(find $crontabs_directory -type f | sort -u); do
+			printf '# %s\n' "$crontab_path" >>$crontab_user_file
+			cat $crontab_path >>$crontab_user_file
+		done
+	done
+	for crontab_user_file in $(find $crontabs_temp_path -type f | sort -u); do
+		crontab_user=$(basename $crontab_user_file)
+		[ $crontab_user != "root" ] && {
+			chown $crontab_user $crontab_user_file
+		}
+		_INFO "Updating $crontab_user crontab"
+		_crontab_append $crontab_user $crontab_user_file
+		rm -f $crontab_user_file
+	done
+	unset user
+}
+_CUPS_PATH=/etc/cups
+_PATCH_CUPS_PRINTER() {
+	local cups_printer_conf
+	for cups_printer_conf in $@; do
+		_cups_printer_add $cups_printer_conf
+	done
+}
+_cups_printer_add() {
+	_cups_printer_exists $1 || {
+		_INFO "Adding $1"
+		cat $1 >>$_CUPS_PATH/printers.conf
+	}
+}
+_cups_printer_exists() {
+	[ ! -e $_CUPS_PATH/printers.conf ] && return 1
+	local printer_uuid=$(grep ^UUID $1 | sed -e 's/UUID urn:uuid://')
+	[ $(grep -c $printer_uuid $_CUPS_PATH/printers.conf) -eq 0 ] && return 1
+	_WARN "Printer ($printer_uuid) already exists"
+	return 0
+}
+_PATCH_DOWNLOAD() {
+	local download_conf
+	for download_conf in $@; do
+		_do_download $download_conf
+	done
+}
+_do_download() {
+	mkdir -p /tmp/downloads
+	. $1
+	_download $uri
+	mkdir -p $(dirname $output)
+	cp $_DOWNLOADED_FILE $output
+	if [ -n "$signature" ]; then
+		sha256 -c $signature $output 2>/dev/null
+		if [ $? -eq 0 ]; then
+			printf '\tOK\n'
+		else
+			printf '\tFAIL\n'
+		fi
+	fi
+	_extract $output
+}
+_FILE_TYPE=d
+_FILE_PATH='file'
+_FILE_EXEC="rsync -lmrt {}/ / ;"
+_PATCH_FSTAB() {
+	local fstab
+	local patch_name
+	for fstab in $@; do
+		patch_name=$(_module_get_patch_name $fstab)
+		printf '# %s\n' "$patch_name" >>/etc/fstab
+		cat $fstab >>/etc/fstab
+		printf '\n' >>/etc/fstab
+	done
+}
+_GO_IS_FILE=1
+_PATCH_GO() {
+	_GO_INSTALL "$@"
+}
+_PATCH_GROUP() {
+	local group_conf
+	for group_conf in $@; do
+		_group_add $group_conf
+	done
+}
+_group_add() {
+	. $1
+	_DETAIL " add group: $1 $groupName $gid"
+	groupadd -g $gid $groupName
+	unset groupName gid
+}
+_INCUS_OPTIONS='-name *.incus'
+_PATCH_INCUS_PRE() {
+	_PACKAGE_INSTALL app-containers/incus
+	rc-update add incus && rc-update add incus-user
+	grep -qm1 'root:1000000' $_CONF_GENTOO_INSTALL_PATH/etc/subuid || {
+		_DETAIL "Configuring users and groups for incus"
+		printf 'root:1000000:1000000000\n' | tee -a /etc/subuid /etc/subgid >/dev/null
+	}
+	[ -n "$GENTOO_INSTALLER_CHROOT" ] && {
+		_WARN "The remaining init operations are currently performed after rebooting into the live system"
+		return
+	}
+	_CONF_GENTOO_INSTALL_PATH=/ _ _incus_live_pre
+}
+_PATCH_INCUS() {
+	[ -n "$GENTOO_INSTALLER_CHROOT" ] && {
+		_WARN "The remaining init operations are currently performed after rebooting into the live system"
+		return
+	}
+	_INCUS_CONFIGURATION_FILE=$1
+	_ _incus_live "$_INCUS_CONFIGURATION_FILE"
+}
+_PATCH_LINK() {
+	local link_conf
+	for link_conf in $@; do
+		_link_do $link_conf
+	done
+}
+_link_do() {
+	. $1
+	for _TARGET in $targets; do
+		_DETAIL "ln -sf $path -> $_TARGET"
+		local parent=$(dirname $_TARGET)
+		if [ ! -e $path ]; then
+			_WARN "$path does NOT exist"
+			continue
+		elif [ ! -e $parent ]; then
+			mkdir -p $parent
+		fi
+		ln -sf $path $_TARGET
+	done
+	unset _TARGET path targets
+}
+_PATCH_LXD() {
+	_WARN "Not implemented - lxd"
+}
+_NPM_IS_FILE=1
+_PATCH_NPM() {
+	_NPM_INSTALL $@
+}
+_PACKAGE_IS_FILE=1
+_PATCH_PACKAGE() {
+	[ $# -eq 0 ] && _ERROR 'No packages'
+	local package
+	for package in "$@"; do
+		_PACKAGE_INSTALL $package
+	done
+}
+_PACKAGE_UNINSTALL_IS_FILE=1
+_PATCH_PACKAGE_UNINSTALL() {
+	[ $# -eq 0 ] && _ERROR 'No packages'
+	local package
+	for package in "$@"; do
+		_PACKAGE_UNINSTALL $package
+	done
+}
+_USE_IS_FILE=1
+_PATCH_USE() {
+	local use=$(printf '%s\n' "$@" | sort -u | tr '\n' ' ')
+	printf '# portage use - patches\nUSE="$USE %s"\n' "$use" >>/etc/portage/make.conf
+}
+_PATCH_POST_RUN() {
+	_PATCH_RUN "$@"
+}
+_PATCH_POST_RUN_POST() {
+	_post_run_restore_ssh
+}
+_post_run_restore_ssh() {
+	_DETAIL "Restoring SSH configuration (if applicable)"
+	[ -e /root/.ssh.restore ] && _post_run_restore_ssh_do /root
+	for s in $(find /home -mindepth 2 -maxdepth 2 -name '.ssh.restore' -type d); do
+		_post_run_restore_ssh_do $(dirname $s)
+	done
+}
+_post_run_restore_ssh_do() {
+	_WARN "Removing setup .ssh with .ssh.restore [$1]"
+	rm -rf $1/.ssh
+	mv $1/.ssh.restore $1/.ssh
+}
+_PYPI_IS_FILE=1
+_PATCH_PYPI() {
+	_PYPI_INSTALL "$@"
+}
+_PATCH_RUN() {
+	local run_conf
+	for run_conf in $@; do
+		cd /tmp/gentoo
+		. $run_conf || _WARN "Error running $GENTOO_SYSTEM_NAME $run_conf"
+	done
+}
+_RUST_IS_FILE=1
+_PATCH_RUST() {
+	_RUST_INSTALL "$@"
+}
+_PATCH_SERVICE() {
+	local service_line
+	$_CONF_GNU_GREP -Pvh '^($|#)' "$@" | while read service_line; do
+		[ -z "$service_line" ] && {
+			_WARN "service_line was empty"
+			continue
+		}
+		rc-update add $service_line
+	done
+}
+_patches() {
+	local module
+	for module in $@; do
+		_module_set_log $module
+		[ ! -e /tmp/gentoo ] && _ERROR "Configuration directory does not exist"
+		_module_run_build $module
+	done
+}
+_module_set_log() {
+	[ -z "$_INDEX" ] && _INDEX=0
+	_set_logfile "/var/log/walterjwhite/${_INDEX}.build.${1}"
+	_reset_indent
+	_INDEX=$((_INDEX + 1))
+}
+_module_run_build() {
+	cd /tmp/gentoo
+	local module=$1
+	MODULE_NAME=$(printf '%s' $module | tr '[[:lower:]]' '[[:upper:]]')
+	local module_exec=$(env | grep ^_${MODULE_NAME}_EXEC= | sed -e "s/^_${MODULE_NAME}_EXEC=//")
+	local module_type=$(env | grep ^_${MODULE_NAME}_TYPE= | sed -e "s/^_${MODULE_NAME}_TYPE=//")
+	local module_options=$(env | grep ^_${MODULE_NAME}_OPTIONS= | sed -e "s/^_${MODULE_NAME}_OPTIONS=//")
+	local module_is_file=$(env | grep ^_${MODULE_NAME}_IS_FILE= | sed -e "s/^_${MODULE_NAME}_IS_FILE=//")
+	local module_path=$(env | grep ^_${MODULE_NAME}_PATH= | sed -e "s/^_${MODULE_NAME}_PATH=//")
+	local module_supports_container=$(env | grep ^_${MODULE_NAME}_SUPPORTS_CONTAINER= | sed -e "s/^_${MODULE_NAME}_SUPPORTS_CONTAINER=//")
+	[ -z "$module_type" ] && module_type=f
+	[ -z "$module_path" ] && module_path="$1/*"
+	[ $module_is_file ] && module_path=$module
+	if [ $(_module_find $module_type $module_path $module_options -print -quit | wc -l) -eq 0 ]; then
+		_INFO "no patches found - $module_type $module_path $module_options"
+		return
+	fi
+	_INFO "start - $module"
+	_call _PATCH_${MODULE_NAME}_PRE
+	local module_status
+	if [ -n "$module_is_file" ]; then
+		_PATCH_$MODULE_NAME $(_module_find $module_type $module_path $module_options -exec $_CONF_GNU_GREP -Pvh '(^#|^$)' {} + | tr '\n' ' ' | sed -e 's/ $/\n/')
+		module_status=$?
+	else
+		if [ -z "$module_exec" ]; then
+			_PATCH_$MODULE_NAME $(_module_find $module_type $module_path $module_options | sort)
+			module_status=$?
+		else
+			_module_find $module_type $module_path $module_options -exec $module_exec
+			module_status=$?
+		fi
+	fi
+	_call _PATCH_${MODULE_NAME}_POST
+	_module_log_status $module $module_status
+}
+_module_find() {
+	local module_type=$1
+	shift
+	local module_path=$1
+	shift
+	local patch_path=physical
+	[ -n "$container" ] && patch_path=container
+	find . -type $module_type \( ! -path './.archived/*' ! -path '*/imports/*/.archived/*' \) -and \( -path '*/patches/any/*' -or -path "*/patches/$patch_path/*" \) -and \( -path "*/*.patch/$module_path" \) "$@" 2>/dev/null | sort
+	return 0
+}
+_module_log_status() {
+	if [ $2 -gt 0 ]; then
+		_WARN "end - $1 error ($2)"
+	else
+		_INFO "end - $1 - success"
+	fi
+}
+_module_get_patch_name() {
+	_module_get_patch_path "$1" |
+		sed -e "s/^\.\///" -e "s/\.patch$//" -e "s/^patches\///"
+}
+_module_get_patch_path() {
+	printf '%s' "$1" | $_CONF_GNU_GREP -Po '^.*.\.patch'
+}
+_SYSCTL_EXEC="$_CONF_APPLICATION_LIBRARY_PATH/bin/_key_value /etc/sysctl.conf {} sysctl ;"
+_PATCH_USER() {
+	_user_bootstrap
+	local user_conf
+	for user_conf in $@; do
+		_PRESERVE_LOG=1 _users_add $user_conf
+		unset _CONFIGURATION_INSTALLED
+	done
+}
+_ZFS_SUPPORTS_CONTAINERS=1
+_PATCH_ZFS() {
+	[ -n "$container" ] && _kernel_zfs_support
+	local zfs_volume_configuration
+	for zfs_volume_configuration in $@; do
+		if [ -n "$_IN_CONTAINER" ]; then
+			mkdir -p /tmp/container/zfs
+			cp $zfs_volume_configuration /tmp/container/zfs
+			local zfs_volume_configuration_name=$(basename $zfs_volume_configuration)
+			printf '_ZFS_CONTAINERED=1\n' >>/tmp/container/zfs/$zfs_volume_configuration_name
+			printf '_ZFS_CONTAINER=%s\n' $_CONTAINER_NAME >>/tmp/container/zfs/$zfs_volume_configuration_name
+			printf '_ZFS_VOLUME_NAME=containers/%s/$_ZFS_VOLUME_NAME\n' $_CONTAINER_NAME >>/tmp/container/zfs/$zfs_volume_configuration_name
+		else
+			_zfs_restore $zfs_volume_configuration
+			unset _ZFS_DEV_NAME _ZFS_SOURCE_HOST _ZFS_VOLUME_NAME _ZFS_VOLUME_ABORT_CREATE _ZFS_ZAP_SNAP _ZFS_ZAP_TTL _ZFS_ZAP_BACKUP _ZFS_MOUNT_POINT _ZFS_VOLUME
+		fi
+	done
+}
+_PATCH_ZFS_CONTAINERS() {
+	_DETAIL "Processing container ZFS configurations"
+	local container_mountpoint
+	for container_mountpoint in $(_container_mount_points); do
+		local zfs_container_conf=$container_mountpoint/tmp/container/zfs
+		if [ -e $zfs_container_conf ]; then
+			_DETAIL "Processing container ZFS configuration: $zfs_container"
+			_zfs $(find $zfs_container_conf -type f 2>/dev/null)
+		fi
+	done
+}
+_zfs_restore() {
+	_INFO "_zfs_restore: $1"
+	mkdir -p ~/.ssh/socket
+	chmod 700 ~/.ssh/socket
+	. $1
+	[ -z "$_ZFS_DEV_NAME" ] && {
+		_WARN "_ZFS_DEV_NAME is empty"
+		return
+	}
+	[ -z "$_ZFS_SOURCE_HOST" ] && {
+		_WARN "_ZFS_SOURCE_HOST is empty"
+		return
+	}
+	[ -z "$_ZFS_VOLUME_NAME" ] && {
+		_WARN "_ZFS_VOLUME_NAME is empty"
+		return
+	}
+	_ZFS_VOLUME=${_ZFS_DEV_NAME}/$_ZFS_VOLUME_NAME
+	_ZFS_SOURCE_SNAPSHOT=$(ssh $_ZFS_SOURCE_HOST zfs list -H -t snapshot | grep $_ZFS_VOLUME_NAME@ | grep -v backups | tail -1 | awk {'print$1'})
+	[ -z "$_ZFS_SOURCE_SNAPSHOT" ] && {
+		_WARN "No snapshots available, unable to setup clone: $_ZFS_VOLUME"
+		return
+	}
+	_zfs_has_sufficient_space || {
+		_WARN "Insufficient space to restore volume"
+		return
+	}
+	_INFO "zfs create $_ZFS_VOLUME"
+	zfs create -p $_ZFS_VOLUME
+	[ -n "$_ZFS_MOUNT_POINT" ] && zfs set mountpoint=$_ZFS_MOUNT_POINT $_ZFS_VOLUME
+	[ -n "$_ZFS_CONTAINERED" ] && zfs set containered=on $_ZFS_VOLUME
+	zfs set readonly=on $_ZFS_VOLUME
+	ssh $_ZFS_SOURCE_HOST zfs send -v $_ZFS_SOURCE_SNAPSHOT | zfs receive -F $_ZFS_VOLUME
+	zfs allow -g wheel bookmark,diff,hold,send,snapshot $_ZFS_VOLUME
+	if [ -n "$_ZFS_SNAPSHOT_USER" ]; then
+		mkdir -p /tmp/gentoo/$GENTOO_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/
+		printf 'zfs allow -u %s bookmark,diff,hold,send,snapshot %s' $_ZFS_SNAPSHOT_USER $_ZFS_VOLUME \
+			>>/tmp/gentoo/$GENTOO_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/allow-zfs-snapshot-user
+		chmod +x /tmp/gentoo/$GENTOO_SYSTEM_NAME/patches/any/zfs-snapshot-user.patch/run/allow-zfs-snapshot-user
+	fi
+	_zfs_zap
+	_zfs_rclone
+	_INFO "zfs create $_ZFS_VOLUME - done"
+}
+_zfs_has_sufficient_space() {
+	_ZFS_SNAPSHOT_SPACE=$(ssh $_ZFS_SOURCE_HOST zfs list -t snapshot $_ZFS_SOURCE_SNAPSHOT | awk '{print$4}' | grep "G$" | sed -e "s/G$//")
+	_ZFS_SNAPSHOT_REQUIRED_SPACE=$(printf '2 * %s\n' "$_ZFS_SNAPSHOT_SPACE" | bc)
+	_ZPOOL_FREE_SPACE=$(zpool list -H $_ZFS_DEV_NAME | awk '{print$4}' | grep "G$" | sed -e "s/G$//")
+	if [ $(printf '%s < %s\n' "$_ZFS_SNAPSHOT_REQUIRED_SPACE" "$_ZPOOL_FREE_SPACE" | bc) -eq 0 ]; then
+		_WARN "Insufficient free space: $_ZFS_VOLUME_NAME - $_ZFS_SNAPSHOT_SPACE $_ZFS_SNAPSHOT_REQUIRED_SPACE $_ZPOOL_FREE_SPACE"
+		return
+	fi
+	_INFO "Setting up $_ZFS_VOLUME_NAME - $_ZFS_SNAPSHOT_SPACE $_ZFS_SNAPSHOT_REQUIRED_SPACE $_ZPOOL_FREE_SPACE"
+}
+_start_ssh() {
+	netstat -tlpn | grep -qm1 :22
+	if [ $? -eq 0 ]; then
+		_WARN "Unable to start SSHd as it is already running"
+	else
+		rc-service sshd start
+		GENTOO_SSHD_STARTED=1
+	fi
+	local ips=$(ip addr show scope global | grep inet | sed -e 's/ brd.*//' -e 's/inet //' -e 's/ //g' | tr '\n' ' ')
+	_WARN "IP: $ips"
+}
+_stop_ssh() {
+	[ -z "$GENTOO_SSHD_STARTED" ] && return 1
+	rc-service sshd stop
+}
+_boot_loader_configure() {
+	[ -e /sys/firmware/efi/efivars/ ] && return
+	_WARN "System was booted using BIOS and not EFI, falling back to BIOS to boot build system"
+	GENTOO_BOOT_LOADER=grub
+	GENTOO_BOOT_METHOD=BIOS
+}
+_BOOT_LOADER_EFIBOOTMGR() {
+	_PACKAGE_INSTALL sys-boot/efibootmgr
+	_boot_loader_efibootmgr_install
+}
+_boot_loader_efibootmgr_install() {
+	local kernel kernel_version
+	for kernel in $(find /boot -maxdepth 1 -name 'vmlinuz*' ! -name '*.old'); do
+		kernel_version=$(printf '%s' $kernel | sed -e 's/vmlinuz-//' -e 's/^\/boot\///')
+		[ ! -e /efi/EFI/gentoo/$kernel_version ] && {
+			mkdir -p /efi/EFI/gentoo/$kernel_version
+			cp /boot/vmlinuz-$kernel_version /efi/EFI/gentoo/$kernel_version/kernel
+			cp /boot/initramfs-$kernel_version.img /efi/EFI/gentoo/$kernel_version/initramfs
+			cp /boot/System.map-$kernel_version /efi/EFI/gentoo/$kernel_version/System.map
+			cp /boot/config-$kernel_version /efi/EFI/gentoo/$kernel_version/config
+			_boot_loader_efibootmgr_create "$kernel_version"
+		}
+	done
+}
+_boot_loader_efibootmgr_create() {
+	_boot_loader_efibootmgr_args
+	efibootmgr --create --disk $GENTOO_DISK_DEVICE --part $GENTOO_DISK_DEVICE_BOOT_PARTITION_ID --label "Gentoo $GENTOO_SYSTEM_NAME - $1" --loader \
+		"\\EFI\\gentoo\\$1\\kernel" --unicode "$GENTOO_BOOT_LOADER_ARGS initrd=\\EFI\\gentoo\\$1\\initramfs"
+}
+_boot_loader_efibootmgr_args() {
+	GENTOO_BOOT_LOADER_ARGS="$GENTOO_KERNEL_CMDLINE_ARGS"
+	[ -n "$GENTOO_DISK_DEVICE_LUKS" ] && {
+		GENTOO_BOOT_LOADER_LUKS_DEVICE_UUID=$(lsblk -no name,uuid $GENTOO_DISK_DEVICE_LUKS | head -1 | awk {'print$2'}) || _ERROR "Unable to determine UUID for $GENTOO_DISK_DEVICE_LUKS"
+		GENTOO_BOOT_LOADER_ARGS="$GENTOO_BOOT_LOADER_ARGS rd.luks.uuid=$GENTOO_BOOT_LOADER_LUKS_DEVICE_UUID"
+	}
+	[ -n "$GENTOO_ZFS_POOL_NAME" ] && {
+		GENTOO_BOOT_LOADER_ARGS="$GENTOO_BOOT_LOADER_ARGS root=zfs:$GENTOO_ZFS_POOL_NAME/gentoo"
+	}
+}
+_BOOT_LOADER_GRUB() {
+	[ -n "$GENTOO_ZFS_POOL_NAME" ] && {
+		mkdir -p /etc/portage/package.use
+		printf "sys-boot/grub libzfs\n" >>/etc/portage/package.use/grub
+	}
+	_PACKAGE_INSTALL sys-boot/grub
+	_BOOT_LOADER_GRUB_${GENTOO_BOOT_METHOD}
+}
+_BOOT_LOADER_GRUB_BIOS() {
+	grub-probe /boot
+}
+_BOOT_LOADER_GRUB_UEFI() {
+	_PACKAGE_INSTALL sys-boot/shim sys-boot/mokutil sys-boot/efibootmgr
+	grub-probe /boot/efi
+	cp /usr/share/shim/BOOTX64.EFI /efi/EFI/Gentoo/shimx64.efi
+	cp /usr/share/shim/mmx64.efi /efi/EFI/Gentoo/mmx64.efi
+	cp /usr/lib/grub/grub-x86_64.efi.signed /efi/EFI/Gentoo/grubx64.efi
+	grub-install --efi-directory=/efi
+	mkdir -p /etc/env.d
+	printf 'GRUB_CFG=/efi/EFI/Gentoo/grub.cfg\n' >>/etc/env.d/99grub
+}
+_BOOT_LOADER_SECURE_BOOT() {
+	[ -z "$GENTOO_KERNEL_KEY_PEM" ] && {
+		_WARN 'GENTOO_KERNEL_KEY_PEM is unset, not configuring secure boot'
+		return
+	}
+	[ -z "$GENTOO_KERNEL_KEY_DER" ] && {
+		_WARN 'GENTOO_KERNEL_KEY_DER is unset, not configuring secure boot'
+		return
+	}
+	_package app-crypt/sbsigntools
+	openssl x509 -in "$GENTOO_KERNEL_KEY_PEM" -inform PEM -out "$GENTOO_KERNEL_KEY_DER" -outform DER
+	mokutil --import "$GENTOO_KERNEL_KEY_DER"
+	efibootmgr --create --disk /dev/boot-disk --part boot-partition-id --loader '\EFI\Gentoo\shimx64.efi' --label 'GRUB via Shim' --unicode
+}
+_CRON_CRONIE() {
+	_PACKAGE_INSTALL sys-process/cronie
+	rc-update add cronie
+}
+_CRON_DCRON() {
+	_PACKAGE_INSTALL sys-process/dcron
+	rc-update add dcron
+}
+_CRON_FCRON() {
+	_PACKAGE_INSTALL sys-process/fcron
+	rc-update add fcron
+}
+_CRON_BCRON() {
+	_PACKAGE_INSTALL sys-process/bcron
+	rc-update add bcron
+}
+_firmware() {
+	mkdir -p /etc/portage/package.license
+	printf 'sys-kernel/linux-firmware linux-fw-redistributable\n' >>/etc/portage/package.license/firmware
+	_PACKAGE_INSTALL sys-kernel/linux-firmware
+	case $GENTOO_CPU_VENDOR in
+	Intel)
+		printf 'sys-firmware/intel-microcode intel-ucode\n' >>/etc/portage/package.license/firmware
+		_PACKAGE_INSTALL sys-firmware/intel-microcode
+		;;
+	AMD)
+		;;
+	*)
+		_WARN "Unknown CPU: $GENTOO_CPU_VENDOR"
+		;;
+	esac
+}
+_INDEXING_PLOCATE() {
+	_PACKAGE_INSTALL sys-apps/plocate
+	updatedb
+}
+_INIT_BLISS() {
+	_PACKAGE_INSTALL bliss-initramfs
+}
+_INIT_DRACUT() {
+	mkdir -p /etc/dracut.conf.d
+	printf 'sys-kernel/installkernel dracut\n' >>/etc/portage/package.use/installkernel
+	local dracut_modules
+	[ -n "$GENTOO_DISK_DEVICE_LUKS" ] && {
+		dracut_modules="$dracut_modules crypt "
+	}
+	[ -n "$GENTOO_ZFS_POOL_NAME" ] && {
+		[ "$GENTOO_BOOT_FS" = "zpool" ] && {
+			dracut_modules="$dracut_modules zfs"
+		}
+	}
+	[ -z "$GENTOO_FSCK" ] && printf 'nofsck="yes"\n' >>/etc/dracut.conf.d/no-fsck.conf
+	printf 'add_dracutmodules+=" %s"\n' "$dracut_modules " >>/etc/dracut.conf.d/modules.conf
+}
+_INIT_UGRD() {
+	mkdir -p /etc/portage/package.use /etc/portage/package.accept_keywords
+	printf 'sys-kernel/installkernel ugrd\n' >>/etc/portage/package.use/installkernel
+	[ -n "$GENTOO_ZFS_POOL_NAME" ] && {
+		printf 'dev-python/zenlib **\n' >>/etc/portage/package.accept_keywords/ugrd
+		printf 'dev-python/pycpio **\n' >>/etc/portage/package.accept_keywords/ugrd
+		printf 'sys-kernel/installkernel **\n' >>/etc/portage/package.accept_keywords/ugrd
+		printf 'sys-kernel/ugrd **\n' >>/etc/portage/package.accept_keywords/ugrd
+	}
+}
+_INIT_WALTERJWHITE() {
+	:
+}
+_kernel() {
+	_kernel_conf
+	_kernel_luks_support
+	_PACKAGE_INSTALL sys-kernel/$GENTOO_KERNEL
+	_kernel_zfs_support
+}
+_kernel_conf() {
+	case $GENTOO_INIT in
+	bliss | dracut | ugrd)
+		printf 'USE="$USE %s"\n' "$GENTOO_INIT" >>/etc/portage/make.conf
+		;;
+	esac
+	case $GENTOO_KERNEL in
+	*-kernel | *-kernel-bin)
+		GENTOO_DIST_KERNEL=1
+		printf 'USE="$USE dist-kernel"\n' >>/etc/portage/make.conf
+		;;
+	*)
+		printf 'USE="$USE symlink"\n' >>/etc/portage/make.conf
+		;;
+	esac
+}
+_kernel_zfs_support() {
+	[ "$GENTOO_BOOT_FS" != "zpool" ] && {
+		_WARN "boot -> $GENTOO_BOOT_FS, not setting up ZFS"
+		return 1
+	}
+	[ -n "$GENTOO_ZFS_POOL_NAME" ] && {
+		[ -n "$GENTOO_DIST_KERNEL" ] && {
+			[ -z "$container" ] && {
+				printf 'sys-fs/zfs dist-kernel-cap\n' >>/etc/portage/package.use/zfs
+			}
+		}
+		_PACKAGE_INSTALL sys-fs/zfs-kmod
+		_PACKAGE_INSTALL sys-fs/zfs
+		rc-update add zfs-import boot
+		rc-update add zfs-mount boot
+		rc-update add zfs-zed boot
+	}
+}
+_kernel_luks_support() {
+	[ -n "$GENTOO_DISK_DEVICE_LUKS" ] && _PACKAGE_INSTALL sys-fs/cryptsetup
+}
+_initramfs() {
+	case $GENTOO_INIT in
+	bliss | dracut | ugrd)
+		emerge --config sys-kernel/$GENTOO_KERNEL
+		;;
+	walterjwhite)
+		GENTOO_WALTERJWHITE_INIT_DISK_UUID=$(blkid | grep crypto_LUKS | tr ' ' '\n' | grep ^UUID= | cut -f2 -d= | sed -e 's/"//g')
+		gentoo-build-init $GENTOO_WALTERJWHITE_INIT_DISK_UUID
+		;;
+	esac
+}
+_kernel_container() {
+	_kernel_zfs_support
+}
+_locale() {
+	printf '%s\n' "$GENTOO_SYSTEM_LOCALE_GEN" | tr '|' '\n' >/etc/locale.gen
+	locale-gen
+	eselect locale set $GENTOO_SYSTEM_LOCALE_ESELECT
+	. /etc/profile
+}
+_system() {
+	_hostname
+	_locale
+	_timezone
+	[ -z "$container" ] && _time_synchronization
+	_module_set_log newuse && _EXEC_ATTEMPTS=3 _ _PACKAGE_UPDATE
+	_PRESERVE_LOG=1 _set_logfile /var/log/gentoo-install.log
+	if [ -z "$container" ]; then
+		_firmware
+		_INIT_$GENTOO_INIT
+		_kernel
+		_boot_loader_configure
+		_BOOT_LOADER_$GENTOO_BOOT_LOADER
+		_initramfs
+	else
+		_kernel_container
+	fi
+	_CRON_$GENTOO_CRON
+	_SYSLOG_$GENTOO_SYSLOG
+	_INDEXING_$GENTOO_INDEXING
+	_wgetpaste
+}
+_SYSLOG_SYSKLOGD() {
+	[ -n "$GENTOO_SYSLOG_USE" ] && printf 'app-admin/sysklogd %s\n' "$GENTOO_SYSLOG_USE" >>/etc/portage/package.use/sysklogd
+	_PACKAGE_INSTALL app-admin/sysklogd
+	rc-update add sysklogd boot
+}
+_time_synchronization() {
+	_TIME_SYNCHRONIZATION_$GENTOO_TIME_SYNCHRONIZATION
+}
+_TIME_SYNCHRONIZATION_CHRONY() {
+	_PACKAGE_INSTALL net-misc/chrony
+	rc-update add chronyd
+}
+_TIME_SYNCHRONIZATION_NTP() {
+	mkdir -p /etc/portage/package.use
+	printf 'net-misc/ntp openntpd\n' >>/etc/portage/package.use/ntp
+	_PACKAGE_INSTALL net-misc/ntp
+	rc-update add ntpd
+}
+_timezone() {
+	ln -sf /usr/share/zoneinfo/$GENTOO_SYSTEM_TIMEZONE /etc/localtime
+}
+_wgetpaste() {
+	[ -n "$GENTOO_TOOLS_WGETPASTE" ] && _PACKAGE_INSTALL app-text/wgetpaste
+}
+_incus_live_pre() {
+	incus profile show default >/dev/null 2>&1 || _ incus admin init --auto
+	incus profile show default | grep -A3 root | grep -A2 -B1 'path: /' | grep -A2 -B1 'pool: default' | grep -qm1 'type: disk' || {
+		_WARN "Adding disk to default profile"
+		_ incus profile device add default root disk pool=default path=/
+		return
+	}
+	_WARN "Default profile already contains disk device"
+}
+_incus_live() {
+	[ "$_APPLICATION_CMD" = "_gentoo-installer-chroot" ] && {
+		_WARN "Due to current limitations, this step *MUST* be performed on the live system"
+		return
+	}
+	cd /tmp
+	. $_INCUS_CONFIGURATION_FILE
+	_INCUS_CONFIGURATION_FILE_PATH=$(dirname $_INCUS_CONFIGURATION_FILE)
+	_CONTAINER_NAME=$(basename $_INCUS_CONFIGURATION_FILE_PATH | $_CONF_GNU_SED -e 's/\.incus//' -e 's/^[[:digit:]]\+\.//')
+	_CONTAINER_PATH=/var/lib/incus/storage-pools/default/containers/$_CONTAINER_NAME/rootfs
+	GENTOO_SYSTEM_NAME=$_CONTAINER_NAME
+	incus config show $_CONTAINER_NAME >/dev/null 2>&1
+	if [ $? -gt 0 ]; then
+		_DETAIL "Creating new instance [$_CONTAINER_NAME]"
+		_ incus launch images:$GENTOO_CONTAINER_IMAGE $_CONTAINER_NAME
+	else
+		_WARN "Using existing instance [$_CONTAINER_NAME]"
+	fi
+	mkdir -p $_CONTAINER_PATH/tmp
+	cp -R /root/.ssh $_CONTAINER_PATH/tmp/HOST-SSH
+	_incus_live_install_app install
+	_NO_COPY_CONF=1 _incus_live_install_app gentoo-installer
+	local o_CONF_GENTOO_INSTALL_PATH=$_CONF_GENTOO_INSTALL_PATH
+	_CONF_GENTOO_INSTALL_PATH=$_CONTAINER_PATH
+	_ _prepare_chroot
+	GENTOO_REPOSITORY_PREFIX=$_CONTAINER_PATH _ _setup_git
+	_ _configure
+	_ _write_system
+	_ _portage_write_package_license
+	_ _portage_system_use_flags
+	_ _hardware
+	_ _pre_chroot
+	_incus_mount_kernel_src
+	incus exec \
+		--env container=lxc $_CONTAINER_NAME \
+		_gentoo-installer-chroot
+	if [ -e $_INCUS_CONFIGURATION_FILE_PATH/post-setup ]; then
+		_INFO "running post-setup scripts for $_CONTAINER_NAME"
+		local post_setup_script
+		for post_setup_script in $(find $_INCUS_CONFIGURATION_FILE_PATH/post-setup -type f | sort); do
+			_INFO "Running $post_setup_script"
+			. $post_setup_script
+		done
+	fi
+	_CONF_GENTOO_INSTALL_PATH=$o_CONF_GENTOO_INSTALL_PATH
+}
+_incus_mount_kernel_src() {
+	[ -e /usr/src ] && {
+		mkdir -p $_CONTAINER_PATH/usr/src
+		mount --bind /usr/src $_CONTAINER_PATH/usr/src
+		_defer _incus_umount_kernel_src
+	}
+}
+_incus_umount__KERNEL_src() {
+	umount $_CONTAINER_PATH/usr/src
+}
+_incus_live_install_app() {
+	_INFO "Installing $1 in container"
+	mkdir -p $_CONTAINER_PATH/root/.config/walterjwhite
+	[ -z "$_NO_COPY_CONF" ] &&
+		cp ~/.config/walterjwhite/$1 $_CONTAINER_PATH/root/.config/walterjwhite
+	_PRESERVE_LOG=1 _ROOT=$_CONTAINER_PATH app-install $1
+}
+_zfs_rclone() {
+	local rclone_patch_path=patches/zfs-rclone.patch/package
+	mkdir -p $(dirname $rclone_patch_path)
+	if [ -n "$_ZFS_RCLONE_TARGET" ]; then
+		_INFO "Configuring ZFS rclone target: $_ZFS_RCLONE_TARGET on $_ZFS_VOLUME"
+		[ ! -e $rclone_patch_path ] && printf 'net-misc/rclone\n' >>$rclone_patch_path
+		zfs set rclone:target=$_ZFS_RCLONE_TARGET $_ZFS_VOLUME
+	fi
+	[ -n "$_ZFS_RCLONE_PATH" ] && zfs set rclone:path=$_ZFS_RCLONE_PATH $_ZFS_VOLUME
+	unset _ZFS_RCLONE_PATH _ZFS_RCLONE_TARGET
+}
+_features() {
+	cd $PWD
+	_WARN_ON_ERROR=1 _require_file "$1" "_features: $PWD" || return 1
+	_INFO "Installing ${_FEATURE_MESSAGE}features"
+	local feature
+	for feature in $(_features_find $1 | sort -u); do
+		_FEATURE_NAME=$(printf '%s' $feature | sed -e 's/\.feature/\.feature\n/g' | $_CONF_GNU_GREP -Po '/[a-zA-Z0-9-_]*.feature$' | sed -e 's/^\///' -e 's/\.feature$//' | tr '\n' '_' | sed -e 's/_$//')
+		_application_defaults $feature
+		_is_feature_enabled $_FEATURE_NAME || {
+			_FEATURE_DISABLED=1 _disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+		}
+		_feature $feature || {
+			_disable_feature $_FEATURE_NAME
+			_features_unset
+			continue
+			_FEATURE_ERROR=1
+		}
+		_FEATURE_MESSAGE="children " _WARN_ON_ERROR=1 _features $feature/feature
+		_features_unset
+	done
+}
+_features_unset() {
+	unset _FEATURE_NAME _FEATURE_DISABLED
+}
+_features_find() {
+	if [ -z "$_FEATURE_MESSAGE" ]; then
+		find $1 -type d \( -name '*.feature' -and ! -path '*/*.feature/*' \)
+	else
+		find $1 -type d -name '*.feature' -and ! -path "$1"
+	fi
+}
+_feature() {
+	_DETAIL $_FEATURE_NAME
+	_install $1 || return $?
+	_feature_setup $1 || return $?
+}
+_feature_setup() {
+	local setup_script
+	for setup_script in $(find $1 -type f \( -path "$1/setup/*" \) | sort -u); do
+		_setup_run_script $setup_script || return 1
+	done
+}
+_install() {
+	_sudo mkdir -p $_INSTALL_BIN_PATH
+	_install_help $1
+	local installed_files=$(_mktemp)
+	_install_cmds $1 $installed_files
+	_install_uninstall $1
+	_install_files_files $1 $installed_files
+	_install_update_files $installed_files
+	if [ -e $1/.metadata ]; then
+		cat $1/.metadata | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.metadata"
+	fi
+}
+_install_files() {
+	if [ -e $1 ] && [ $(find $1 -type f | wc -l) -gt 0 ]; then
+		if [ -n "$3" ]; then
+			local files_sed_safe=$(_sed_safe $1)
+			local target_sed_safe=$(_sed_safe $2)
+			find $1 -type f | sed -e "s/^$files_sed_safe/$target_sed_safe/" >>$3
+		fi
+		_sudo mkdir -p $2
+		tar -c $_TAR_ARGS -C $1 . | _sudo tar -xop $_TAR_ARGS -C $2
+	fi
+}
+_install_help() {
+	_install_files $1/help $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/help
+}
+_install_cmds() {
+	if [ "$_TARGET_APPLICATION_NAME" = "$_APPLICATION_NAME" ]; then
+		printf '%s\n' "$_INSTALL_BIN_PATH/$(basename $0)" >>$2
+	fi
+	_install_files $1/bin $_INSTALL_BIN_PATH $2
+}
+_install_uninstall() {
+	_install_files $1/uninstall $_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/uninstall
+}
+_install_files_files() {
+	_install_files $1/files/_ROOT_ $_ROOT $2
+	_install_files $1/files/_APPLICATION_ROOT_ "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME" $2
+}
+_install_update_files() {
+	if [ -n "$_ROOT" ] && [ "$_ROOT" != "/" ]; then
+		local root_sed_safe=$(_sed_safe $_ROOT)
+		$_CONF_GNU_SED -i "s/^$root_sed_safe//" $1
+	fi
+	_INSTALLED_FILES="$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/.files"
+	cat $1 | _write "$_INSTALLED_FILES"
+	rm -f $1
+	_sudo chmod 444 $_INSTALLED_FILES
+}
+_install_metadata_write() {
+	_write $_APPLICATION_METADATA_PATH
+}
+_APP_BOOTSTRAP() {
+	:
+}
+_APP_INSTALL() {
+	_DEPENDENCY=1 app-install $1
+}
+_APP_UNINSTALL() {
+	app-uninstall $1
+}
+_APP_IS_INSTALLED() {
+	[ -e $_CONF_LIBRARY_PATH/$1/.metadata ] && return 0
+	return 1
+}
+_APP_IS_FILE() {
+	return 1
+}
+_CRONTAB_BOOTSTRAP() {
+	:
+}
+_CRONTAB_INSTALL() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	_CRONTAB_UNINSTALL
+	local temp_crontab=$(_mktemp)
+	_sudo cp $1 $temp_crontab
+	_sudo $_CONF_GNU_SED -i "s/$/ # app.$_TARGET_APPLICATION_NAME/" $temp_crontab
+	printf '\n' | _sudo tee -a $temp_crontab >/dev/null 2>&1
+	_sudo $_CONF_GNU_SED -i "1i # app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo $_CONF_GNU_SED -i "1i \\" $temp_crontab
+	_crontab_append $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_UNINSTALL() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_CRONTAB_REMOVE $temp_crontab
+	_crontab_write $_SUDO_USER $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_REMOVE() {
+	_crontab_get $_SUDO_USER $1
+	_sudo $_CONF_GNU_SED -i '/^$/d' $1
+	_sudo $_CONF_GNU_SED -i "/# app.$_TARGET_APPLICATION_NAME/d" $1
+}
+_CRONTAB_IS_INSTALLED() {
+	local oSUDO_USER=$_SUDO_USER
+	_SUDO_USER=root
+	local temp_crontab=$(_mktemp)
+	_crontab_get $_SUDO_USER $temp_crontab
+	_sudo grep -qm1 "# app.$_TARGET_APPLICATION_NAME" $temp_crontab
+	_sudo rm -f $temp_crontab
+	_SUDO_USER=$oSUDO_USER
+}
+_CRONTAB_ENABLED() {
+	return 0
+}
+_CRONTAB_IS_FILE() {
+	return 0
+}
+_EXPECT_BOOTSTRAP() {
+	_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || {
+		_PACKAGE_INSTALL $EXPECT_PACKAGE
+		_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE || EXPECT_DISABLED=1
+	}
+}
+_EXPECT_BOOTSTRAP_IS_EXPECT_AVAILABLE() {
+	which expect >/dev/null 2>&1
+}
+_EXPECT_INSTALL() {
+	$1 >/dev/null 2>&1
+}
+_EXPECT_UNINSTALL() {
+	_WARN "expect uninstall - Not implemented"
+}
+_EXPECT_IS_INSTALLED() {
+	return 1
+}
+_EXPECT_IS_FILE() {
+	return 0
+}
+_GO_BOOTSTRAP() {
+	_GO_BOOTSTRAP_IS_GO_AVAILABLE || {
+		_PACKAGE_INSTALL $GO_PACKAGE
+		_GO_BOOTSTRAP_IS_GO_AVAILABLE || GO_DISABLED=1
+	}
+}
+_GO_BOOTSTRAP_IS_GO_AVAILABLE() {
+	which go >/dev/null 2>&1
+}
+_GO_INSTALL() {
+	_GO_BOOTSTRAP
+	GO111MODULE=on GOPATH=$GO_INSTALL_PATH sudo_options="--preserve-env=GO111MODULE,GOPATH" _sudo go install $GO_OPTIONS "$@" || {
+		_WARN "go install failed: $GO_OPTIONS $@"
+		_WARN "  http_proxy: $http_proxy"
+		_WARN "  git  proxy: $(git config --global http.proxy)"
+	}
+}
+_GO_UPDATE() {
+	:
+}
+_GO_UNINSTALL() {
+	_sudo go uninstall "$@"
+}
+_GO_IS_INSTALLED() {
+	return 1
+}
+_GO_IS_FILE() {
+	return 1
+}
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
+	}
+	_NPM_SETUP_PROXY
+}
+_NPM_BOOTSTRAP_IS_NPM_AVAILABLE() {
+	which npm >/dev/null 2>&1
+}
+_NPM_INSTALL() {
+	local npm_package
+	for npm_package in "$@"; do
+		_NPM_IS_INSTALLED $npm_package || _sudo npm install -s -g "$npm_package"
+	done
+}
+_NPM_UNINSTALL() {
+	_sudo npm uninstall -s -g "$@"
+}
+_NPM_IS_INSTALLED() {
+	npm list -g $1 >/dev/null
+}
+_NPM_IS_FILE() {
+	return 1
+}
+_NPM_SETUP_PROXY() {
+	if [ -n "$http_proxy" ]; then
+		_WARN "Configuring NPM to use an HTTP proxy: $http_proxy"
+		npm config set proxy $http_proxy
+		npm config set https-proxy $https_proxy
+		_defer _NPM_CLEAR_PROXY
+	fi
+}
+_NPM_CLEAR_PROXY() {
+	_WARN "Reverting NPM HTTP proxy: $http_proxy"
+	npm config rm proxy
+	npm config rm https-proxy
+}
+_PACKAGE_BOOTSTRAP() {
+	:
+}
+_PACKAGE_INSTALL() {
+	[ $# -eq 0 ] && {
+		_WARN "no packages to install, none specified"
+		return 1
+	}
+	local packages
+	local package
+	for package in "$@"; do
+		_PACKAGE_IS_INSTALLED $package || {
+			if [ -n "$packages" ]; then
+				packages="$packages $package"
+			else
+				packages="$package"
+			fi
+		}
+	done
+	if [ -n "$packages" ]; then
+		_PACKAGE_INSTALL_DO "$packages"
+	else
+		_WARN "Packages [$*] are already installed, skipping"
+		return 0
+	fi
+}
+_PACKAGE_IS_FILE() {
+	return 1
+}
+_PACKAGE_ENABLED() {
+	return 0
+}
+_PYPI_BOOTSTRAP() {
+	_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || {
+		_PACKAGE_INSTALL $PYPI_PACKAGE
+		_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE || PYPI_DISABLED=1
+	}
+}
+_PYPI_BOOTSTRAP_IS_PYPI_AVAILABLE() {
+	which pip >/dev/null 2>&1
+}
+_PYPI_INSTALL() {
+	_sudo pip install -U --no-input "$@" >/dev/null
+}
+_PYPI_UNINSTALL() {
+	_sudo pip uninstall -y "$@" >/dev/null
+}
+_PYPI_IS_INSTALLED() {
+	_ERROR "PIP - is installed - NOT IMPLEMENTED"
+}
+_PYPI_IS_FILE() {
+	return 1
+}
+_RUN_BOOTSTRAP() {
+	:
+}
+_RUN_INSTALL() {
+	sh $1
+}
+_RUN_UNINSTALL() {
+	_WARN "run uninstall - Not implemented"
+}
+_RUN_IS_INSTALLED() {
+	return 1
+}
+_RUN_IS_FILE() {
+	return 0
+}
+_RUST_BOOTSTRAP() {
+	_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || {
+		_PACKAGE_INSTALL $RUST_PACKAGE
+		_RUST_BOOTSTRAP_IS_RUST_AVAILABLE || RUST_DISABLED=1
+	}
+}
+_RUST_BOOTSTRAP_IS_RUST_AVAILABLE() {
+	which cargo >/dev/null 2>&1
+}
+_RUST_INSTALL() {
+	_sudo cargo install "$@"
+}
+_RUST_UPDATE() {
+	_sudo cargo update "$@"
+}
+_RUST_UNINSTALL() {
+	_sudo cargo uninstall "$@"
+}
+_RUST_IS_INSTALLED() {
+	_ERROR "RUST - is installed - NOT IMPLEMENTED"
+}
+_RUST_IS_FILE() {
+	return 1
+}
+_USER_IS_FILE() {
+	return 0
+}
+_application_defaults() {
+	local default_file
+	for default_file in $(find $1/cfg -type f 2>/dev/null); do
+		_include $default_file
+	done
+}
+_setup_run_script() {
+	_SETUP_TYPE_NAME=$(basename $1)
+	_setup_contains_subtype $_SETUP_TYPE_NAME && {
+		_setup_sub_platform_matches $_SETUP_TYPE_NAME || {
+			_WARN "Ignoring $1, does not target this sub-platform"
+			return
+		}
+	}
+	case $_SETUP_TYPE_NAME in
+	*.*)
+		_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | sed -e "s/^.*\.//")
+		;;
+	[0-9][0-9]_[[:alnum:]]*)
+		_SETUP_TYPE_NAME=f_$_SETUP_TYPE_NAME
+		;;
+	esac
+	_SETUP_TYPE_NAME=${_SETUP_TYPE_NAME%_*}
+	_SETUP_TYPE_NAME=$(printf '%s' $_SETUP_TYPE_NAME | tr '[:lower:]' '[:upper:]')
+	type _${_SETUP_TYPE_NAME}_BOOTSTRAP >/dev/null 2>&1 || {
+		_WARN "Unknown type: $_SETUP_TYPE_NAME"
+		return
+	}
+	if [ ! -e $1 ]; then
+		_WARN "$1 no longer exists, ignoring"
+		return 0
+	fi
+	_variable_is_set _${_SETUP_TYPE_NAME}_DISABLED && return
+	_sudo mkdir -p "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type"
+	_setup_run_do_bootstrap $_SETUP_TYPE_NAME
+	_${_SETUP_TYPE_NAME}_IS_FILE
+	if [ $? -eq 0 ]; then
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $1 || {
+			local error=$?
+			_WARN "Error installing: $_SETUP_TYPE_NAME: $1"
+			return $error
+		}
+		_call _${_SETUP_TYPE_NAME}_GET_DATA $1 | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	else
+		local packages=$($_CONF_GNU_GREP -Pv '(^$|^#)' $1 | tr '\n' ' ')
+		_WARN=$_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL _${_SETUP_TYPE_NAME}_INSTALL $packages || {
+			local error=$?
+			_WARN "Error installing $packages"
+			return $error
+		}
+		printf "$packages" | tr ' ' '\n' | _write "$_INSTALL_LIBRARY_PATH/$_TARGET_APPLICATION_NAME/type/.${_SETUP_TYPE_NAME}"
+	fi
+	_call _${_SETUP_TYPE_NAME}_CLEANUP
+	return 0
+}
+_setup_contains_subtype() {
+	[ -z "$_SUB_PLATFORM" ] && return 1
+	case $1 in
+	*_*)
+		return 0
+		;;
+	esac
+	return 1
+}
+_setup_sub_platform_matches() {
+	local setup_type_sub_platform=${1##*_}
+	setup_type_sub_platform=${setup_type_sub_platform%%.*}
+	[ -z "$setup_type_sub_platform" ] && return 0
+	[ "$setup_type_sub_platform" = "$_SUB_PLATFORM" ] && return 0
+	return 1
+}
+_setup_run_do_bootstrap() {
+	_setup_type_bootstrapped $1 || {
+		_call _${1}_BOOTSTRAP
+		_call _${1}_BOOTSTRAP_POST
+		export _BOOTSTRAP_${1}=1
+		printf '_BOOTSTRAP_%s=1\n' "$1" | _install_metadata_write
+	}
+}
+_setup_type_bootstrapped() {
+	_variable_is_set _BOOTSTRAP_${1}
+}
+_PACKAGE_UPDATE() {
+	_package_sync
+	_INFO "updating world packages"
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --newuse -uD world $@
+	_INFO "updated world packages"
+	if [ -n "$_OPTN_INSTALL_GENTOO_DEPCLEAN" ]; then
+		_INFO "running depclean"
+		_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --depclean $@
+		_INFO "depclean completed"
+	fi
+}
+_PACKAGE_INSTALL_DO() {
+	_package_sync
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS $@
+}
+_PACKAGE_UNINSTALL() {
+	_package_sync
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --depclean $@
+}
+_PACKAGE_IS_INSTALLED() {
+	[ -f $_ROOT/var/lib/portage/world ] && {
+		$_CONF_GNU_GREP -Pqm1 "^${1}$" $_ROOT/var/lib/portage/world && {
+			return 0
+		}
+	}
+	local package_group=$(printf '%s' $1 | cut -f1 -d/)
+	local package_name=$(printf '%s' $1 | cut -f2 -d/)
+	if [ -e $_ROOT/var/db/pkg/$package_group ]; then
+		find $_ROOT/var/db/pkg/$package_group -type f | $_CONF_GNU_GREP -Pqm1 "/$package_name-[\d_\-\.]_.ebuild" && {
+			return 0
+		}
+	fi
+	return 1
+}
+__PACKAGE_BOOTSTRAP() {
+	mount | grep -qm1 'overlay on /' && {
+		_WARN 'Disabling emerge as it appears we are running on an overlayfs'
+		_PACKAGE_DISABLED=1
+		return 1
+	}
+	[ ! -e $_ROOT/etc/portage/repos.conf ] && {
+		_sudo cp $_ROOT/usr/share/portage/config/repos.conf $_ROOT/etc/portage/repos.conf
+	}
+	[ -e /etc/portage/make.conf ] && {
+		grep -qm1 '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf && {
+			grep -qm1 '^GENTOO_MIRRORS=.*$' $_ROOT/etc/portage/make.conf || {
+				printf '# mirror from host\n' >>$_ROOT/etc/portage/make.conf
+				grep '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf >>$_ROOT/etc/portage/make.conf
+			}
+		}
+	}
+	_package_sync
+	[ ! -e $_ROOT/etc/portage/package.accept_keywords/platform ] && {
+		_sudo mkdir -p $_ROOT/etc/portage/package.accept_keywords
+		printf '%s\n' "$_PLATFORM_PACKAGES_ACCEPT_KEYWORDS" | _write $_ROOT/etc/portage/package.accept_keywords/platform
+	}
+}
+_package_sync() {
+	_EMERGE_SYNC_FILE=$_CONF_APPLICATION_DATA_PATH/emerge.sync.time
+	_package_synced && {
+		_DEBUG "portage was already synced today"
+		return
+	}
+	_sudo mkdir -p $(dirname $_EMERGE_SYNC_FILE)
+	_INFO "syncing portage"
+	_sudo emerge $_EMERGE_FLAGS $_EMERGE_OPTIONS --sync && date +%s >$_EMERGE_SYNC_FILE
+	_INFO "synced portage"
+}
+_package_synced() {
+	[ ! -e $_EMERGE_SYNC_FILE ] && return 1
+	local last_synced=$(head -1 $_EMERGE_SYNC_FILE)
+	local current_time=$(date +%s)
+	[ $(($current_time - $last_synced)) -gt 86400 ] && return 1
+	return 0
+}
+__PACKAGE_BOOTSTRAP_IS_PACKAGE_AVAILABLE() {
+	return 0
+}
+_F_00_MASK_BOOTSTRAP() {
+	:
+}
+_F_00_MASK_INSTALL() {
+	_gentoo_portage_install_file package.mask $1
+}
+_F_00_MASK_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.mask $1
+}
+_F_00_MASK_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.mask $1
+}
+_F_00_MASK_ENABLED() {
+	return 0
+}
+_F_00_MASK_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_INSTALL() {
+	_gentoo_portage_install_file package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.accept_keywords $1
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_ACCEPT_KEYWORDS_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_LICENSE_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_LICENSE_INSTALL() {
+	_gentoo_portage_install_file package.license $1
+}
+_F_00_PACKAGE_LICENSE_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.license $1
+}
+_F_00_PACKAGE_LICENSE_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.license $1
+}
+_F_00_PACKAGE_LICENSE_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_LICENSE_IS_FILE() {
+	return 0
+}
+_F_00_PACKAGE_USE_BOOTSTRAP() {
+	:
+}
+_F_00_PACKAGE_USE_INSTALL() {
+	_gentoo_portage_install_file package.use $1
+}
+_F_00_PACKAGE_USE_UNINSTALL() {
+	_gentoo_portage_uninstall_file package.use $1
+}
+_F_00_PACKAGE_USE_IS_INSTALLED() {
+	_gentoo_portage_is_installed package.use $1
+}
+_F_00_PACKAGE_USE_ENABLED() {
+	return 0
+}
+_F_00_PACKAGE_USE_IS_FILE() {
+	return 0
+}
+_F_00_USE_BOOTSTRAP() {
+	:
+}
+_F_00_USE_INSTALL() {
+	local name_suffix=$(_get_feature_name $1)
+	printf '# app.%s%s\n' $_TARGET_APPLICATION_NAME "$name_suffix" | _sudo tee -a /etc/portage/make.conf >/dev/null 2>&1
+	printf 'USE="$USE %s" # app.%s%s\n' "$(cat $1)" $_TARGET_APPLICATION_NAME "$name_suffix" | _sudo tee -a /etc/portage/make.conf >/dev/null 2>&1
+}
+_F_00_USE_UNINSTALL() {
+	local name_suffix=$(_get_feature_name $1)
+	_sudo $_CONF_GNU_SED -i "s/ app.$_TARGET_APPLICATION_NAME${name_suffix}/ /" /etc/portage/make.conf
+}
+_F_00_USE_IS_INSTALLED() {
+	local name_suffix=$(_get_feature_name $1)
+	grep -qm1 " # app.$_TARGET_APPLICATION_NAME${name_suffix}" /etc/portage/make.conf
+}
+_F_00_USE_ENABLED() {
+	return 0
+}
+_F_00_USE_IS_FILE() {
+	return 0
+}
+__APP_DEFAULT_BOOTSTRAP() {
+	:
+}
+__APP_DEFAULT_INSTALL() {
+	if [ -n $_USER ]; then
+		_SUDO_USER="$USER" _sudo xdg-mime default $1.desktop $2
+		return $?
+	fi
+	xdg-mime default $1.desktop $2
+}
+__APP_DEFAULT_UNINSTALL() {
+	:
+}
+__APP_DEFAULT_IS_INSTALLED() {
+	:
+}
+__APP_DEFAULT_ENABLED() {
+	return 0
+}
+_NPM_BOOTSTRAP() {
+	_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || {
+		_npm_setup_use_flags
+		_PACKAGE_INSTALL $NPM_PACKAGE
+		_NPM_BOOTSTRAP_IS_NPM_AVAILABLE || NPM_DISABLED=1
+	}
+	_NPM_SETUP_PROXY
+}
+_npm_setup_use_flags() {
+	local use_flag_file=/tmp/install-gentoo-npm.use
+	printf '%s npm\n' $NPM_PACKAGE >$use_flag_file
+	_F_00_PACKAGE_USE_INSTALL $use_flag_file
+	rm -f $use_flag_file
+}
+_user_bootstrap() {
+	_sudo mkdir -p /root/.ssh/socket
+	_sudo chmod -R 700 /root/.ssh/socket
+	app-install configuration
+}
+_USER_UNINSTALL() {
+	. "$1"
+	_require "$username" "username"
+	userdel $username
+}
+_users_add_argument() {
+	[ -n "$2" ] && user_options="$user_options $1 $2"
+}
+_users_add() {
+	. $1
+	if [ "root" != "$username" ]; then
+		_sudo pw user show $username >/dev/null 2>&1 || {
+			_INFO "### Add User: $1: $username"
+			user_options="-m"
+			_users_add_argument "-g" "$gid"
+			_users_add_argument "-G" "$grouplist"
+			_users_add_argument "-s" "$shell"
+			_users_add_argument "-u" "$uid"
+			_users_add_argument "-p" "$password"
+			_sudo useradd $user_options $username
+		}
+	else
+		_INFO "# Setting shell to $shell for root"
+		[ -n "$shell" ] && _sudo chsh -s "$shell"
+		if [ -n "$password" ]; then
+			_INFO "# Setting root password"
+			_sudo usermod -p "$password" $username
+		fi
+	fi
+	_users_configure
+	_users_cleanup
+}
+_users_cleanup() {
+	unset user_options username gid grouplist shell uid password system
+}
+_users_configure() {
+	local user_home=$(grep "^$username:" /etc/passwd | cut -f6 -d':')
+	_prepare_ssh_conf $user_home $username
+	local original_pwd=$PWD
+	cd /tmp
+	if [ -n "$system" ]; then
+		_WARN "$username is a system user, bypassing configuration"
+	else
+		_WARN_ON_ERROR=1 _CHILD=1 _PRESERVE_LOG=1 _SUDO_USER=$username \
+			sudo_options="--preserve-env=_CHILD,_PRESERVE_LOG,_CONF_GIT_MIRROR,_WARN,_LOG_TARGET,http_proxy,https_proxy -H" \
+			_ _sudo conf restore || _user_configure_debug
+	fi
+	[ "root" != "$username" ] && {
+		_sudo chown -R $username:$username $user_home
+	}
+	cd $original_pwd
+}
+_user_configure_debug() {
+	_WARN "Error restoring configuration for $username"
+	cat $user_home/.ssh/id_*.pub
+	cat $user_home/.ssh/authorized_keys
+	cat $user_home/.ssh/config
+}
+_get_feature_name() {
+	case $1 in
+	*feature*)
+		printf '%s' "$1" | sed \
+			-e 's/^.*\/feature\///' \
+			-e 's/.feature\/.*//' \
+			-e 's/^/./' \
+			-e 's/\//./g'
+		;;
+	*)
+		printf ''
+		;;
+	esac
+}
+_gentoo_portage_install_file() {
+	_sudo mkdir -p /etc/portage/$1
+	_sudo cp $2 /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2)
+}
+_gentoo_portage_uninstall_file() {
+	_sudo rm -f /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2)
+}
+_gentoo_portage_is_installed() {
+	[ -e /etc/portage/$1/app.$_TARGET_APPLICATION_NAME$(_get_feature_name $2) ]
+}
+_write() {
+	_sudo tee -a "$1" >/dev/null
+}
+_crontab_get() {
+	_require "$1" "Crontab User"
+	_require "$2" "Crontab Filename to write to"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_GET "$@"
+}
+_crontab_write() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE "$@"
+}
+_crontab_append() {
+	_require "$1" "Crontab User"
+	_require_file "$2" "Crontab File"
+	_has_contents $2 || return 1
+	local current_crontab=$(_SUDO_USER=$1 _mktemp)
+	_crontab_get $1 $current_crontab
+	_sudo cat $2 | _sudo tee -a $current_crontab >/dev/null 2>&1
+	_CRONTAB_${_CONF_CRON_PROVIDER}_WRITE $1 $current_crontab
+	_sudo rm -f $current_crontab
+}
+_CRONTAB_DEFAULT_CLEAR() {
+	_SUDO_USER=$1 _sudo crontab -f -r 2>/dev/null
+}
+_CRONTAB_DEFAULT_GET() {
+	_SUDO_USER=$1 _sudo crontab -l >$2 2>/dev/null
+}
+_CRONTAB_DEFAULT_WRITE() {
+	_crontab_default_header $1 $2
+	_SUDO_USER=$1 _sudo mkdir -p $HOME/.cache/crontab
+	_SUDO_USER=$1 _sudo crontab $2 || {
+		_WARN "_ERROR writing crontab"
+		_SUDO_USER=$1 _sudo cat $2
+	}
+}
+_crontab_default_header() {
+	if [ -n "$_OPTN_INSTALL_CRONTAB_HEADER" ]; then
+		printf '%s\n\n' "$_OPTN_INSTALL_CRONTAB_HEADER" | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+		_SUDO_USER=$1 _sudo mv $2.new $2
+	fi
+	_SUDO_USER=$1 _sudo cat $2 | _SUDO_USER=$1 _sudo tee -a $2.new >/dev/null 2>&1
+	_SUDO_USER=$1 _sudo mv $2.new $2
+}
+_CRONTAB_DCRON_CLEAR() {
+	case $1 in
+	root)
+		_SUDO_USER=$1 _sudo crontab /etc/crontab
+		;;
+	*)
+		_SUDO_USER=$1 _sudo crontab -d
+		;;
+	esac
+}
+_CRONTAB_DCRON_GET() {
+	_SUDO_USER=$1 _sudo crontab -l | _SUDO_USER=$1 _sudo tee $2 >/dev/null 2>&1
+}
+_CRONTAB_DCRON_WRITE() {
+	_SUDO_USER=$1 _sudo crontab $2
+}
+_extract() {
+	if [ $# -lt 2 ]; then
+		_WARN "Expecting 2 arguments, source file, and target to extract to"
+		return 1
+	fi
+	_INFO "### Extracting $1"
+	local _extension=$(printf '%s' "$1" | $_CONF_GNU_GREP -Po "\\.(tar\\.gz|tar\\.bz2|tbz2|tgz|zip|tar\\.xz)$")
+	local sudo
+	[ -n "$_SUDO_REQUIRED" ] && sudo=_sudo
+	[ -n "$_CLEAN" ] && {
+		$sudo rm -rf $2
+		$sudo mkdir -p $2
+	}
+	case $_extension in
+	".tar.gz" | ".tgz" | ".tar.bz2" | ".tbz2" | ".tar.xz")
+		$sudo tar xf $1 -C $2
+		;;
+	".zip")
+		$sudo unzip -q $1 -d $2
+		;;
+	*)
+		_WARN "extension unsupported - $_extension $1"
+		return 2
+		;;
+	esac
+}
+_require_file() {
+	_require "$1" filename _require_file
+	local level=_ERROR
+	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
+	if [ ! -e $1 ]; then
+		$level "File: $1 does not exist | $2"
+		return 1
+	fi
+}
+_has_contents() {
+	_require_file "$1" "_has_contents:$1"
+	[ $(_sudo wc -l <$1) -gt 0 ] && return 0
+	return 1
+}
+_download() {
+	mkdir -p $_CONF_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	_DOWNLOADED_FILE=$_CONF_CACHE_PATH/$_cached_filename
+	if [ -e $_DOWNLOADED_FILE ]; then
+		_DETAIL "$1 already downloaded to: $_DOWNLOADED_FILE"
+		return
+	fi
+	if [ -z "$_DOWNLOAD_DISABLED" ]; then
+		_INFO "Downloading $1 -> $_DOWNLOADED_FILE"
+		curl $_CURL_OPTIONS -o $_DOWNLOADED_FILE -s -L "$1"
+	else
+		_continue_if "Please manually download: $1 and place it in $_DOWNLOADED_FILE" "Y/n"
+	fi
+}
+_download_install_file() {
+	_WARN_ON_ERROR=1 _require "$1" "1 (_download_install_file) target filename" && return 1
+	_INFO "Installing $_DOWNLOADED_FILE -> $1"
+	_sudo mkdir -p $(dirname $1)
+	_sudo cp $_DOWNLOADED_FILE $1
+	_sudo chmod 444 $1
+	unset _DOWNLOADED_FILE
+	[ ! -e $1 ] && return 1
+	return 0
+}
+_prepare_ssh_conf() {
+	_sudo mkdir -p $1/.ssh/socket
+	_sudo chmod 700 $1/.ssh/socket
+	printf 'StrictHostKeyChecking no\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	[ -n "$_HOST_IP" ] && _ssh_init_bastion_host $1
+	if [ -e /tmp/HOST-SSH ]; then
+		_INFO "Copying host ssh -> $1/.ssh"
+		_sudo cp /tmp/HOST-SSH/id* $1/.ssh
+	fi
+	if [ -e /tmp/CONFIG-WALTERJWHITE ]; then
+		_INFO "Copying walterjwhite conf -> $1/.config/walterjwhite"
+		_sudo mkdir -p $1/.config
+		_sudo cp -r /tmp/CONFIG-WALTERJWHITE $1/.config/walterjwhite
+	fi
+	[ "$2" != "root" ] && _sudo chown -R $2:$2 $1
+}
+_ssh_init_bastion_host() {
+	_INFO "Setting up SSH Bastion host: $1"
+	printf 'Host host-proxy\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' Hostname %s\n' "$_HOST_IP" | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host git\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host freebsd-package-cache\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	printf 'Host %s\n' "$_PACKAGE_CACHE" | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' ProxyJump host-proxy:%s\n' $_SSH_HOST_PORT | _sudo tee -a $1/.ssh/config >/dev/null
+	printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	if [ "$_PACKAGE_CACHE" != "$_GIT_MIRROR" ]; then
+		printf 'Host %s\n' "$_GIT_MIRROR" | _sudo tee -a $1/.ssh/config >/dev/null
+		printf ' ProxyJump host-proxy\n' | _sudo tee -a $1/.ssh/config >/dev/null
+		printf ' User root\n' | _sudo tee -a $1/.ssh/config >/dev/null
+	fi
+	_sudo chmod 600 $1/.ssh/config
+}
+_include logging platform context wait beep paths net . gentoo-installer
+: ${_CONF_LOG_HEADER:="##################################################"}
+: ${_CONF_LOG_C_ALRT:="1;31m"}
+: ${_CONF_LOG_C_ERR:="1;31m"}
+: ${_CONF_LOG_C_SCS:="1;32m"}
+: ${_CONF_LOG_C_WRN:="1;33m"}
+: ${_CONF_LOG_C_INFO:="1;36m"}
+: ${_CONF_LOG_C_DETAIL:="1;0;36m"}
+: ${_CONF_LOG_C_DEBUG:="1;35m"}
+: ${_CONF_LOG_C_STDIN:="1;34m"}
+: ${_CONF_LOG_DATE_FORMAT:="%Y/%m/%d|%H:%M:%S"}
+: ${_CONF_LOG_DATE_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
+: ${_CONF_LOG_LEVEL:=2}
+: ${_CONF_LOG_INDENT:="  "}
+: ${_CONF_LOG_CONF_VALIDATION_FUNCTION:=warn}
+: ${_CONF_LOG_WAITER_LEVEL:=debug}
+: ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
+: ${_CONF_LOG_LONG_RUNNING_CMD:=30}
+: ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
+[ -t 0 ] && INTERACTIVE=1
+: ${_CONF_LOG_CONSOLE:=2}
+: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${CFG:="logging platform context wait beep paths net"}
+: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
+which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+_DETECTED_PLATFORM=$(uname)
+case $_DETECTED_PLATFORM in
+Darwin)
+	_DETECTED_PLATFORM=Apple
+	;;
+MINGW64_NT-*)
+	_DETECTED_PLATFORM=Windows
+	;;
+esac
+_PLATFORM="Linux"
+: ${_CONF_GNU_GREP:=grep}
+: ${_CONF_GNU_SED:=sed}
+_ARCHITECTURE=$(uname -m)
+_SUDO_CMD="sudo"
+_PLATFORM_PACKAGES="dev-vcs/git net-misc/curl dev-util/sh"
+NPM_PACKAGE="net-libs/nodejs"
+RUST_PACKAGE="rust"
+PYPI_PACKAGE="dev-lang/python"
+GO_PACKAGE="dev-lang/go"
+EXPECT_PACKAGE="dev-tcltk/expect"
+: ${_CONF_LOG_SUDO_BEEP_TONE:=L32aL8fL32c}
+: ${_CONF_INSTALL_STAT_ARGUMENTS:='-f %OLp'}
+: ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${_CONF_INSTALL_CONTEXT:=default}
+: ${_CONF_WAIT_INTERVAL:=30}
+: ${RSRC_BEEP:=/tmp/beep}
+: ${_CONF_LOG_BEEP_TIMEOUT:=5}
+: ${_CONF_LOG_BEEP_ERR:='L32c'}
+: ${_CONF_LOG_BEEP_ALRT:='L32f'}
+: ${_CONF_LOG_BEEP_SCS:='L32a'}
+: ${_CONF_LOG_BEEP_WRN:=''}
+: ${_CONF_LOG_BEEP_INFO:=''}
+: ${_CONF_LOG_BEEP_DETAIL:=''}
+: ${_CONF_LOG_BEEP_DEBUG:=''}
+: ${_CONF_LOG_BEEP_STDIN:='L32ab'}
+[ "$HOME" = "/" ] && HOME=/root
+: ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
+: ${_CONF_BIN_PATH:=/usr/local/bin}
+_CONF_DATA_PATH=$HOME/.data
+_CONF_CACHE_PATH=$_CONF_DATA_PATH/.cache
+_CONF_CONFIG_PATH=$HOME/.config/walterjwhite
+_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
+_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
+_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_NETWORK_TEST_TIMEOUT:=5}
+: ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_GENTOO_INSTALLER_VERSION:=20250105T170325Z}
+: ${_CONF_GENTOO_VERBOSE_TAR:=}
+: ${_CONF_GENTOO_INSTALL_PATH:=/mnt/gentoo}
+: ${INCUS_CLEANUP_EXISTING=N}
+: ${MODULES_IMPLEMENTATION:=host}
+: ${GENTOO_STAGE3_TYPE:="hardened-openrc"}
+: ${GENTOO_KERNEL:=gentoo-kernel}
+: ${GENTOO_INIT:=DRACUT}
+: ${GENTOO_BOOT_LOADER:=EFIBOOTMGR}
+: ${GENTOO_BOOT_METHOD:=UEFI}
+: ${GENTOO_BOOT_FS:=zpool}
+: ${GENTOO_CRON:=DCRON}
+: ${GENTOO_SYSLOG:=SYSKLOGD}
+: ${GENTOO_SYSLOG_USE:=logrotate}
+: ${GENTOO_INDEXING:=PLOCATE}
+: ${GENTOO_L10N:="en en-US"}
+: ${GENTOO_LUKS_CIPHER:=aes-xts-plain}
+: ${GENTOO_LUKS_KEY_SIZE:=512}
+: ${GENTOO_LUKS_HASH:=sha512}
+: ${GENTOO_SOFTWARE_LICENSE:="@FREE @BINARY-REDISTRIBUTABLE"}
+: ${GENTOO_TIME_SYNCHRONIZATION:=CHRONY}
+: ${GENTOO_KERNEL:=gentoo-kernel}
+: ${GENTOO_KERNEL_CMDLINE_ARGS:="consoleblank=300 quiet"}
+: ${_CONF_GENTOO_INSTALLER_SYSTEM_IDENTIFICATION:="/usr/local/etc/walterjwhite/system"}
+: ${GENTOO_SYSTEM_LOCALE_ESELECT:=en_US.utf8}
+: ${GENTOO_SYSTEM_LOCALE_GEN:=en_US ISO-8859-1|en_US.UTF-8 UTF-8}
+: ${GENTOO_TOOLS_WGETPASTE:=1}
+: ${GENTOO_SYSTEM_TIMEZONE:=America/New_York}
+: ${GENTOO_PORTAGE_NICENESS=19}
+: ${GENTOO_PORTAGE_SCHEDULING_POLICY=batch}
+: ${_CONF_GENTOO_INSTALLER_LIVE_PATH:=/run/root-volume}
+: ${_CONF_GENTOO_INSTALLER_LIVE_OVERLAY_PATH:=/mnt/overlay}
+: ${_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE:=zstd}
+: ${GENTOO_ROOT_SQUASH_OUTPUT_FILE=$_CONF_APPLICATION_DATA_PATH/gentoo-root.img.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE}
+: ${_CONF_GENTOO_INSTALLER_LIVE_USE_ENCRYPTION:=y}
+: ${GENTOO_DRACUT_MODULES:="dmsquash-live"}
+: ${_CONF_GENTOO_INSTALLER_UPDATE_EFI:=n}
+: ${GENTOO_BOOT_LOADER_ARGS:="consoleblank=300 quiet"}
+: ${BUSYBOX_CMDS:="awk basename cat cp dd df dirname dmesg find grep insmod losetup ln ls lsmod mkdir modprobe mount readlink rm sh sleep stat switch_root umount uname"}
+: ${INIT_CMDS:="/usr/bin/busybox /usr/bin/cryptsetup /usr/bin/findfs /usr/bin/rsync /usr/bin/tar /usr/bin/udevadm /usr/lib/systemd/systemd-udevd"}
+: ${OVERLAYFS_SIZE:=1073741824}
+: ${INIT_COMPRESSION:=zstd}
+: ${INIT_OUTPUT_FILE:=$_CONF_APPLICATION_DATA_PATH/initramfs.cpio.$INIT_COMPRESSION}
+: ${INIT_COMPRESSION_CMD:="zstd --ultra"}
+: ${INIT_REQUIRED_MODULES:="loop overlay squashfs usb_storage uas"}
+: ${INIT_MODULE_PATHS:="crypto fs lib drivers/{block,ata,nvme,md} drivers/usb/{host,storage}"}
+GENTOO_LIVE_DATA_FILE=$_CONF_GENTOO_INSTALLER_LIVE_PATH/data.tar.$_CONF_GENTOO_INSTALLER_LIVE_COMPRESSION_TYPE
+GENTOO_LUKS_KEY_HEADER_PATH=/run/.luks-header
+[ -n "$INTERACTIVE" ] && LUKS_OPTIONS="-q"
+_include cron
+: ${_CONF_CRON_PROVIDER:=DEFAULT}
+_REQUIRED_APP_CONF="_CONF_APP_REGISTRY_GIT_URL _CONF_CLEAN_APP_REGISTRY_WORKSPACE _CONF_GENTOO_INSTALLER_GIT_LUKS_URL _CONF_GENTOO_INSTALLER_GIT_URL _CONF_INSTALL_CHECKSUM_CMD"
+_sub_platform
+case $_SUB_PLATFORM in
+Alpine)
+	_INSTALL_INSTALLER=apk
+	_CONF_INSTALL_STAT_ARGUMENTS='-c %a'
+	_CONF_GNU_GREP=ugrep
+	_CONF_GNU_SED=sed
+	_is_backgrounded() {
+		:
+	}
+	REMOVE_UNUSED_FUNCTIONS=''
+	;;
+Debian | Ubuntu)
+	_INSTALL_INSTALLER=apt
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	;;
+Gentoo)
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	_PLATFORM_PACKAGES="app-eselect/eselect-repository app-portage/mirrorselect app-portage/cpuid2cpuflags sys-apps/pciutils sys-fs/dosfstools dev-vcs/git dev-tcltk/expect net-misc/curl dev-util/sh app-admin/sudo sys-apps/usbutils"
+	_PLATFORM_PACKAGES_ACCEPT_KEYWORDS="dev-util/sh ~amd64"
+	NPM_PACKAGE="net-libs/nodejs"
+	RUST_PACKAGE="dev-lang/rust"
+	PYPI_PACKAGE="dev-lang/python"
+	GO_PACKAGE="dev-lang/go"
+	_INSTALL_INSTALLER=emerge
+	_CONF_INSTALL_STAT_ARGUMENTS='-c %a'
+	ASSUME_ALWAYS_YES=yes
+	: ${_EMERGE_FLAGS:="-q --quiet-build --quiet-fail"}
+	[ -n "$_ROOT" ] && [ "$_ROOT" != "/" ] && _EMERGE_OPTIONS="--root=$_ROOT"
+	;;
+CentOS | RedHat)
+	_CONF_GNU_GREP=grep
+	_CONF_GNU_SED=sed
+	_INSTALL_INSTALLER=yum
+	;;
+*)
+	_ERROR "Unknown Linux Distribution: $_SUB_PLATFORM"
+	;;
+esac
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
+trap _on_exit INT 0 1 2 3 4 6 15
+for _ARG in "$@"; do
+	case $_ARG in
+	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]* | --[a-z0-9][a-z0-9][a-z0-9]*)
+		_configuration_name=${_ARG#*-}
+		_configuration_name=${_configuration_name%%=*}
+		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
+			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
+			else
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
+			fi
+		fi
+		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
+			_configuration_value=1
+		else
+			_configuration_value=${_ARG#*=}
+		fi
+		export _$_configuration_name="$_configuration_value"
+		unset _configuration_name
+		shift
+		;;
+	-h | --help)
+		_print_help_and_exit
+		;;
+	-w=*)
+		_WAITER_PID="${1#*=}"
+		shift
+		;;
+	-w)
+		_WAITEE=1
+		shift
+		;;
+	*)
+		break
+		;;
+	esac
+done
+if [ -z "$_CONTEXT_VALIDATED" ]; then
+	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
+	_CONTEXT_VALIDATED=0
+fi
+_APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
+_APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
+_waitee_init
+_waiter
+_set_logfile /var/log/gentoo-install.log
+_setup_chroot
+[ -z "$container" ] && _start_ssh
+_system
+_configure_patches
+_patches use
+_patches download file
+_module_set_log newuse && _EXEC_ATTEMPTS=3 _ _PACKAGE_UPDATE
+[ -z "$container" ] && _patches lxd incus
+_patches zfs
+_patches package_uninstall package
+_patches group user
+_patches app go npm rust pypi
+_patches link
+_patches chown chmod run crontab
+_patches service fstab cups_printer
+_patches sysctl post_run
+_PRESERVE_LOG=1 _set_logfile /var/log/gentoo-install.log
+[ -z "$container" ] && _stop_ssh

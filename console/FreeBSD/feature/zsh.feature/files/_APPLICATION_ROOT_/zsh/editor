@@ -1,3 +1,0 @@
-which micro >/dev/null 2>&1 && export EDITOR=micro || {
-    which nano >/dev/null 2>&1 && export EDITOR=nano
-}

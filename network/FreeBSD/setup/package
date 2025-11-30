@@ -4,7 +4,5 @@ ntraceroute
 whois
 bmon
 iftop
-#iptraf-ng
-#nethogs
 netperf
 tcpdump

@@ -1,3 +1,0 @@
-#!/bin/sh
-which _git-run-hooks >/dev/null 2>&1 &&
-	_git-run-hooks pre-commit $@
