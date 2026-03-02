@@ -1,6 +1,8 @@
 #!/bin/sh
 set -a
 _APPLICATION_NAME=install
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
 _beep() {
 	[ $# -eq 0 ] && return 1
 	if [ -n "$_BEEPING" ]; then
@@ -82,11 +84,15 @@ _do_exec() {
 	fi
 }
 _ERROR() {
+	[ -n "$_EXIT_STATUS" ] && return
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
 		_EXIT_STATUS=1
 	fi
+	[ -n "$3" ] && {
+		_print_line $3
+	}
 	_EXIT_LOG_LEVEL=4
 	_EXIT_STATUS_CODE="ERR"
 	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
@@ -98,11 +104,13 @@ _ERROR() {
 	exit $_EXIT_STATUS
 }
 _success() {
+	[ -n "$_EXIT_STATUS" ] && return
 	_EXIT_STATUS=0
 	_EXIT_LOG_LEVEL=1
 	_EXIT_STATUS_CODE="SCS"
 	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
 	_EXIT_MESSAGE="$1"
+	[ -z "$_EXIT_MESSAGE" ] && _EXIT_MESSAGE="success"
 	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
 	_defer _long_running_cmd
 	_defer _log_app_exit
@@ -113,22 +121,27 @@ _on_hup() {
 	:
 }
 _on_int() {
-	_ERROR "interrupted"
+	_ERROR "interrupted" $? $1
 }
 _on_quit() {
-	_ERROR "quit"
+	_ERROR "quit" $? $1
 }
 _on_illegal() {
-	_ERROR "illegal instruction"
+	_ERROR "illegal instruction" $? $1
 }
 _on_abort() {
-	_ERROR "abort"
+	_ERROR "abort" $? $1
 }
 _on_alarm() {
-	_ERROR "alarm"
+	_ERROR "alarm" $? $1
 }
 _on_term() {
-	_ERROR "term"
+	_ERROR "term" $? $1
+}
+_print_line() {
+	_WARN "unhandled error"
+	local exception_line=$($_CONF_GNU_SED -n "${1}p" $0)
+	printf '  %s @ %s:%s\n' "$exception_line" $0 $1
 }
 _defer() {
 	if [ -n "$_DEFERS" ]; then
@@ -186,28 +199,43 @@ _include() {
 }
 _init_logging() {
 	[ -n "$_LOGFILE" ] && _set_logfile "$_LOGFILE"
+	[ -n "$_ADD_LOG_CONTEXT" ] && {
+		_add_logging_context "$_ADD_LOG_CONTEXT"
+		unset _ADD_LOG_CONTEXT
+	}
 	case $_CONF_LOG_LEVEL in
 	0)
-		local logfile=$(_mktemp debug)
-		_WARN "Writing debug contents to: $logfile"
-		_set_logfile "$logfile"
+		[ -z "$_LOGFILE" ] && {
+			_LOG_MSG=" - DEBUG" _set_logfile $(_mktemp debug)
+		}
 		set -x
 		;;
 	esac
 }
 _set_logfile() {
 	[ -z "$1" ] && return 1
-	_LOGFILE=$1
+	local print_logfile=1
+	[ "$_LOGFILE" = "$1" ] && print_logfile=0
 	mkdir -p $(dirname $1)
 	_reset_indent
-	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
-		exec 3>&1 4>&2
-		_CONF_LOG_CONSOLE=4
+	[ $_CONF_LOG_CONSOLE -eq 4 ] && {
+		_reset_logging
 	}
+	_LOGFILE=$1
+	exec 3>&1 4>&2
 	exec >>$_LOGFILE 2>&1
-	_log_to_console "$_CONF_LOG_C_WRN" "writing logs to $_LOGFILE"
+	_CONF_LOG_CONSOLE=4
+	[ $print_logfile -eq 1 ] && _log_to_console "$_CONF_LOG_C_WRN" "writing logs to ${_LOGFILE}${_LOG_MSG}"
 	[ -n "$_PRESERVE_LOG" ] && return
-	truncate -s 0 $1 >/dev/null 2>&1
+	truncate -s 0 "$1" >/dev/null 2>&1
+}
+_reset_logging() {
+	[ ! -t 3 ] && return
+	exec 1>&3
+	exec 2>&4
+	exec 3>&-
+	exec 4>&-
+	unset _LOGFILE
 }
 _WARN() {
 	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
@@ -238,15 +266,22 @@ _print_log() {
 	fi
 	local message="$5"
 	[ $1 -lt $_CONF_LOG_LEVEL ] && return
-	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
 	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
 		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
 	fi
 	[ -n "$4" ] && _beep "$4"
 	_log_to_file "$2" "${_LOG_INDENT}$message"
 	_log_to_console "$3" "${_LOG_INDENT}$message"
-	[ -z "$INTERACTIVE" ] && _syslog "$message"
+	[ -z "$_INTERACTIVE" ] && _syslog "$message"
 	return 0
+}
+_add_logging_context() {
+	[ -z "$1" ] && return 1
+	if [ -z "$_LOGGING_CONTEXT" ]; then
+		_LOGGING_CONTEXT="$1"
+		return
+	fi
+	_LOGGING_CONTEXT="$_LOGGING_CONTEXT.$1"
 }
 _increase_indent() {
 	_LOG_INDENT="$_LOG_INDENT${_CONF_LOG_INDENT}"
@@ -256,11 +291,13 @@ _reset_indent() {
 }
 _log_to_file() {
 	[ -z "$_LOGFILE" ] && return
-	printf '%s\n' "$2" >>$_LOGFILE
+	printf '%s %s %s\n' "$(date '+%Y/%m/%d %H:%M:%S')" "$1" "$2" >>$_LOGFILE
 }
 _log_to_console() {
-	[ -z "$_CONF_LOG_CONSOLE" ] && return
-	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+	[ -z "$_INTERACTIVE" ] && return
+	local message=$2
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$message"
 }
 _log_app() {
 	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
@@ -269,6 +306,15 @@ _mktemp() {
 	local suffix=$1
 	[ -n "$suffix" ] && suffix=".$suffix"
 	mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}.XXXXXXXX
+}
+_restrict_to_single_process() {
+	_has_other_instances && {
+		_ERROR "$_APPLICATION_CMD is restricted to a single instance and another instance is running"
+	}
+	_setup_app_pipe
+}
+_has_other_instances() {
+	find $_APPLICATION_CMD_DIR -maxdepth 1 -type p ! -name $$ 2>/dev/null | grep -qm1 '.'
 }
 _setup_app_pipe() {
 	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
@@ -279,9 +325,6 @@ _setup_app_pipe() {
 }
 _cleanup_app_pipe() {
 	rm -rf $_APPLICATION_PIPE_DIR
-}
-_parent_processes_pgrep() {
-	pgrep -P $1
 }
 _is_backgrounded() {
 	return 1
@@ -302,7 +345,7 @@ _timeout() {
 		unset timeout_units
 	fi
 	local timeout_level=_ERROR
-	[ $_WARN ] && timeout_level=_WARN
+	[ $_WARN_ON_ERROR ] && timeout_level=_WARN
 	local sudo
 	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
 	$sudo timeout $_OPTIONS $timeout "$@" || {
@@ -365,9 +408,13 @@ _require() {
 	unset _REQUIRE_DETAILED_MESSAGE
 }
 _mail() {
+	[ -n "$_CONF_LOG_MAIL_DISABLED" ] && {
+		_WARN "mail is disabled"
+		return 1
+	}
 	if [ $# -lt 3 ]; then
 		_WARN "recipients[0], subject[1], message[2] is required - $# arguments provided"
-		return 1
+		return 2
 	fi
 	local recipients=$(printf '%s' "$1" | tr '|' ' ')
 	shift
@@ -375,14 +422,23 @@ _mail() {
 	shift
 	local message="$1"
 	shift
-	printf "$message" | mail -s "$subject" $recipients
+	printf '%s\n' "$message" | mail -s "$subject" $recipients
 }
 _alert() {
-	_print_log 5 ALRT "$_CONF_LOG_C_ALRT" "$_CONF_LOG_BEEP_ALRT" "$1"
+	local log_color
+	case $_EXIT_STATUS in
+	0)
+		log_color=$_CONF_LOG_C_SCS
+		;;
+	*)
+		log_color=$_CONF_LOG_C_ERR
+		;;
+	esac
+	_print_log 5 ALRT "$log_color" "$_CONF_LOG_BEEP_ALRT" "$1"
 	local recipients="$_OPTN_LOG_ALERT_RECIPIENTS"
 	local subject="Alert: $0 - $1"
 	if [ -z "$recipients" ]; then
-		_WARN "recipients is empty, aborting"
+		_DEBUG "recipients is empty, aborting"
 		return 1
 	fi
 	_mail "$recipients" "$subject" "$2"
@@ -399,6 +455,10 @@ _long_running_cmd() {
 	fi
 	_alert "$subject" "$message"
 }
+_build_format_shell_scripts() {
+	[ -n "$_OPTN_INSTALL_DISABLE_SHFMT" ] && return 1
+	_is_shell_script $_APP_BUILD_OUTPUT_FILE && shfmt -w $_APP_BUILD_OUTPUT_FILE
+}
 _app_build() {
 	_PROJECT_ROOT=$(git rev-parse --show-toplevel)
 	if [ ! -e .app ]; then
@@ -408,11 +468,12 @@ _app_build() {
 	_app_build_instance
 }
 _app_build_recursive() {
-	local app
-	for app in $(find . -maxdepth 2 -type f -name .app | sed -e 's/\.app$//' | sort -u); do
+	local app opwd
+	opwd=$PWD
+	for app in $(find . -maxdepth $_CONF_INSTALL_APP_BUILD_DEPTH -type f -name .app | sed -e 's/\.app$//' | sort -u); do
 		cd $app
 		_app_build_instance
-		cd ..
+		cd $opwd
 	done
 }
 _app_build_instance() {
@@ -425,15 +486,15 @@ _app_build_instance() {
 	_app_build_platforms
 }
 _app_build_determine_build_platforms() {
-	[ -z "$_INSTALL_BUILD_ALL_PLATFORMS" ] && return
+	[ -z "$_BUILD_ALL_PLATFORMS" ] && return
 	[ -e supported-platforms ] && {
-		_INSTALL_BUILD_PLATFORMS=$(cat supported-platforms)
+		_PLATFORMS=$(cat supported-platforms)
 		return
 	}
-	_INSTALL_BUILD_PLATFORMS=$SUPPORTED_PLATFORMS
+	_PLATFORMS=$_SUPPORTED_PLATFORMS
 }
 _app_build_platforms() {
-	for _TARGET_PLATFORM in $_INSTALL_BUILD_PLATFORMS; do
+	for _TARGET_PLATFORM in $_PLATFORMS; do
 		_app_build_platform_name
 		_app_build_init_artifact_dir
 		printf '\n'
@@ -456,100 +517,17 @@ _app_build_init_artifact_dir() {
 	rm -rf $_CONF_DATA_ARTIFACTS_PATH/$_TARGET_APPLICATION_NAME/$_TARGET_PLATFORM && mkdir -p $_CONF_DATA_ARTIFACTS_PATH/$_TARGET_APPLICATION_NAME/$_TARGET_PLATFORM
 }
 _app_build_package_files() {
-	for f in $(_app_build_find_files); do
-		_app_build_package_file $f
-	done
+	_app_build_find_files | xargs -P$_CONF_INSTALL_PARALLEL_BUILD -I{} $_CONF_APPLICATION_LIBRARY_PATH/bin/_build-file {} || _ERROR "failed to build files - check output"
 }
 _app_build_find_files() {
-	find ./bin ./cfg ./files ./help ./post-setup ./setup ./feature -type f -and \( ! -path '*.secret/*' ! -path '*.secret' ! -path '*.archived/*' ! -path '*.archived' \) -and \( \
-		\( -path '*/bin/all/*' -or -path "*/cfg/all*" -or -path '*/files/all/*' -or -path '*/help/all/*' -or -path "*/post-setup/all/*" -or -path '*/setup/all/*' \) -or \
-		\( -path "*/bin/$_TARGET_PLATFORM/*" -or -path "*/cfg/$_TARGET_PLATFORM/*" -or -path "*/files/$_TARGET_PLATFORM/*" -or -path "*/help/$_TARGET_PLATFORM/*" -or -path "*/post-setup/$_TARGET_PLATFORM/*" -or -path "*/setup/$_TARGET_PLATFORM/*" \) \) 2>/dev/null |
+	find ./bin ./cfg ./files ./help ./post-setup ./setup ./feature ./extensions -type f -and \( ! -path '*.secret/*' ! -path '*.secret' ! -path '*.archived/*' ! -path '*.archived' \) -and \( \
+		\( -path '*/bin/all/*' -or -path "*/cfg/all*" -or -path '*/files/all/*' -or -path '*/help/all/*' -or -path "*/post-setup/all/*" -or -path '*/setup/all/*' -or -path '*/extensions/extension/all/*' -or -path '*/extensions/type/all/*' \) -or \
+		\( -path "*/bin/$_TARGET_PLATFORM/*" -or -path "*/cfg/$_TARGET_PLATFORM/*" -or -path "*/files/$_TARGET_PLATFORM/*" -or -path "*/help/$_TARGET_PLATFORM/*" -or -path "*/post-setup/$_TARGET_PLATFORM/*" -or -path "*/setup/$_TARGET_PLATFORM/*" -or -path "*/extensions/extension/$_TARGET_PLATFORM/*" -or -path "*/extensions/type/$_TARGET_PLATFORM/*" \) \) 2>/dev/null |
 		sort -r
-}
-_app_build_package_file() {
-	_DETAIL "$1"
-	_app_build_package_file_supports_platform $1 || {
-		_WARN "Not building $1 as it does not support $_TARGET_PLATFORM"
-		return 1
-	}
-	file_relative=$(printf '%s\n' "$1" | sed -e "s/\/$_TARGET_PLATFORM\//\//" -e 's/\/all\//\//' -e 's/.none$//' -e 's/.lite$//')
-	APP_BUILD_OUTPUT_FILE=$_CONF_DATA_ARTIFACTS_PATH/$_TARGET_APPLICATION_NAME/$_TARGET_PLATFORM/$file_relative
-	mkdir -p $(dirname $APP_BUILD_OUTPUT_FILE)
-	case $1 in
-	*run | */bin/*)
-		_app_build_profile $1
-		;;
-	*/files/*.sh)
-		APP_BUILD_PROFILE=LITE
-		;;
-	*)
-		APP_BUILD_PROFILE=NONE
-		;;
-	esac
-	_INJECT_$APP_BUILD_PROFILE $1
-	_update_remove_commented_code $APP_BUILD_OUTPUT_FILE
-	_build_has_invalid_local_var_name
-	_build_has_invalid_function_name
-	[ -n "$REMOVE_UNUSED_FUNCTIONS" ] && {
-		_remove_unused_functions
-		_remove_unused_variables
-	}
-	_find_duplicate_functions
-	_update_constants $APP_BUILD_OUTPUT_FILE
-	_app_build_correct_permissions $1
-	_DEBUG "Built $1 -> [$_TARGET_PLATFORM] [$_PLATFORM]"
-}
-_app_build_package_file_supports_platform() {
-	case "$1" in
-	*/feature/*.feature/*) ;;
-	*)
-		return 0
-		;;
-	esac
-	_app_build_check_supported_platforms $(dirname "$1" | $_CONF_GNU_GREP -Po '.*feature/.*\.feature')
-}
-_app_build_check_supported_platforms() {
-	local feature_dir="$1"
-	while [ -n "$feature_dir" ]; do
-		_app_build_check_platform_support "$feature_dir"
-		case $? in
-		0)
-			return 0
-			;;
-		1)
-			return 1
-			;;
-		esac
-		feature_dir=$(dirname "$feature_dir" | $_CONF_GNU_GREP -Po '.*feature/.*\.feature')
-	done
-	printf '%s\n' $SUPPORTED_PLATFORMS | $_CONF_GNU_GREP -cqm1 "$_TARGET_PLATFORM"
-}
-_app_build_check_platform_support() {
-	[ ! -e "$1/supported-platforms" ] && return 2
-	grep -cqm1 "$_TARGET_PLATFORM" "$1/supported-platforms" 2>/dev/null
-}
-_app_build_correct_permissions() {
-	local permissions=$(stat $_CONF_INSTALL_STAT_ARGUMENTS $1)
-	chmod $permissions $APP_BUILD_OUTPUT_FILE $1
-}
-_app_build_profile() {
-	APP_BUILD_PROFILE=$(basename $1 | sed -e 's/^.*\.//' | tr '[:lower:]' '[:upper:]')
-	case $APP_BUILD_PROFILE in
-	FULL | LITE | NONE) ;;
-	*)
-		_DEBUG "Unknown Profile: $APP_BUILD_PROFILE, defaulting to FULL"
-		APP_BUILD_PROFILE=FULL
-		;;
-	esac
-	_DEBUG "Profile: $APP_BUILD_PROFILE"
-}
-_build_format_shell_scripts() {
-	[ -n "$_DISABLE_SHFMT" ] && return 1
-	_is_shell_script $APP_BUILD_OUTPUT_FILE && shfmt -w $APP_BUILD_OUTPUT_FILE
 }
 _imports_import() {
 	_imports_get $1 $2
-	_imports $1 $APP_BUILD_OUTPUT_FILE
+	_imports $1 $_APP_BUILD_OUTPUT_FILE
 }
 _imports_get() {
 	_RAW_IMPORTS=$($_CONF_GNU_GREP -P "^$1 " "$2" | sed -e "s/$1 //" | sort -u)
@@ -572,14 +550,14 @@ _import() {
 	case $import_ref in
 	git:*)
 		_setup_git_import "$import_ref"
-		case $GIT_IMPORT_TARGET_FILE in
+		case $_GIT_IMPORT_TARGET_FILE in
 		*.feature/*)
-			local feature_patha=$(printf '%s\n' $GIT_IMPORT_TARGET_FILE | $_CONF_GNU_GREP -Po '^feature/.*\.feature')
-			local feature_pathb=$(printf '%s\n' $GIT_IMPORT_TARGET_FILE | sed -e 's/^.*\.feature//')
-			import_type=$import_type git_import_path=$GIT_IMPORT_PROJECT _import_file_contents $1 $GIT_IMPORT_PATH/$feature_patha/$import_type/%s/$feature_pathb
+			local feature_patha=$(printf '%s\n' $_GIT_IMPORT_TARGET_FILE | $_CONF_GNU_GREP -Po '^feature/.*\.feature')
+			local feature_pathb=$(printf '%s\n' $_GIT_IMPORT_TARGET_FILE | sed -e 's/^.*\.feature//')
+			import_type=$import_type git_import_path=$_GIT_IMPORT_PROJECT _import_file_contents $1 $_GIT_IMPORT_PATH/$feature_patha/$import_type/%s/$feature_pathb
 			;;
 		*)
-			import_type=$import_type git_import_path=$GIT_IMPORT_PROJECT _import_file_contents $1 $GIT_IMPORT_PATH/$import_type/%s/$GIT_IMPORT_TARGET_FILE
+			import_type=$import_type git_import_path=$_GIT_IMPORT_PROJECT _import_file_contents $1 $_GIT_IMPORT_PATH/$import_type/%s/$_GIT_IMPORT_TARGET_FILE
 			;;
 		esac
 		;;
@@ -610,13 +588,13 @@ _import_file_contents() {
 	_import_has_matching_files $platform_path $all_path
 	local file_to_import
 	for file_to_import in $(find $platform_path $all_path \( -type f -or -type l \) -and ! -name '*.test' 2>/dev/null | sort -u); do
-		printf '%s\n' "$IMPORTED" | $_CONF_GNU_GREP -Pcqm1 $file_to_import && {
+		printf '%s\n' "$_IMPORTED" | $_CONF_GNU_GREP -Pcqm1 $file_to_import && {
 			_DEBUG "$file_to_import was already imported"
 			continue
 		}
-		IMPORTED="$file_to_import\n$IMPORTED"
+		_IMPORTED="$file_to_import\n$_IMPORTED"
 		if [ -e ${file_to_import}.test ]; then
-			${file_to_import}.test $APP_BUILD_OUTPUT_FILE
+			${file_to_import}.test $_APP_BUILD_OUTPUT_FILE
 			if [ "$?" -eq "0" ]; then
 				cat $file_to_import >>$file
 			else
@@ -632,38 +610,45 @@ _import_has_matching_files() {
 	find $1 $2 -type f -or -type l 2>/dev/null | grep -q . || _ERROR "_import_file_contents - no matching files found: $1 $2"
 }
 _inject_header() {
-	printf '#!/bin/sh\n\n' >$APP_BUILD_OUTPUT_FILE
+	printf '#!/bin/sh\n\n' >$_APP_BUILD_OUTPUT_FILE
 }
-_inject_app_header() {
-	printf 'set -a\n' >>$APP_BUILD_OUTPUT_FILE
+_inject_app_vars() {
+	printf 'set -a\n' >>$_APP_BUILD_OUTPUT_FILE
+	printf '_APPLICATION_NAME=%s\n' $_TARGET_APPLICATION_NAME >>$_APP_BUILD_OUTPUT_FILE
+	printf '_APPLICATION_START_TIME=$(date +%s)\n' '%s' >>$_APP_BUILD_OUTPUT_FILE
+	printf '_APPLICATION_CMD=$(basename $0)\n' >>$_APP_BUILD_OUTPUT_FILE
 }
-_inject_app_name() {
-	printf '_APPLICATION_NAME=%s\n' $_TARGET_APPLICATION_NAME >>$APP_BUILD_OUTPUT_FILE
+_INJECT_EXTENSION_CMD() {
+	_inject_header
+	_inject_app_vars
+	_required_arguments $1
+	_RAW_IMPORTS="$_LIB actions" _imports lib $_APP_BUILD_OUTPUT_FILE
+	_inject_lib $1
+	_OPTIONAL=1 _RAW_IMPORTS="$_CFG . $_TARGET_APPLICATION_NAME" before_function=_inject_cfg_before _imports cfg $_APP_BUILD_OUTPUT_FILE
+	_inject_cfg $1
+	printf '_REQUIRED_APP_CONF=""\n' >>$_APP_BUILD_OUTPUT_FILE
+	_inject_init $1
+	chmod +x $_APP_BUILD_OUTPUT_FILE $1
+	_build_format_shell_scripts
+	printf '_extension_main "$@"\n' >>$_APP_BUILD_OUTPUT_FILE
 }
-_build_has_invalid_local_var_name() {
-	local invalid_local_vars=$(grep -hPo '^[ ]*local [a-zA-Z_0-9]+' $APP_BUILD_OUTPUT_FILE |
-		sed -e 's/^.*local //' |
-		$_CONF_GNU_GREP -Pv '[a-z_0-9]{3,}' | sort -u)
-	local level=_ERROR
-	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
-	[ -n "$invalid_local_vars" ] && {
-		$level "$APP_BUILD_OUTPUT_FILE has invalid local var names: $invalid_local_vars"
-	}
+_INJECT_EXTENSION() {
+	_INJECT_NONE $1
+	chmod +x $_APP_BUILD_OUTPUT_FILE $1
 }
 _INJECT_FULL() {
 	_inject_header
-	_inject_app_header
-	_inject_app_name
+	_inject_app_vars
 	_required_arguments $1
-	_RAW_IMPORTS="$LIB" _imports lib $APP_BUILD_OUTPUT_FILE
+	_RAW_IMPORTS="$_LIB" _imports lib $_APP_BUILD_OUTPUT_FILE
 	_inject_lib $1
-	_OPTIONAL=1 _RAW_IMPORTS="$CFG . $_TARGET_APPLICATION_NAME" before_function=_inject_cfg_before _imports cfg $APP_BUILD_OUTPUT_FILE
+	_OPTIONAL=1 _RAW_IMPORTS="$_CFG . $_TARGET_APPLICATION_NAME" before_function=_inject_cfg_before _imports cfg $_APP_BUILD_OUTPUT_FILE
 	_inject_cfg $1
-	_required_cfg
+	printf '_REQUIRED_APP_CONF=""\n' >>$_APP_BUILD_OUTPUT_FILE
 	_inject_init $1
-	chmod +x $APP_BUILD_OUTPUT_FILE $1
+	chmod +x $_APP_BUILD_OUTPUT_FILE $1
 	_build_format_shell_scripts
-	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg |init |_REQUIRED_ARGUMENTS)' $1 >>$APP_BUILD_OUTPUT_FILE
+	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg |init |_REQUIRED_ARGUMENTS)' $1 >>$_APP_BUILD_OUTPUT_FILE
 }
 _inject_lib() {
 	_imports_import lib $1
@@ -675,11 +660,12 @@ _inject_cfg() {
 }
 _inject_cfg_before() {
 	local imports=$(printf '%s\n' "$_RAW_IMPORTS" | sort -u | sed -e 's/feature://' -e 's/.\///g' -e 's/^.$//' -e 's/ . / /' | tr '\n' ' ')
-	printf '_include %s %s\n' "$imports" >>$APP_BUILD_OUTPUT_FILE
+	[ -z "$imports" ] && return 1
+	printf '_include %s\n' "$imports" >>$_APP_BUILD_OUTPUT_FILE
 }
 _inject_init() {
-	_OPTIONAL=1 _import init $APP_BUILD_OUTPUT_FILE platform
-	_import init $APP_BUILD_OUTPUT_FILE full
+	_OPTIONAL=1 _import init $_APP_BUILD_OUTPUT_FILE platform
+	_import init $_APP_BUILD_OUTPUT_FILE full
 	_imports_import init $1
 	unset IMPORTED
 }
@@ -687,142 +673,23 @@ _INJECT_LITE() {
 	$_CONF_GNU_GREP -Pcq '^(init |_REQUIRED_ARGUMENTS )' $1 && _ERROR "Files may not contain init or _REQUIRED_ARGUMENTS"
 	_inject_header
 	case $1 in
-	*.sh)
-		_inject_app_name
+	*.sh.lite)
+		_inject_app_vars
 		;;
 	esac
 	_inject_lib $1
 	_inject_cfg $1
-	chmod +x $APP_BUILD_OUTPUT_FILE $1
+	chmod +x $_APP_BUILD_OUTPUT_FILE $1
 	_build_format_shell_scripts
-	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg )' $1 >>$APP_BUILD_OUTPUT_FILE
+	$_CONF_GNU_GREP -Pvh '^(#|lib |cfg )' $1 >>$_APP_BUILD_OUTPUT_FILE
 }
 _INJECT_NONE() {
-	cp -p $1 $APP_BUILD_OUTPUT_FILE
+	cp -p $1 $_APP_BUILD_OUTPUT_FILE
 }
 _required_arguments() {
 	_REQUIRED_ARGUMENTS=$($_CONF_GNU_GREP -P "^_REQUIRED_ARGUMENTS=" "$1")
 	[ -z "$_REQUIRED_ARGUMENTS" ] && return 1
-	printf '%s\n' "$_REQUIRED_ARGUMENTS" >>$APP_BUILD_OUTPUT_FILE
-}
-_required_cfg() {
-	local required_cfg=$($_CONF_GNU_GREP -Pvh '#.*$' $APP_BUILD_OUTPUT_FILE |
-		$_CONF_GNU_GREP -Poh '\$_CONF_[\w_]{3,}' | sed -e 's/^\$//' | sort -u)
-	local defaults=$($_CONF_GNU_GREP -Poh '_CONF_[\w]{3,}:?=' $APP_BUILD_OUTPUT_FILE | sed -e 's/^\$//' -e 's/:=$//' -e 's/=$//' | sort -u | tr '\n' '|' | sed -e 's/|$//' -e 's/^/(/' -e 's/$/)/')
-	local required_app_conf=$(printf '%s\n' "$required_cfg" | $_CONF_GNU_GREP -Pv "$defaults" | tr '\n' ' ' | sed -e 's/ $//')
-	[ -n "$required_app_conf" ] && printf '_REQUIRED_APP_CONF="%s"\n' "$required_app_conf" >>$APP_BUILD_OUTPUT_FILE
-}
-_unused_variables() {
-	local used_variables=$(_used_variables $APP_BUILD_OUTPUT_FILE | tr '\n' '|' | sed -e 's/^/(/' -e 's/|$//' -e 's/$/)/')
-	_list_variables $APP_BUILD_OUTPUT_FILE | $_CONF_GNU_GREP -Pv "^${used_variables}$"
-}
-_list_variables() {
-	$_CONF_GNU_GREP -Pho '\$(\{?)[\w]{3,}(:?)=' $1 | sed -e 's/^\${//' -e 's/^\$//' -e 's/:=//' -e 's/=//' | sort -u
-}
-_used_variables() {
-	$_CONF_GNU_GREP -Po '\$({?)[\w]{3,}' $1 | sed -e 's/^\${//' -e 's/^\$//' | sort -u
-	grep export $1 | $_CONF_GNU_GREP -Pho '\$(\{?)[\w]{3,}' | sed -e 's/^\${//' -e 's/^\$//'
-}
-_remove_unused_variables() {
-	local index=0
-	while :; do
-		local unused_variables=$(_unused_variables)
-		[ -z "$unused_variables" ] && break
-		_DEBUG "remove cfg:$i:$unused_variables"
-		local unused_variable
-		for unused_variable in $unused_variables; do
-			_remove_unused_variable $unused_variable $APP_BUILD_OUTPUT_FILE
-		done
-		index=$(($index + 1))
-	done
-}
-_remove_unused_variable() {
-	_DEBUG "Unused default: $1"
-	$_CONF_GNU_SED -i "/^[[:space:]]*: \${$1:=.*}$/d" $2
-	$_CONF_GNU_SED -i "/^.*$1=.*$/d" $2
-}
-_unused_functions() {
-	local called_functions=$(_called_functions | tr '\n' '|' | sed -e 's/^/(/' -e 's/|$//' -e 's/$/)/')
-	_list_functions | $_CONF_GNU_GREP -Pv "^${called_functions}$"
-}
-_list_functions() {
-	$_CONF_GNU_GREP -Ph '^_[a-z0-9_]{3,}\(\) {$' $APP_BUILD_OUTPUT_FILE | sed -e 's/().*//' -e 's/ //g' | sort -u
-}
-_called_functions() {
-	$_CONF_GNU_GREP -Pho '_[a-z0-9_]{3,}( |$|\))' $APP_BUILD_OUTPUT_FILE | sed -e 's/ $//' -e 's/)//' | tr ' ' '\n' | sort -u
-}
-_invalid_functions() {
-	$_CONF_GNU_SED -e 's/#.*$//' -e 's/[[:space:]]\+$//' -e 's/^[[:space:]]\+//' $APP_BUILD_OUTPUT_FILE |
-		$_CONF_GNU_GREP -Pv '^$' |
-		grep -v '^$' |
-		grep '\$' |
-		$_CONF_GNU_GREP -Po '(^|[[:space:]]|\()_[a-zA-Z0-9_\$\{\}=]{3,}' |
-		grep -v '=' |
-		grep '\$' |
-		$_CONF_GNU_SED -e 's/#.*$//' -e 's/[[:space:]]\+$//' -e 's/^[[:space:]]\+//' |
-		$_CONF_GNU_GREP -P '[a-z]+' |
-		sort -u
-}
-_build_has_invalid_function_name() {
-	local invalid_functions=$(_invalid_functions)
-	local level=_ERROR
-	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
-	[ -n "$invalid_functions" ] && {
-		$level "$APP_BUILD_OUTPUT_FILE has invalid function names: $invalid_functions"
-	}
-}
-_find_duplicate_functions() {
-	local duplicated_functions=$($_CONF_GNU_GREP -Po '[_a-zA-Z0-9]{3,}\(\)' $APP_BUILD_OUTPUT_FILE | sed -e 's/()//' | uniq -d | sort -u)
-	[ -z "$duplicated_functions" ] && return
-	_WARN 'Duplicated functions'
-	printf '%s\n' "$duplicated_functions"
-	_WARN_ON_ERROR=1 _ERROR 'Duplicated functions are not allowed'
-}
-_remove_unused_functions() {
-	local index=0
-	while :; do
-		local unused_functions=$(_unused_functions)
-		[ -z "$unused_functions" ] && break
-		_DEBUG "remove function:$index:$unused_functions"
-		local unused_function
-		for unused_function in $unused_functions; do
-			_remove_unused_function $unused_function $APP_BUILD_OUTPUT_FILE
-		done
-		index=$(($index + 1))
-	done
-}
-_remove_unused_function() {
-	local function_start=$(_function_start $1 $2)
-	local function_end=$(_function_end $2 $function_start)
-	_WARN_ON_ERROR=1 _require "$function_start" function_start || return 1
-	_WARN_ON_ERROR=1 _require "$function_end" function_end || return 1
-	$_CONF_GNU_SED -i "$function_start,$function_end d" $2
-}
-_function_start() {
-	$_CONF_GNU_GREP -Pnh "^$1\(\) {$" $2 | head -1 | cut -f1 -d:
-}
-_function_end() {
-	awk "NR > $2 { if (\$0 ~ /^\}$/) { print NR; exit } }" $1
-}
-_update_remove_commented_code() {
-	$_CONF_GNU_SED -i '/^[[:space:]]*#[^!]/d' $1
-	$_CONF_GNU_SED -i '/^[[:space:]]*$/d' $1
-}
-_update_constants() {
-	case $1 in
-	*/artifacts/install/*)
-		_DEBUG "Bypassing update"
-		return 1
-		;;
-	*)
-		_DEBUG "Updating constants: $1"
-		;;
-	esac
-	$_CONF_GNU_SED -i "s/__LIBRARY_APPLICATION_PATH__/$_SED_LIBRARY_PATH\/$_TARGET_APPLICATION_NAME/g" $1
-	$_CONF_GNU_SED -i "s/__LIBRARY_PATH__/$_SED_LIBRARY_PATH/g" $1
-	$_CONF_GNU_SED -i "s/__APPLICATION_NAME__/$_TARGET_APPLICATION_NAME/g" $1
-	$_CONF_GNU_SED -i "s/__APPLICATION_VERSION__/$_TARGET_APPLICATION_VERSION/g" $1
-	$_CONF_GNU_SED -i "s/__PLATFORM__/$_PLATFORM/g" $1
+	printf '%s\n' "$_REQUIRED_ARGUMENTS" >>$_APP_BUILD_OUTPUT_FILE
 }
 _require_file() {
 	_require "$1" filename _require_file
@@ -846,7 +713,6 @@ _is_shell_script() {
 }
 _include logging platform context wait beep paths net install
 : ${_CONF_LOG_HEADER:="##################################################"}
-: ${_CONF_LOG_C_ALRT:="1;31m"}
 : ${_CONF_LOG_C_ERR:="1;31m"}
 : ${_CONF_LOG_C_SCS:="1;32m"}
 : ${_CONF_LOG_C_WRN:="1;33m"}
@@ -863,12 +729,10 @@ _include logging platform context wait beep paths net install
 : ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
 : ${_CONF_LOG_LONG_RUNNING_CMD:=30}
 : ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
-[ -t 0 ] && INTERACTIVE=1
+which mail >/dev/null 2>&1 || _CONF_LOG_MAIL_DISABLED=1
+[ -t 0 ] && _INTERACTIVE=1
 : ${_CONF_LOG_CONSOLE:=2}
-: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
-: ${CFG:="logging platform context wait beep paths net"}
-: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+: ${_SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
 _DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
 Darwin)
@@ -896,21 +760,23 @@ _PLATFORM="Windows"
 : ${_CONF_WAIT_INTERVAL:=30}
 : ${RSRC_BEEP:=/tmp/beep}
 _CONF_LOG_BEEP_TIMEOUT=5
-[ "$HOME" = "/" ] && HOME=/root
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 : ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
 : ${_CONF_BIN_PATH:=/usr/local/bin}
-_CONF_DATA_PATH=$HOME/.data
-_CONF_CACHE_PATH=$HOME/.cache
-_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
-_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
-_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
-_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+: ${_CONF_DATA_PATH:=$HOME/.data}
+: ${_CONF_CACHE_PATH:=$HOME/.cache}
+: ${_CONF_CONFIG_PATH:=$HOME/.config/walterjwhite/shell}
+: ${_CONF_RUN_PATH:=/tmp/$USER/walterjwhite/app}
 _CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
 _CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
 _CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
 : ${_CONF_NETWORK_TEST_TIMEOUT:=5}
 : ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+_CONF_DATA_ARTIFACTS_PATH=/tmp/$USER/walterjwhite/$_APPLICATION_NAME/artifacts
+_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME/registry
+_GO_INSTALL_PATH=/usr/local
 : ${_CONF_INSTALL_NO_PAGER:=0}
+: ${_CONF_INSTALL_APP_BUILD_DEPTH:=3}
 : ${_CONF_INSTALL_STEP_TIMEOUT:=300}
 : ${_CONF_INSTALL_IOSTAT_DURATION:=5}
 : ${_CONF_INSTALL_SUDO_TIMEOUT:=270}
@@ -923,27 +789,27 @@ _CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
 : ${_CONF_CLEAN_APP_REGISTRY_WORKSPACE:=1}
 : ${_CONF_INSTALL_RANDOM_DEFAULT_LENGTH:=8}
 [ "$_CONF_INSTALL_NO_PAGER" = "1" ] && PAGER=cat
-: ${_OPTN_INSTALL_BYPASS_UNINSTALL:=1}
-which shfmt >/dev/null 2>&1 || _DISABLE_SHFMT=1
 : ${_CONF_INSTALL_CHECKSUM_CMD:="sha256 -q"}
-: ${REMOVE_UNUSED_FUNCTIONS:=y}
-: ${_INSTALL_BUILD_PLATFORMS:=$_DETECTED_PLATFORM}
+: ${_REMOVE_UNUSED_FUNCTIONS:=y}
+: ${_PLATFORMS:=$_DETECTED_PLATFORM}
+which shfmt >/dev/null 2>&1 || _OPTN_INSTALL_DISABLE_SHFMT=1
+: ${_LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
+: ${_CFG:="logging platform context wait beep paths net"}
+: ${_CONF_INSTALL_MAX_CONCURRENT_JOBS:=$(nproc)}
 : ${_CONF_INSTALL_STAT_ARGUMENTS:='-c %a'}
 : ${_CONF_INSTALL_SOFTWARE_CENTER_EXECUTABLE:="C:/Windows/CCM/ClientUX/scclient.exe"}
 _include install
+trap '_on_hup $LINENO' 1
+trap '_on_int $LINENO' 2
+trap '_on_quit $LINENO' 3
+trap '_on_illegal $LINENO' 4
+trap '_on_abort $LINENO' 6
+trap '_on_alarm $LINENO' 14
+trap '_on_term $LINENO' 15
+trap _success 0
 _is_backgrounded && _BACKGROUNDED=1
 _init_logging
 unset _DEFERS _EXIT
-_APPLICATION_START_TIME=$(date +%s)
-_APPLICATION_CMD=$(basename $0)
-trap _on_hup 1
-trap _on_int 2
-trap _on_quit 3
-trap _on_illegal 4
-trap _on_abort 6
-trap _on_alarm 14
-trap _on_term 15
-trap _success 0
 for _ARG in "$@"; do
 	case $_ARG in
 	-h | --help)
@@ -960,28 +826,34 @@ for _ARG in "$@"; do
 	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
 		_configuration_name=${_ARG#*-}
 		_configuration_name=${_configuration_name%%=*}
-		if [ $(printf '%s' "$_configuration_name" | grep -c '_') -eq 0 ]; then
-			if [ $(printf '%s' "$_configuration_name" | grep -c '^conf') -gt 0 ]; then
+		printf '%s' "$_configuration_name" | grep -cqm1 '_$' && {
+			_configuration_name=${_configuration_name%%_*}
+			printf '%s' "$_configuration_name" | grep -cqm1 '^conf' && {
 				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$_APPLICATION_NAME-/" -e 's/--/-/')
-			else
+			} || {
 				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$_APPLICATION_NAME-/" -e 's/--/-/')
-			fi
-		fi
+			}
+		}
 		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:lower:]' '[:upper:]')
 		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
 			_configuration_value=1
 		else
 			_configuration_value=${_ARG#*=}
 		fi
-		export _$_configuration_name="$_configuration_value"
-		unset _configuration_name
+		export _${_configuration_name}="$_configuration_value"
+		unset _configuration_name _configuration_value
 		shift
+		;;
+	--last-arg)
+		shift
+		break
 		;;
 	*)
 		break
 		;;
 	esac
 done
+_init_logging
 if [ -z "$_CONTEXT_VALIDATED" ]; then
 	_context_id_is_valid "$_CONF_INSTALL_CONTEXT"
 	_CONTEXT_VALIDATED=0
@@ -990,5 +862,6 @@ _APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
 _APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
 _waitee_init
 _waiter
+_restrict_to_single_process
 _SED_LIBRARY_PATH=$(_sed_safe $_CONF_LIBRARY_PATH)
 _app_build

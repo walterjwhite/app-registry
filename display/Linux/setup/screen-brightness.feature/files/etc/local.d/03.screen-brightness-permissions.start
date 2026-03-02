@@ -1,0 +1,4 @@
+#!/bin/sh
+printf '%s\n' $0
+find /sys/devices/ -type f -path '*/*_backlight/brightness' -exec chmod 664 {} +
+find /sys/devices/ -type f -path '*/*_backlight/brightness' -exec chgrp video {} +

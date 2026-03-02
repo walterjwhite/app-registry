@@ -1,0 +1,42 @@
+#!/bin/sh
+download_file=""
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e $download_file ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o $download_file -s -L "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp $download_file $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+_HADOLINT_ARTIFACT=hadolint-$(uname | tr '[:upper:]' '[:lower:]')-$(uname -m)
+_download_fetch https://github.com/hadolint/hadolint/releases/latest/download/$_HADOLINT_ARTIFACT
+_install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/hadolint

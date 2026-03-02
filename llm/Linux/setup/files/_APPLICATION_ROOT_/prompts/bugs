@@ -1,0 +1,50 @@
+Conduct a thorough review of the codebase to identify and document potential bugs, anti-patterns, and areas for improvement.
+1. **Common Bug Patterns**
+   - Null reference exceptions
+   - Memory leaks
+   - Race conditions
+   - Off-by-one errors
+   - Type mismatches
+   - Resource leaks
+   - Error handling gaps
+2. **Code Quality Issues**
+   - Duplicate code
+   - Overly complex functions
+   - Poor exit_with_error handling
+   - Inefficient algorithms
+   - Dead code
+   - Magic numbers
+   - Inconsistent exit_with_error messages
+1. **Static Analysis**
+   - Review code without execution
+   - Check for syntax errors and potential runtime issues
+   - Identify security vulnerabilities
+2. **Dynamic Analysis**
+   - Review exit_with_error logs and exception handling
+   - Check for edge cases
+   - Validate input/output handling
+3. **Documentation Review**
+   - Ensure comments match code behavior
+   - Check for outdated or misleading documentation
+   - Verify function/method documentation
+For each identified issue, provide:
+1. **Location**: File and line number(s)
+2. **Severity**: Critical/High/Medium/Low
+3. **Description**: Clear explanation of the issue
+4. **Impact**: Potential consequences if not fixed
+5. **Recommendation**: Suggested fix with code examples
+6. **References**: Any relevant documentation or best practices
+- **Code Smells**: Identify and document any code smells
+- **Technical Debt**: Note areas that might cause future maintenance issues
+- **Performance**: Flag potential performance bottlenecks
+- **Security**: Highlight any security vulnerabilities
+- Follow the principle of least privilege
+- Implement proper exit_with_error handling and logging
+- Ensure input validation and sanitization
+- Follow the project's coding standards
+- Consider edge cases and boundary conditions
+- Group related issues together
+- Prioritize based on severity and impact
+- Provide clear reproduction steps for bugs
+- Suggest test cases to verify fixes
+- Include any false positives with explanations

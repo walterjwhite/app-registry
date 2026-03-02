@@ -1,36 +1,69 @@
 #!/usr/bin/env expect
-set BE [lindex $argv 0]
-set LAST_SEQUENCE_FILE [lindex $argv 1]
-set SYSTEM_UPDATES [lindex $argv 2]
-puts "Using BE: $BE"
-puts "Patch File: $LAST_SEQUENCE_FILE"
-puts "Patches: $SYSTEM_UPDATES"
-spawn beadm chroot $BE
+set _BE [lindex $argv 0]
+set _LAST_SEQUENCE_FILE [lindex $argv 1]
+set _SYSTEM_UPDATES [lindex $argv 2]
+set _PATCH_TIMEOUT [lindex $argv 3]
+if {[info exists env(DEBUG)]} {
+    puts "DEBUG MODE"
+    exp_internal 1
+} else {
+    puts "PRODUCTION MODE"
+}
+puts "Using BE: $_BE"
+puts "Patch File: $_LAST_SEQUENCE_FILE"
+puts "Patches: $_SYSTEM_UPDATES"
+puts "Timeout: $_PATCH_TIMEOUT"
+spawn sh -c "beadm chroot $_BE 2>&1"
 set timeout 2
 expect {
-  "Entered chroot(8) for '$BE' boot environment" {
-    send "_apply-patches $LAST_SEQUENCE_FILE $SYSTEM_UPDATES\r"
+  "Entered chroot(8) for '$_BE' boot environment" {
+    puts "apply_patches.expect - entered chroot"
+    expect {
+      "#" {
+        puts "apply_patches.expect - chroot - shell prompt received"
+        send "_NO_PS=1 _apply-patches $_LAST_SEQUENCE_FILE $_SYSTEM_UPDATES\r"
+      }
+      timeout {
+        puts "Timed out waiting for prompt"
+        exit 1
+      }
+    }
   }
   timeout {
     puts "Timed out waiting to enter chroot"
     exit 2
   }
 }
-set timeout 3600
+set timeout $_PATCH_TIMEOUT
 expect {
-  "_apply-patches completed successfully" {
+  "please reboot to install updates" {
+    puts "apply_patches.expect - reboot to install updates"
     send "exit\r"
   }
-  "please reboot to install updates " {
+  "reboot is required" {
+    puts "apply_patches.expect - reboot required"
+    send "exit\r"
+  }
+  "#" {
+    puts "apply_patches.expect - _apply-patches - shell prompt received"
+    send "exit\r"
+  }
+  -re {Applied .* patches} {
+    puts "apply_patches.expect - applied patches"
+    send "exit\r"
+  }
+  "_apply-patches completed successfully" {
+    puts "apply_patches.expect - update completed"
     send "exit\r"
   }
   "Previous cmd failed: " {
-    puts "Updated failed, exiting chroot"
+    puts "apply_patches.expect - Updated failed, exiting chroot"
     exit 3
   }
   timeout {
-    puts "Timed out waiting for updates to complete"
+    puts "apply_patches.expect - Timed out waiting for updates to complete"
     exit 4
   }
 }
 expect eof
+puts "apply_patches.expect - EOF"

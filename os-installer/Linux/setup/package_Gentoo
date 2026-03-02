@@ -1,0 +1,10 @@
+sys-apps/dmidecode
+app-text/wgetpaste
+sys-apps/usbutils
+sys-apps/smartmontools
+app-eselect/eselect-repository
+app-portage/cpuid2cpuflags
+app-misc/resolve-march-native
+sys-apps/pciutils
+sys-fs/dosfstools
+net-misc/rsync

@@ -1,0 +1,3 @@
+dmidecode | grep -cqm1 'Type: Notebook' || {
+	_FEATURE_TOUCHPAD_DISABLED=1
+}

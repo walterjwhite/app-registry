@@ -1,0 +1,2 @@
+#!/bin/sh
+markdownlint-cli2 --fix "**/.md" "#node_modules"

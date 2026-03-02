@@ -1,2 +1,0 @@
-#!/bin/sh
-firewall-update-country-blocks

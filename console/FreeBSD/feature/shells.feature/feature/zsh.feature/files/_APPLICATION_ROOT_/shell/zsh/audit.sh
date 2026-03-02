@@ -1,5 +1,7 @@
 #!/bin/sh
 _APPLICATION_NAME=console
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
 _context_id_is_valid() {
 	printf '%s' "$1" | $_CONF_GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || _ERROR "Context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
 }
@@ -59,11 +61,15 @@ _do_exec() {
 	fi
 }
 _ERROR() {
+	[ -n "$_EXIT_STATUS" ] && return
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
 		_EXIT_STATUS=1
 	fi
+	[ -n "$3" ] && {
+		_print_line $3
+	}
 	_EXIT_LOG_LEVEL=4
 	_EXIT_STATUS_CODE="ERR"
 	_EXIT_COLOR_CODE="$_CONF_LOG_C_ERR"
@@ -74,24 +80,34 @@ _ERROR() {
 	_run_defers
 	exit $_EXIT_STATUS
 }
+_print_line() {
+	_WARN "unhandled error"
+	local exception_line=$($_CONF_GNU_SED -n "${1}p" $0)
+	printf '  %s @ %s:%s\n' "$exception_line" $0 $1
+}
 _defer() {
-	if [ -n "$_DEFERS" ]; then
-		local defer
-		for defer in $_DEFERS; do
-			[ "$defer" = "$1" ] && {
-				_DEBUG "not deferring: $1 as it was already deferred"
-				return
-			}
-		done
-	fi
 	_DEBUG "deferring: $1"
-	_DEFERS="$1 $_DEFERS"
+	if [ $# -gt 1 ]; then
+		local defer_with_args=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+		_DEFERS="$defer_with_args $_DEFERS"
+	else
+		_DEFERS="$1 $_DEFERS"
+	fi
 }
 _run_defers() {
 	[ -z "$_DEFERS" ] && return 1
 	local defer
 	for defer in $_DEFERS; do
-		_call $defer
+		case "$defer" in
+		*:*)
+			local func_name=$(echo "$defer" | cut -d':' -f1)
+			local args=$(echo "$defer" | cut -d':' -f2 | tr ',' ' ')
+			_call $func_name $args
+			;;
+		*)
+			_call $defer
+			;;
+		esac
 	done
 	unset _DEFERS
 }
@@ -108,9 +124,9 @@ _log_app_exit() {
 	}
 }
 _console_context() {
-	_INFO "Refreshing console context"
+	_DEBUG "Refreshing console context"
 	if [ ! -e $_CONF_APPLICATION_DATA_PATH/active ]; then
-		_WARN "Using default context"
+		_DEBUG "Using default context"
 		_CONSOLE_CONTEXT_ID=default
 		_CONSOLE_CONTEXT_DESCRIPTION=default
 		_console_context_write
@@ -118,8 +134,11 @@ _console_context() {
 	_console_read_context
 	_console_pull_is_running || {
 		_console_pull_print_output
-		_console_pull &
-		CONSOLE_PULL_PID=$?
+		_console_shall_sync && {
+			_console_pull &
+			_CONSOLE_PULL_PID=$?
+			disown >/dev/null 2>&1
+		}
 	}
 }
 _console_read_context() {
@@ -178,23 +197,43 @@ _console_context_write() {
 	cd $opwd
 }
 _console_pull_is_running() {
-	[ -z "$CONSOLE_PULL_PID" ] && return 1
+	[ -z "$_CONSOLE_PULL_PID" ] && return 1
 	ps -p $_CONSOLE_PULL_PID >/dev/null 2>&1 && return 0
-	unset CONSOLE_PULL_PID
+	unset _CONSOLE_PULL_PID
 	return 1
 }
 _console_pull_print_output() {
-	[ -z "$_CONSOLE_PULL_OUT" ] && _CONSOLE_PULL_OUT=$(_mktemp)
+	: ${_CONSOLE_PULL_OUT:=$_CONF_DATA_PATH/console.out}
 	[ ! -e $_CONSOLE_PULL_OUT ] && return 1
 	[ $(wc -l <$_CONSOLE_PULL_OUT) -gt 0 ] && {
-		_INFO "previous pull logs"
-		cat $_CONSOLE_PULL_OUT
+		grep -cqm1 'Already up to date.' $_CONSOLE_PULL_OUT || {
+			_INFO "previous pull logs"
+			cat $_CONSOLE_PULL_OUT
+		}
 	}
 	rm -f $_CONSOLE_PULL_OUT
 }
+_console_shall_sync() {
+	: ${_CONSOLE_PULL_SYNC_TIME:=$_CONF_DATA_PATH/console.synctime}
+	[ ! -e $_CONSOLE_PULL_SYNC_TIME ] && return 0
+	local sync_time=$(head -1 $_CONSOLE_PULL_SYNC_TIME)
+	local now=$(date +%s)
+	local delta=$(($now - $sync_time))
+	[ $delta -ge 300 ]
+}
 _console_pull() {
 	cd $_CONSOLE_CONTEXT_DIRECTORY
-	git pull >$_CONSOLE_PULL_OUT 2>&1
+	git pull >$_CONSOLE_PULL_OUT 2>&1 || {
+		git merge --no-edit
+		local merge_status=$?
+		if [ $? -eq 0 ]; then
+			_WARN "merged non-interactively"
+			git push
+		else
+			_WARN "unable to merge non-interactively"
+		fi
+	}
+	date +%s >$_CONSOLE_PULL_SYNC_TIME
 }
 _after() {
 	local -i cmd_status=$?
@@ -221,9 +260,9 @@ _before() {
 	_console_log Before
 }
 _set_histfile() {
-	HISTFILE_PATH=$(_hostname)/activity
-	HISTFILE_REL_PATH=$_CONSOLE_CONTEXT_ID/$HISTFILE_PATH
-	HISTFILE=$_CONSOLE_CONTEXT_DIRECTORY/$HISTFILE_PATH/$(date +%Y/%m/%d)
+	_HISTFILE_PATH=$(_hostname)/activity
+	_HISTFILE_REL_PATH=$_CONSOLE_CONTEXT_ID/$_HISTFILE_PATH
+	HISTFILE=$_CONSOLE_CONTEXT_DIRECTORY/$_HISTFILE_PATH/$(date +%Y/%m/%d)
 	mkdir -p $(dirname $HISTFILE)
 }
 _current_time_epoch() {
@@ -234,7 +273,7 @@ _save_console_history() {
 	[ $(wc -l <$HISTFILE) -eq 0 ] && return 2
 	local opwd=$PWD
 	cd $_PROJECT_PATH
-	_console_data_has_changes && _git_save "$(date +'%Y/%m/%d %H:%M:%S')" $HISTFILE_REL_PATH
+	_console_data_has_changes && _git_save "$(date +'%Y/%m/%d %H:%M:%S')" $_HISTFILE_REL_PATH
 	cd $opwd
 }
 _console_data_has_changes() {
@@ -287,65 +326,57 @@ _include() {
 		[ -f $HOME/.config/walterjwhite/shell/$include_file ] && . $HOME/.config/walterjwhite/shell/$include_file
 	done
 }
-_WARN() {
-	_print_log 3 WRN "$_CONF_LOG_C_WRN" "$_CONF_LOG_BEEP_WRN" "$1"
-}
-_INFO() {
-	_print_log 2 INF "$_CONF_LOG_C_INFO" "$_CONF_LOG_BEEP_INFO" "$1"
-}
-_DETAIL() {
-	_print_log 2 DTL "$_CONF_LOG_C_DETAIL" "$_CONF_LOG_BEEP_DETAIL" "$1"
-}
-_DEBUG() {
-	_print_log 1 DBG "$_CONF_LOG_C_DEBUG" "$_CONF_LOG_BEEP_DEBUG" "($$) $1"
-}
-_sed_remove_nonprintable_characters() {
-	sed -e 's/[^[:print:]]//g'
-}
-_print_log() {
-	if [ -z "$5" ]; then
-		if test ! -t 0; then
-			local log_line
-			cat - | _sed_remove_nonprintable_characters |
-				while read log_line; do
-					_print_log $1 $2 $3 $4 "$log_line"
-				done
-			return
-		fi
-		return
-	fi
-	local message="$5"
-	[ $1 -lt $_CONF_LOG_LEVEL ] && return
-	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
-	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
-		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
-	fi
-	[ -n "$4" ] && _beep "$4"
-	_log_to_file "$2" "${_LOG_INDENT}$message"
-	_log_to_console "$3" "${_LOG_INDENT}$message"
-	[ -z "$INTERACTIVE" ] && _syslog "$message"
-	return 0
+_log_to_console() {
+	[ -z "$_CONF_LOG_CONSOLE" ] && return 0
+	local color=$1 message=$2
+	printf >&${_CONF_LOG_CONSOLE} '\033[%s%s \033[0m\n' "$color" "$message"
 }
 _reset_indent() {
 	unset _LOG_INDENT
 }
 _log_to_file() {
-	[ -z "$_LOGFILE" ] && return
-	printf '%s\n' "$2" >>$_LOGFILE
+	[ -z "$_LOGFILE" ] && return 0
+	printf '%s %s %s\n' "$(date '+%Y/%m/%d %H:%M:%S')" "$1" "$2" >>$_LOGFILE
 }
-_log_to_console() {
-	[ -z "$_CONF_LOG_CONSOLE" ] && return
-	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+_WARN() {
+	_print_log 3 WRN "${_CONF_LOG_C_WRN}" "${_CONF_LOG_BEEP_WRN}" "$1"
+}
+_INFO() {
+	_print_log 2 INF "${_CONF_LOG_C_INFO}" "${_CONF_LOG_BEEP_INFO}" "$1"
+}
+_DETAIL() {
+	_print_log 2 DTL "${_CONF_LOG_C_DETAIL}" "${_CONF_LOG_BEEP_DETAIL}" "$1"
+}
+_DEBUG() {
+	_print_log 1 DBG "${_CONF_LOG_C_DEBUG}" "${_CONF_LOG_BEEP_DEBUG}" "($$) $1"
+}
+_print_log() {
+	local level=$1 level_str=$2 color=$3 tone=$4 message="$5"
+	[ $level -lt $_CONF_LOG_LEVEL ] && return 0
+	[ -n "$_LOGGING_CONTEXT" ] &&
+		message="${_LOGGING_CONTEXT} - ${message}"
+	_handle_background_notification "$level_str" "$message"
+	[ -n "$tone" ] && _beep "$tone"
+	_log_to_file "$level_str" "$message"
+	_log_to_console "$color" "$message"
+	_user_log "$level_str" "$message"
+	[ -n "$_LOG_SYSLOG" ] && _syslog "$message"
+	return 0
+}
+_handle_background_notification() {
+	local level_str=$1 message=$2
+	[ -z "$_BACKGROUNDED" ] && return
+	[ -z "$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD" ] && return
+	$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$level_str" "$message" &
 }
 _log_app() {
 	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
 }
+_user_log() { :; }
 _mktemp() {
 	local suffix=$1
 	[ -n "$suffix" ] && suffix=".$suffix"
-	local sudo_prefix
-	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
-	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}
+	mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}
 }
 _hostname() {
 	hostname
@@ -366,7 +397,7 @@ _timeout() {
 		unset timeout_units
 	fi
 	local timeout_level=_ERROR
-	[ $_WARN ] && timeout_level=_WARN
+	[ $_WARN_ON_ERROR ] && timeout_level=_WARN
 	local sudo
 	[ -n "$_SUDO_REQUIRED" ] || [ -n "$_SUDO_USER" ] && sudo=_sudo
 	$sudo timeout $_OPTIONS $timeout "$@" || {
@@ -379,15 +410,6 @@ _timeout() {
 		$timeout_level "_timeout: $error_message: ${timeout}${timeout_units} - $message ($error_status): $sudo timeout $_OPTIONS $timeout $* ($USER)"
 		return $error_status
 	}
-}
-_require_file() {
-	_require "$1" filename _require_file
-	local level=_ERROR
-	[ -n "$_WARN_ON_ERROR" ] && level=_WARN
-	if [ ! -e $1 ]; then
-		$level "File: $1 does not exist | $2"
-		return 1
-	fi
 }
 _in_path() {
 	_require "$1" _in_path
@@ -411,7 +433,6 @@ _include context git logging paths platform
 : ${_CONF_GIT_DELETE_DRYRUN:=0}
 _PROJECT_BASE_PATH=$HOME/projects
 : ${_CONF_LOG_HEADER:="##################################################"}
-: ${_CONF_LOG_C_ALRT:="1;31m"}
 : ${_CONF_LOG_C_ERR:="1;31m"}
 : ${_CONF_LOG_C_SCS:="1;32m"}
 : ${_CONF_LOG_C_WRN:="1;33m"}
@@ -428,24 +449,20 @@ _PROJECT_BASE_PATH=$HOME/projects
 : ${_CONF_LOG_FEATURE_TIMEOUT_ERROR_LEVEL:=warn}
 : ${_CONF_LOG_LONG_RUNNING_CMD:=30}
 : ${_CONF_LOG_LONG_RUNNING_CMD_LINES:=1000}
-[ -t 0 ] && INTERACTIVE=1
+which mail >/dev/null 2>&1 || _CONF_LOG_MAIL_DISABLED=1
+[ -t 0 ] && _INTERACTIVE=1
 : ${_CONF_LOG_CONSOLE:=2}
-[ "$HOME" = "/" ] && HOME=/root
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 : ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
 : ${_CONF_BIN_PATH:=/usr/local/bin}
-_CONF_DATA_PATH=$HOME/.data
-_CONF_CACHE_PATH=$_CONF_DATA_PATH/.cache
-_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
-_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
-_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
-_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
+: ${_CONF_DATA_PATH:=$HOME/.data}
+: ${_CONF_CACHE_PATH:=$HOME/.cache}
+: ${_CONF_CONFIG_PATH:=$HOME/.config/walterjwhite/shell}
+: ${_CONF_RUN_PATH:=/tmp/$USER/walterjwhite/app}
 _CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
 _CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
 _CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
-: ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
-: ${CFG:="logging platform context wait beep paths net"}
-: ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
+: ${_SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
 _DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
 Darwin)
@@ -456,13 +473,14 @@ MINGW64_NT-*)
 	;;
 esac
 _PLATFORM="FreeBSD"
+_ARCHITECTURE=$(uname -m)
 _TAR_ARGS=" -f - "
 : ${_CONF_GNU_GREP:=/usr/local/bin/ggrep}
 : ${_CONF_GNU_SED:=gsed}
-[ -z "$INTERACTIVE" ] && exit
-_APPLICATION_NAME=console
+_SUDO_CMD="sudo"
+[ -z "$_INTERACTIVE" ] && exit
 _PROJECT_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
-_WARN=1 _git_init
+_WARN_ON_ERROR=1 _git_init
 cd $OLDPWD
 HISTSIZE=$_CONF_CONSOLE_ZSH_HISTORY_SIZE
 SAVEHIST=$_CONF_CONSOLE_ZSH_HISTORY_SIZE

@@ -1,2 +1,0 @@
-#!/bin/sh
-zfs-zap-maintenance monthly

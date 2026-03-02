@@ -1,0 +1,24 @@
+- Familiarize yourself with the objectives of the code to be reviewed.
+- Ensure the code is accessible (e.g., through a pull request or shared repository).
+Use the following criteria as a baseline for the code review:
+- **Readability:** Is the code easy to read and understand?
+- **Consistency:** Are naming conventions and coding standards consistently applied?
+- **Comments and Documentation:** Is the code well-commented where necessary? Are functions and components adequately documented?
+- **Correctness:** Does the code produce the expected results? Are all requirements met?
+- **Error Handling:** Are potential errors handled gracefully? Is the code robust against edge cases?
+- **Efficiency:** Are there any areas where performance can be improved? 
+- **Resource Management:** Is memory and resource usage optimized? Are there any potential leaks?
+- **Modularity:** Is the code broken into small, reusable functions or modules?
+- **Testability:** Is the code written in a way that allows for unit tests? Are there tests in place?
+- **Vulnerabilities:** Are there any obvious security vulnerabilities? 
+- **Data Handling:** Is sensitive data handled appropriately? Are any third-party libraries securely integrated?
+- **Style Guide Compliance:** Does the code follow the agreed-upon style guide?
+- **Architecture Compliance:** Does the code fit within the project’s architecture/design principles?
+- Note areas of strength as well as areas for improvement.
+- Use constructive language to suggest changes or improvements.
+- Create a concise document summarizing the findings and feedback, including:
+  - Positive aspects of the code
+  - Specific areas that need improvement
+  - Suggested changes with reasoning
+- Schedule a follow-up meeting if necessary to discuss the feedback with the author.
+- Encourage open dialogue and collaboration for implementation of suggested changes.

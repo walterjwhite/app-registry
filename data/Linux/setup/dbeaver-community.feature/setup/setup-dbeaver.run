@@ -1,0 +1,100 @@
+#!/bin/sh
+_extract_extract() {
+	if [ $# -lt 2 ]; then
+		log_warn "expecting 2 arguments, source file, and target to extract to"
+		return 1
+	fi
+	log_info "extracting $1"
+	[ -n "$clean" ] && {
+		rm -rf $2
+		mkdir -p $2
+	}
+	case $1 in
+	*.tar.gz | *.tgz | *.tar.bz2 | *.tbz2 | *.tar.xz)
+		tar xf $1 -C $2
+		;;
+	*.zip)
+		unzip -q $1 -d $2
+		;;
+	*)
+		log_warn "extension unsupported - $1"
+		return 2
+		;;
+	esac
+}
+_link_create() {
+	local _target=$1
+	local _link_path=$2
+	ln -s "$_target" "$_link_path"
+}
+_link_install_link() {
+	local _target=$1
+	local _link_path=$2
+	_link_create "$_target" "$_link_path" &&
+		printf '%s\n' "$_link_path" >>"$install_library_path/$target_application_name/.files"
+}
+download_file=""
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e $download_file ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o $download_file -s -L "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp $download_file $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+: ${conf_dev_dbeaver_edition:=ce}
+_dbeaver_install() {
+    dbeaver_install_path=/usr/local/dbeaver/community
+    _download_fetch "https://dbeaver.io/files/dbeaver-${conf_dev_dbeaver_edition}-latest-linux.gtk.$APP_PLATFORM_ARCHITECTURE-nojdk.tar.gz"
+    clean=$dbeaver_install_path sudo_required=1 _extract_extract "$download_file" "$dbeaver_install_path"
+    $_link $BIN_PATH/dbeaver $dbeaver_install_path/dbeaver
+    $_SUDO_CMD chmod +x $BIN_PATH/dbeaver
+}
+_dbeaver_platform_check() {
+    case $APP_PLATFORM_SUB_PLATFORM in
+        Gentoo)
+            log_warn "oS Package is available"
+            return 1
+            ;;
+    esac
+}
+_dbeaver_architecture_check() {
+    case $APP_PLATFORM_ARCHITECTURE in
+        amd64|aarch64)
+            ;;
+        *)
+            log_warn "unsupported architecture: $APP_PLATFORM_ARCHITECTURE"
+            return 1
+            ;;
+    esac
+}
+_dbeaver_platform_check && _dbeaver_architecture_check && _dbeaver_install

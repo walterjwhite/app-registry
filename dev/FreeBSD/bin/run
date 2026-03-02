@@ -76,6 +76,7 @@ _do_exec() {
 	fi
 }
 _ERROR() {
+	[ -n "$_EXIT_STATUS" ] && return
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
@@ -92,11 +93,13 @@ _ERROR() {
 	exit $_EXIT_STATUS
 }
 _success() {
+	[ -n "$_EXIT_STATUS" ] && return
 	_EXIT_STATUS=0
 	_EXIT_LOG_LEVEL=1
 	_EXIT_STATUS_CODE="SCS"
 	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
 	_EXIT_MESSAGE="$1"
+	[ -z "$_EXIT_MESSAGE" ] && _EXIT_MESSAGE="success"
 	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
 	_defer _long_running_cmd
 	_defer _log_app_exit
@@ -194,7 +197,7 @@ _set_logfile() {
 	_LOGFILE=$1
 	mkdir -p $(dirname $1)
 	_reset_indent
-	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+	[ -n "$INTERACTIVE" ] && [ $_CONF_LOG_CONSOLE -eq 2 ] && {
 		exec 3>&1 4>&2
 		_CONF_LOG_CONSOLE=4
 	}
@@ -232,7 +235,6 @@ _print_log() {
 	fi
 	local message="$5"
 	[ $1 -lt $_CONF_LOG_LEVEL ] && return
-	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
 	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
 		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
 	fi
@@ -250,8 +252,9 @@ _log_to_file() {
 	printf '%s\n' "$2" >>$_LOGFILE
 }
 _log_to_console() {
-	[ -z "$_CONF_LOG_CONSOLE" ] && return
-	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+	local message=$2
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$message"
 }
 _log_app() {
 	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
@@ -273,13 +276,16 @@ _setup_app_pipe() {
 _cleanup_app_pipe() {
 	rm -rf $_APPLICATION_PIPE_DIR
 }
-_parent_processes() {
-	[ -n "$_PARENT_PROCESSES_FUNCTION" ] && $_PARENT_PROCESSES_FUNCTION
-}
-_parent_processes_pgrep() {
+_child_pids() {
+	_require "$1" "pid"
 	pgrep -P $1
 }
+_kill_process_and_children() {
+	kill -9 $(_child_pids $1) 2>/dev/null
+	kill -9 $1
+}
 _is_backgrounded() {
+	[ -n "$_NO_PS" ] && return 1
 	case $(ps -o stat= -p $$) in
 	*+*)
 		return 1
@@ -419,78 +425,100 @@ _long_running_cmd() {
 	fi
 	_alert "$subject" "$message"
 }
-_capture_env() {
+_setup_log() {
 	_RUN_LOG_FILE=.log/$(date +%Y.%m.%d.%H.%M.%S)
 	mkdir -p $(dirname $_RUN_LOG_FILE)
-	if [ -n "$_LOG_FILE" ]; then
-		printf '@see: %s\n' "$_LOG_FILE" >$_RUN_LOG_FILE
-		return
-	fi
-	_LOG_FILE=$_RUN_LOG_FILE
-	printf '# run: %s:%s\n' "$(date)" "$PWD" >$_RUN_LOG_FILE
-	printf '# git: %s:%s\n' "$(gcb)" "$(git-head)" >>$_RUN_LOG_FILE
-	printf '# cmdline: %s\n' "$@" >>$_RUN_LOG_FILE
-	printf '# env - start\n' >>$_RUN_LOG_FILE
-	env | _sed_remove_nonprintable_characters >>$_RUN_LOG_FILE
-	printf '# env - end\n' >>$_RUN_LOG_FILE
 }
 _open_log() {
-	[ -n "$_OPEN_LOG" ] && less +G $_RUN_LOG_FILE
-}
-_tail() {
-	[ -z "$_TAIL" ] && return 1
-	_colored_tail &
-	_TAIL_PIDS=$!
-	_TAIL_PIDS="$_TAIL_PIDS $(_parent_processes $_TAIL_PIDS | tr '\n' ' ')"
-}
-_wait_for() {
-	ps -p $_RUN_PID >/dev/null 2>&1
-	wait $_RUN_PID
-}
-_run_cleanup() {
-	_INFO "Run Cleaning up"
-	kill -9 $_RUN_PID $_TAIL_PIDS $_NOTIFY_PID 2>/dev/null
-	[ -e $_RUN_INSTANCE_DIR ] && rm -rf $_RUN_INSTANCE_DIR
-}
-_notify_running() {
-	[ -z "$_NOTIFY" ] && return 1
-	_setup_app_pipe
-	_call ${_LANGUAGE}_is_running
-	printf '%s\n' "started" >$_APPLICATION_PIPE &
-	_NOTIFY_PID=$!
-}
-_run_new_instance() {
-	[ -z "$_NEW_INSTANCE" ] && return 1
-	_RUN_INSTANCE_DIR=$(_MKTEMP_OPTIONS=d _mktemp)
-	_INFO "Creating new instance in $_RUN_INSTANCE_DIR"
-	_call ${_LANGUAGE}_new_instance
-}
-_run() {
-	_defer _run_cleanup
-	_call run_${_LANGUAGE}_init "$@"
-	_run_new_instance
-	_capture_env "$@"
-	_call run_${_LANGUAGE} "$@"
-	_tail
-	_notify_running
-	_wait_for
-	_open_log
+	less +G $_RUN_LOG_FILE
 }
 _application_runner() {
 	_RUNNER=$_CONF_APPLICATION_LIBRARY_PATH/action/run/${_APPLICATION_TYPE}.sh
 	[ ! -e $_RUNNER ] && _ERROR "Application Runner does not exist, $_RUNNER"
+	_INFO "running $_APPLICATION_TYPE"
 	. $_RUNNER
+	_run_init_env
+	_run_init_secrets
 	. .application/$_APPLICATION_TYPE
+	[ $_DEV_DISPLAY_ENV ] && {
+		_WARN "displaying all secrets and env vars"
+		_run_display_env
+		exit 0
+	}
 	_run "$@"
+}
+_run() {
+	_defer _run_cleanup
+	_LANGUAGE_NAME=$(printf '%s' $_LANGUAGE | tr '[:lower:]' '[:upper:]')
+	_call _RUN_${_LANGUAGE_NAME}_INIT "$@"
+	_run_new_instance
+	_call _RUN_${_LANGUAGE_NAME} "$@"
+	[ -z "$_DEV_NOTAIL" ] && {
+		_colored_tail &
+		_TAIL_PID=$!
+	}
+	_notify_running
+	_wait_for
+	[ -n "$_DEV_OPEN_LOG" ] && _open_log
+}
+_run_cleanup() {
+	_INFO "run cleaning up"
+	[ -n "$_TAIL_PID" ] && _kill_process_and_children $_TAIL_PID 2>/dev/null
+	[ -n "$_NOTIFY_PID" ] && _kill_process_and_children $_NOTIFY_PID 2>/dev/null
+	kill -9 $_RUN_PID 2>/dev/null
+	[ -e $_RUN_INSTANCE_DIR ] && rm -rf $_RUN_INSTANCE_DIR
+}
+_run_new_instance() {
+	[ -z "$_DEV_NEW" ] && return 1
+	_RUN_INSTANCE_DIR=$(_MKTEMP_OPTIONS=d _mktemp)
+	_INFO "creating new instance in $_RUN_INSTANCE_DIR"
+	_call _${_LANGUAGE_NAME}_NEW_INSTANCE
+}
+_notify_running() {
+	[ -z "$_NOTIFY" ] && return 1
+	_setup_app_pipe
+	_call _${_LANGUAGE_NAME}_IS_RUNNING
+	printf '%s\n' "started" >$_APPLICATION_PIPE &
+	_NOTIFY_PID=$!
+}
+_wait_for() {
+	[ -z "$_RUN_PID" ] && return 1
+	ps -p $_RUN_PID >/dev/null 2>&1
+	wait $_RUN_PID
 }
 _colored_tail() {
 	_ESC=$(printf '\033')
-	tail -f $_LOG_FILE |
+	tail -f $_RUN_LOG_FILE |
 		sed -u -e "s, TRACE ,${_ESC}[34m&${_ESC}[0m," \
 			-e "s, DEBUG ,${_ESC}[35m&${_ESC}[0m," \
 			-e "s, INFO ,${_ESC}[36m&${_ESC}[0m," \
 			-e "s, WARN ,${_ESC}[33m&${_ESC}[0m," \
 			-e "s, ERROR ,${_ESC}[31m&${_ESC}[0m,"
+}
+_run_init_env() {
+	[ ! -e .application/.env ] && return 1
+	_INFO "loading env -> $_RUN_INSTANCE_DIR"
+	local env_line
+	for env_line in $($_CONF_GNU_GREP -Pv '(^$|^#)' .application/.env); do
+		_DEBUG "processing env: $env_line"
+		export $env_line
+	done
+}
+_run_display_env() {
+	local var_names=$($_CONF_GNU_GREP -Pvh '(^$|^#)' .application/.env .application/.secrets | sed -e 's/=.*$//' | tr '\n' '|')
+	env | $_CONF_GNU_GREP -Po "^($var_names)=.*"
+}
+_run_init_secrets() {
+	[ ! -e .application/.secrets ] && return 1
+	_INFO "loading secrets -> $_RUN_INSTANCE_DIR"
+	secrets unlock 2>/dev/null
+	local secret_line secret_key secret_value
+	for secret_line in $($_CONF_GNU_GREP -Pv '(^$|^#)' .application/.secrets); do
+		secret_env_key="${secret_line%%=*}"
+		secret_key="${secret_line#*=}"
+		_DEBUG "processing secret: $secret_env_key"
+		export $secret_env_key="$(secrets get -out=stdout $secret_key)"
+	done
 }
 _include logging platform context wait beep paths net dev
 : ${_CONF_LOG_HEADER:="##################################################"}
@@ -516,7 +544,6 @@ _include logging platform context wait beep paths net dev
 : ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
 : ${CFG:="logging platform context wait beep paths net"}
 : ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
 _DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
 Darwin)
@@ -527,9 +554,11 @@ MINGW64_NT-*)
 	;;
 esac
 _PLATFORM="FreeBSD"
+_ARCHITECTURE=$(uname -m)
 _TAR_ARGS=" -f - "
 : ${_CONF_GNU_GREP:=/usr/local/bin/ggrep}
 : ${_CONF_GNU_SED:=gsed}
+_SUDO_CMD="sudo"
 : ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
 : ${_CONF_INSTALL_CONTEXT:=default}
 : ${_CONF_WAIT_INTERVAL:=30}
@@ -547,25 +576,21 @@ _TAR_ARGS=" -f - "
 [ "$HOME" = "/" ] && HOME=/root
 : ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
 : ${_CONF_BIN_PATH:=/usr/local/bin}
-_CONF_DATA_PATH=$HOME/.data
-_CONF_CACHE_PATH=$HOME/.cache
-_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
-_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
-_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
-_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
-_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
-_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
-_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_DATA_PATH:=$HOME/.data}
+: ${_CONF_CACHE_PATH:=$HOME/.cache}
+: ${_CONF_CONFIG_PATH:=$HOME/.config/walterjwhite/shell}
+: ${_CONF_RUN_PATH:=/tmp/$USER/walterjwhite/app}
+: ${_CONF_DATA_ARTIFACTS_PATH:=$_CONF_DATA_PATH/install-v2/artifacts}
+: ${_CONF_DATA_REGISTRY_PATH:=$_CONF_DATA_PATH/install-v2/registry}
+: ${_CONF_APPLICATION_DATA_PATH:=$_CONF_DATA_PATH/$_APPLICATION_NAME}
+: ${_CONF_APPLICATION_CONFIG_PATH:=$_CONF_CONFIG_PATH/$_APPLICATION_NAME}
+: ${_CONF_APPLICATION_LIBRARY_PATH:=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME}
 : ${_CONF_NETWORK_TEST_TIMEOUT:=5}
 : ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_DEV_FORMAT_PARALLEL:=10}
 : ${_CONF_DEV_SSH_KEYTYPE:=ed25519}
 : ${_CONF_DEV_LOMBOK_SLF4J_LOGGER_NAME:=LOGGER}
 : ${_CONF_DEV_VSCODE_IDE:=/usr/local/bin/vscode}
-_is_backgrounded && _BACKGROUNDED=1
-_init_logging
-unset _DEFERS _EXIT
-_APPLICATION_START_TIME=$(date +%s)
-_APPLICATION_CMD=$(basename $0)
 trap _on_hup 1
 trap _on_int 2
 trap _on_quit 3
@@ -574,6 +599,11 @@ trap _on_abort 6
 trap _on_alarm 14
 trap _on_term 15
 trap _success 0
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
 for _ARG in "$@"; do
 	case $_ARG in
 	-h | --help)
@@ -607,6 +637,10 @@ for _ARG in "$@"; do
 		unset _configuration_name
 		shift
 		;;
+	--last-arg)
+		shift
+		break
+		;;
 	*)
 		break
 		;;
@@ -620,25 +654,20 @@ _APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
 _APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
 _waitee_init
 _waiter
-[ ! -e .application ] && _ERROR ".application does not exist, unable to run" 1
-for _ARG in "$@"; do
-	case $_ARG in
-	--type=* | -t=*)
-		set -- $(printf '%s' $* | sed -e "s/$_ARG//")
-		_APPLICATION_TYPE="${_ARG#*=}"
-		_LANGUAGE=$_APPLICATION_TYPE
-		_application_runner "$@"
-		exit $?
-		;;
-	--tail)
-		set -- $(printf '%s' $* | sed -e "s/$_ARG//")
-		_TAIL=1
-		;;
-	esac
-done
-[ $_DEV_CLEAR_LOG ] && rm -rf .log
-for _APPLICATION_TYPE in $(ls .application); do
+_dev_run_do() {
 	_LANGUAGE=$_APPLICATION_TYPE
+	_setup_log
 	_application_runner "$@"
 	exit $?
-done
+}
+[ ! -e .application ] && _ERROR ".application does not exist, unable to run" 1
+[ $_DEV_CLEAR_LOG ] && rm -rf .log
+if [ $_DEV_TYPES ]; then
+	for _APPLICATION_TYPE in $_DEV_TYPES; do
+		_dev_run_do
+	done
+else
+	for _APPLICATION_TYPE in $(ls .application); do
+		_dev_run_do
+	done
+fi

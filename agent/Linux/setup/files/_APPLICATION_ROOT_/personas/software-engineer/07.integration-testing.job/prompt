@@ -1,0 +1,56 @@
+- Verify if integration testing is already set up in the project:
+  - Locate existing integration tests (if any).
+  - Review their configuration and execution process.
+- If integration tests are not set up, establish a testing framework:
+  - Choose an appropriate framework based on the technology stack (e.g., JUnit for Java, pytest for Python).
+- Configure the project to use local services to prevent impacting others in shared environments:
+  - Set up local instances of databases, APIs, or other services.
+  - Ensure that the configurations (e.g., endpoints and credentials) are environment-specific.
+- Set up Docker or Podman to create isolated environments for testing:
+  - Write Dockerfile or Podman configuration for defining the testing environment.
+  - Create `docker-compose.yml` or `podman-compose.yml` for orchestrating multi-service setups.
+- Write integration tests for the functionalities you want to verify:
+1. **Test Case: [Scenario 1]**
+   - Description: [Brief description of the integration scenario]
+   - Expected Outcome: [Describe expected results]
+   - Code Example:
+     ```python
+     def test_integration_scenario_1():
+         response = make_request_to_service()
+         assert response.status_code == 200
+     ```
+2. **Test Case: [Scenario 2]**
+   - Description: [Brief description of the integration scenario]
+   - Expected Outcome: [Describe expected results]
+   - Code Example:
+     ```python
+     def test_integration_scenario_2():
+         response = make_request_to_service()
+         assert response.data == expected_data
+     ```
+- Execute the integration tests to ensure that all functionalities are working as expected:
+  ```bash
+  pytest path/to/integration/tests
+  ```
+- Ensure that the setup and tests do not interfere with other developers work.
+- Clean up resources (Docker containers, etc.) after the tests are completed.
+- Document the integration testing setup, including:
+  - Instructions on how to run tests.
+  - Any necessary configurations or environment variables.
+- Make all changes on the existing branch, do NOT create a new branch
+- Review the added tests and configurations.
+- Commit the changes with a descriptive message:
+  ```bash
+  git add .
+  ```
+  ```bash
+  git commit -m 'Set up integration testing and configured local services using Docker/Podman:
+  - Established local service configurations
+  - Added integration tests for [Scenario 1]
+  - Ensured environment isolation'
+  ```
+- Do NOT commit build artifacts or executables to the repository
+- Push the changes to the remote repository:
+  ```bash
+  git push origin [branch-name]
+  ```

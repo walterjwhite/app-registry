@@ -1,0 +1,6 @@
+: ${conf_dev_comment_remover_group:=io/github/walterjwhite/java/utilities}
+: ${conf_dev_comment_remover_artifact:=cli-comment-remover}
+: ${conf_dev_comment_remover_version:=0.3.4}
+: ${conf_dev_comment_remover_jar_FILENAME:=$conf_dev_comment_remover_artifact-$conf_dev_comment_remover_version.jar}
+: ${conf_dev_comment_remover_jar:=${APP_LIBRARY_PATH}/walterjwhite/comment-remover.jar}
+conf_dev_comment_remover_jar=$APP_LIBRARY_PATH/walterjwhite/comment-remover.jar

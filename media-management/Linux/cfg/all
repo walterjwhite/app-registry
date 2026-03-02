@@ -1,7 +1,7 @@
-: ${_CONF_MEDIA_MANAGEMENT_TAGS:=selected|print|by-tag}
-: ${_CONF_MEDIA_MANAGEMENT_ZFS_POOL_STATUS_INTERVAL:=60}
-: ${_CONF_MEDIA_MANAGEMENT_USB_DEVICE:=da0}
-: ${_CONF_MEDIA_MANAGEMENT_RESILVER_WAIT:=60}
-: ${_CONF_MEDIA_MANAGEMENT_MAX_SLIDESHOW_IMAGES:=100}
-: ${_CONF_MEDIA_MANAGEMENT_VIDEO_CODEC:=libx265}
-: ${_CONF_MEDIA_MANAGEMENT_VIDEO_CODEC_TAG:=hvc1}
+: ${conf_media_management_tags:=selected|print|by-tag}
+: ${conf_media_management_zfs_pool_status_interval:=60}
+: ${conf_media_management_usb_device:=da0}
+: ${conf_media_management_resilver_wait:=60}
+: ${conf_media_management_max_slideshow_images:=100}
+: ${conf_media_management_video_codec:=libx265}
+: ${conf_media_management_video_codec_TAG:=hvc1}

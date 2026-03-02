@@ -1,7 +1,9 @@
-: ${_CONF_SEARCH_CONTENTS_RECURSE_SUBMODULES:=1}
-: ${_CONF_SEARCH_CONTENTS_TYPE:=string}
-: ${_CONF_SEARCH_CWD_ONLY:=0}
-: ${_CONF_SEARCH_RECURSIVE_PAGER:=1}
-: ${_CONF_SEARCH_SCOPE_MAX_DEPTH:=3}
-: ${_SEARCH_TYPE:=git/contents}
-: ${_CONF_SEARCH_EDITOR:=$EDITOR}
+: ${conf_search_contents_recurse_submodules:=1}
+: ${conf_search_contents_type:=string}
+: ${conf_search_cwd_only:=0}
+: ${conf_search_recursive_pager:=1}
+: ${conf_search_scope_max_depth:=3}
+: ${search_type:=git/contents}
+: ${conf_search_editor:=$EDITOR}
+: ${conf_search_exclude_path:='*/.*/*'}
+: ${conf_search_exclude_git_grep:='^\.'}

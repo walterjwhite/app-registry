@@ -1,0 +1,12 @@
+[Unit]
+Description=DNS to nftables Integration Script
+After=network.target dnsmasq.service
+Wants=dnsmasq.service
+[Service]
+Type=simple
+ExecStart=/usr/local/walterjwhite/firewall/bin/update-firewall-tables-from-dnsmasq-logs
+Restart=on-failure
+RestartSec=5s
+PIDFile=/run/dns-to-nft.pid
+[Install]
+WantedBy=multi-user.target

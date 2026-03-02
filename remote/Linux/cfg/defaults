@@ -1,1 +1,0 @@
-: ${_CONF_REMOTE_STUNNEL_TABLE_NAME:=stunnel_client}

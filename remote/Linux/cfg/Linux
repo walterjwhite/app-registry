@@ -1,0 +1,4 @@
+: ${conf_remote_service_start_cmd:=wg-quick up wg0}
+: ${conf_remote_service_stop_cmd:=wg-quick down wg0}
+: ${conf_remote_vpn_client_table_name:=vpn_client}
+: ${conf_remote_service_cmd:=systemctl}

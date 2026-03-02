@@ -1,0 +1,8 @@
+#!/bin/sh
+cd /usr/local/walterjwhite/agent/container/dev
+chmod +x entrypoint.sh
+podman-compose build sandbox
+podman images | grep dev-sandbox
+podman compose run --rm sandbox
+podman compose run --rm sandbox
+INPUT_DIR=./my-project podman compose run --rm sandbox bash -c "gemini"

@@ -1,0 +1,6 @@
+(httpie)
+    -request=*
+    -q|--quiet
+    --no-log-env
+    -s=*
+    --session=*

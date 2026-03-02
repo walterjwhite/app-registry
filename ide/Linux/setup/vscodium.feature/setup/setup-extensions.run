@@ -1,0 +1,13 @@
+#!/bin/sh
+conf_dev_vscodium_executable=vscodium
+_vscodium_install_extensions() {
+	if [ -z "$_FEATURE_VSCODIUM_EXTENSIONS" ]; then
+		log_warn "_FEATURE_VSCODIUM_EXTENSIONS is empty"
+		return 1
+	fi
+	local vscodium_extension
+	for vscodium_extension in $(printf '%s\n' "$_FEATURE_VSCODIUM_EXTENSIONS"); do
+		$conf_dev_vscodium_executable --install-extension $vscodium_extension > /dev/null 2>&1 || log_warn "install $vscodium_extension failed"
+	done
+}
+_vscodium_install_extensions

@@ -1,0 +1,1 @@
+: ${conf_media_copy_fat_mount_cmd:=mount}

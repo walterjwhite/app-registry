@@ -1,0 +1,2 @@
+: ${conf_dev_randoop_heap:=-Xmx3000m}
+: ${conf_dev_randoop_options:=--progressdisplay=false}

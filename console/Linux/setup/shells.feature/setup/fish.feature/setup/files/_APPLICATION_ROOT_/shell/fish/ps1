@@ -1,0 +1,8 @@
+set -g fish_prompt (function '
+    set -l last_status $status
+    set_color red; echo -n (whoami); set_color normal; echo -n "@"
+    set_color blue; echo -n (hostname); set_color normal; echo -n " "
+    set_color yellow; echo -n (prompt_pwd); set_color normal; echo -n " "
+    set_color normal; echo -n "%% "
+    return $last_status
+end)

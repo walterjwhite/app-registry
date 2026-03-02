@@ -1,8 +1,6 @@
 _SHELL_TYPE=$(basename $(env | grep 'SHELL=.*' | head -1))
 _load_plugins() {
-	if [ ! -e $1/$_SHELL_TYPE ]; then
-		return 1
-	fi
+	[ ! -e $1/$_SHELL_TYPE ] && return
 	for _SHELL_SCRIPT_PLUGIN in $(find $1/$_SHELL_TYPE -type f); do
 		. $_SHELL_SCRIPT_PLUGIN
 	done

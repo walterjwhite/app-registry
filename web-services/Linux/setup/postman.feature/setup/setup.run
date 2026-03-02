@@ -1,0 +1,28 @@
+#!/bin/sh
+_link_create() {
+	local _target=$1
+	local _link_path=$2
+	ln -s "$_target" "$_link_path"
+}
+_link_install_link() {
+	local _target=$1
+	local _link_path=$2
+	_link_create "$_target" "$_link_path" &&
+		printf '%s\n' "$_link_path" >>"$install_library_path/$target_application_name/.files"
+}
+case $APP_PLATFORM_SUB_PLATFORM in
+    Ubuntu)
+        if [ "$APP_PLATFORM_ARCHITECTURE" = "arm64" ]; then
+            postman_install_path=/usr/local/postman
+            _download_fetch "https://dl.pstmn.io/download/latest/linux_arm64"
+            clean=$postman_install_path _extract_extract "$download_file" "$postman_install_path"
+            _link $BIN_PATH/Postman $postman_install_path/app/Postman
+            chmod +x $BIN_PATH/Postman
+        else
+            snap install postman
+        fi
+        ;;
+    *)
+        log_warn "unsupported distribution, $APP_PLATFORM_SUB_PLATFORM"
+        ;;
+esac

@@ -1,1 +1,1 @@
-: ${_CONF_DATE_OPTIONS:="-j -f"}
+: ${conf_date_options:="-j -f"}

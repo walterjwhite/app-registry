@@ -1,5 +1,15 @@
 #!/bin/sh
 _APPLICATION_NAME=dev
+_include
+: ${_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL:=warn}
+: ${_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL:=warn}
+[ -z "$INTERACTIVE" ] && {
+	_OPTN_DEV_MAVEN_BATCH="-B"
+}
+: ${_CONF_DEV_MAVEN_OPTIONS:="-Dorg.slf4j.simpleLogger.defaultLogLevel=$_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL \
+    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=$_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL \
+    -ntp -q $_OPTN_DEV_MAVEN_BATCH"}
+: ${_CONF_DEV_MAVEN_DEPENDENCY_VERSION:=use-latest-releases}
 _NO_EXEC=1
 _maven_has_child_modules() {
 	if [ $(find . -type f -name pom.xml -print -quit | wc -l) -gt 1 ]; then
@@ -25,15 +35,15 @@ for _ARG in "$@"; do
 	set=*)
 		_MAVEN_NEW_VERSION="${_ARG#*=}"
 		_update_version && _success "Set version -> $_MAVEN_NEW_VERSION"
-		error "Unable to set version: $_MAVEN_NEW_VERSION"
+		_ERROR "Unable to set version: $_MAVEN_NEW_VERSION"
 		;;
 	update)
 		_update_dependencies && _success "Updated dependencies"
-		error "Unable to update dependencies"
+		_ERROR "Unable to update dependencies"
 		;;
 	*)
-		error "Unknown arg: $_ARG"
+		_ERROR "Unknown arg: $_ARG"
 		;;
 	esac
 done
-error "No action was specified, expecting set=x.y.z or update"
+_ERROR "No action was specified, expecting set=x.y.z or update"

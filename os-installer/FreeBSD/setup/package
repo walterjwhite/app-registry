@@ -3,3 +3,4 @@ checkrestart
 dmidecode
 wgetpaste
 smartmontools
+fusefs-sshfs

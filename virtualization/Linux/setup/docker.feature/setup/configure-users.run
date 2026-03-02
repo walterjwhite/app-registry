@@ -1,0 +1,6 @@
+#!/bin/sh
+: ${conf_dev_virtualization_docker_user_group_name:=docker}
+for _USER in $($GNU_GREP -P '^(wheel|operator|video):' /etc/group | cut -f4 -d':' | tr ',' '\n' | sort -u); do
+    log_detail "granting $USER docker access"
+	sudo_run usermod -aG $conf_dev_virtualization_docker_user_group_name $USER
+done

@@ -1,0 +1,16 @@
+#!/bin/sh
+_ollama_is_supported() {
+    lspci | $GNU_GREP -P '(AMD|NVIDIA)' | $GNU_GREP -Picqm1 '(display|graphics)'
+}
+_ollama_install() {
+    _ollama_is_installed && return
+    log_detail "installing ollama"
+    curl -fsSL https://ollama.com/install.sh | sh
+}
+_ollama_is_installed() {
+    which ollama > /dev/null 2>&1
+}
+_ollama_is_supported && _ollama_install || {
+  log_warn "ollama does not appear to support this hardware"
+  false
+}

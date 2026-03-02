@@ -75,6 +75,7 @@ _do_exec() {
 	fi
 }
 _ERROR() {
+	[ -n "$_EXIT_STATUS" ] && return
 	if [ $# -ge 2 ]; then
 		_EXIT_STATUS=$2
 	else
@@ -91,11 +92,13 @@ _ERROR() {
 	exit $_EXIT_STATUS
 }
 _success() {
+	[ -n "$_EXIT_STATUS" ] && return
 	_EXIT_STATUS=0
 	_EXIT_LOG_LEVEL=1
 	_EXIT_STATUS_CODE="SCS"
 	_EXIT_COLOR_CODE="$_CONF_LOG_C_SCS"
 	_EXIT_MESSAGE="$1"
+	[ -z "$_EXIT_MESSAGE" ] && _EXIT_MESSAGE="success"
 	_EXIT_BEEP="$_CONF_LOG_BEEP_SCS"
 	_defer _long_running_cmd
 	_defer _log_app_exit
@@ -193,7 +196,7 @@ _set_logfile() {
 	_LOGFILE=$1
 	mkdir -p $(dirname $1)
 	_reset_indent
-	[ -n "$INTERACTIVE" ] && [ -z "$_CHILD" ] && {
+	[ -n "$INTERACTIVE" ] && [ $_CONF_LOG_CONSOLE -eq 2 ] && {
 		exec 3>&1 4>&2
 		_CONF_LOG_CONSOLE=4
 	}
@@ -231,7 +234,6 @@ _print_log() {
 	fi
 	local message="$5"
 	[ $1 -lt $_CONF_LOG_LEVEL ] && return
-	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
 	if [ $_BACKGROUNDED ] && [ $_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD ]; then
 		$_OPTN_INSTALL_BACKGROUND_NOTIFICATION_METHOD "$2" "$_message" &
 	fi
@@ -249,8 +251,9 @@ _log_to_file() {
 	printf '%s\n' "$2" >>$_LOGFILE
 }
 _log_to_console() {
-	[ -z "$_CONF_LOG_CONSOLE" ] && return
-	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$2"
+	local message=$2
+	[ -n "$_LOGGING_CONTEXT" ] && message="$_LOGGING_CONTEXT - $message"
+	printf >&$_CONF_LOG_CONSOLE '\033[%s%s \033[0m\n' "$1" "$message"
 }
 _log_app() {
 	_DEBUG "$_APPLICATION_NAME:$_APPLICATION_CMD - $1 ($$)"
@@ -262,6 +265,16 @@ _mktemp() {
 	[ -n "$_SUDO_USER" ] && sudo_prefix=_sudo
 	$sudo_prefix mktemp -${_MKTEMP_OPTIONS}t ${_APPLICATION_NAME}.${_APPLICATION_CMD}${suffix}.XXXXXXXX
 }
+_sub_platform() {
+	which lsb_release >/dev/null 2>&1 && {
+		_SUB_PLATFORM=$(lsb_release -a | grep ID | cut -f2 -d: | tr -d '\t')
+		return
+	}
+	[ -e $_ROOT/etc/os-release ] && {
+		_SUB_PLATFORM=$(grep ^NAME= $_ROOT/etc/os-release | cut -f2 -d= | sed -e 's/"//g' -e 's/ Linux//')
+	}
+	[ -e $_ROOT/etc/gentoo-release ] && _SUB_PLATFORM=Gentoo
+}
 _setup_app_pipe() {
 	_APPLICATION_PIPE=$_APPLICATION_CMD_DIR/$$
 	_APPLICATION_PIPE_DIR=$(dirname $_APPLICATION_PIPE)
@@ -272,10 +285,8 @@ _setup_app_pipe() {
 _cleanup_app_pipe() {
 	rm -rf $_APPLICATION_PIPE_DIR
 }
-_parent_processes_pgrep() {
-	pgrep -P $1
-}
 _is_backgrounded() {
+	[ -n "$_NO_PS" ] && return 1
 	case $(ps -o stat= -p $$) in
 	*+*)
 		return 1
@@ -469,11 +480,12 @@ _download() {
 }
 _download_install_file() {
 	_WARN_ON_ERROR=1 _require "$1" "1 (_download_install_file) target filename" || return 1
+	[ -z $_INSTALL_FILE_CHMOD ] && _INSTALL_FILE_CHMOD=444
 	_INFO "Installing $_DOWNLOADED_FILE -> $1"
 	_sudo mkdir -p $(dirname $1)
 	_sudo cp $_DOWNLOADED_FILE $1
-	_sudo chmod 444 $1
-	unset _DOWNLOADED_FILE
+	_sudo chmod $_INSTALL_FILE_CHMOD $1
+	unset _DOWNLOADED_FILE _INSTALL_FILE_CHMOD
 	[ -e $1 ] || _WARN "failed to install file to: $1"
 }
 _include logging platform context wait beep paths net dev
@@ -500,7 +512,6 @@ _include logging platform context wait beep paths net dev
 : ${LIB:="beep.sh context.sh environment.sh exec.sh exit.sh help.sh include.sh logging.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"}
 : ${CFG:="logging platform context wait beep paths net"}
 : ${SUPPORTED_PLATFORMS:="Apple FreeBSD Linux Windows"}
-which pgrep >/dev/null 2>&1 && _PARENT_PROCESSES_FUNCTION=_parent_processes_pgrep
 _DETECTED_PLATFORM=$(uname)
 case $_DETECTED_PLATFORM in
 Darwin)
@@ -514,6 +525,10 @@ _PLATFORM="Linux"
 : ${_CONF_GNU_GREP:=grep}
 : ${_CONF_GNU_SED:=sed}
 _ARCHITECTURE=$(uname -m)
+PORTAGE_REFRESH_PERIOD=3600
+: ${_EMERGE_FLAGS:="-q --quiet-build --quiet-fail"}
+[ -n "$_ROOT" ] && [ "$_ROOT" != "/" ] && _EMERGE_OPTIONS="--root=$_ROOT"
+_SUDO_CMD="sudo"
 : ${_CONF_INSTALL_CONTEXT:=$_CONSOLE_CONTEXT_ID}
 : ${_CONF_INSTALL_CONTEXT:=default}
 : ${_CONF_WAIT_INTERVAL:=30}
@@ -531,24 +546,25 @@ _ARCHITECTURE=$(uname -m)
 [ "$HOME" = "/" ] && HOME=/root
 : ${_CONF_LIBRARY_PATH:=/usr/local/walterjwhite}
 : ${_CONF_BIN_PATH:=/usr/local/bin}
-_CONF_DATA_PATH=$HOME/.data
-_CONF_CACHE_PATH=$HOME/.cache
-_CONF_CONFIG_PATH=$HOME/.config/walterjwhite/shell
-_CONF_RUN_PATH=/tmp/$USER/walterjwhite/app
-_CONF_DATA_ARTIFACTS_PATH=$_CONF_DATA_PATH/install-v2/artifacts
-_CONF_DATA_REGISTRY_PATH=$_CONF_DATA_PATH/install-v2/registry
-_CONF_APPLICATION_DATA_PATH=$_CONF_DATA_PATH/$_APPLICATION_NAME
-_CONF_APPLICATION_CONFIG_PATH=$_CONF_CONFIG_PATH/$_APPLICATION_NAME
-_CONF_APPLICATION_LIBRARY_PATH=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME
+: ${_CONF_DATA_PATH:=$HOME/.data}
+: ${_CONF_CACHE_PATH:=$HOME/.cache}
+: ${_CONF_CONFIG_PATH:=$HOME/.config/walterjwhite/shell}
+: ${_CONF_RUN_PATH:=/tmp/$USER/walterjwhite/app}
+: ${_CONF_DATA_ARTIFACTS_PATH:=$_CONF_DATA_PATH/install-v2/artifacts}
+: ${_CONF_DATA_REGISTRY_PATH:=$_CONF_DATA_PATH/install-v2/registry}
+: ${_CONF_APPLICATION_DATA_PATH:=$_CONF_DATA_PATH/$_APPLICATION_NAME}
+: ${_CONF_APPLICATION_CONFIG_PATH:=$_CONF_CONFIG_PATH/$_APPLICATION_NAME}
+: ${_CONF_APPLICATION_LIBRARY_PATH:=$_CONF_LIBRARY_PATH/$_APPLICATION_NAME}
 : ${_CONF_NETWORK_TEST_TIMEOUT:=5}
 : ${_CONF_NETWORK_TEST_TARGETS:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${_CONF_DEV_FORMAT_PARALLEL:=10}
 : ${_CONF_DEV_SSH_KEYTYPE:=ed25519}
 : ${_CONF_DEV_LOMBOK_SLF4J_LOGGER_NAME:=LOGGER}
-_is_backgrounded && _BACKGROUNDED=1
-_init_logging
-unset _DEFERS _EXIT
-_APPLICATION_START_TIME=$(date +%s)
-_APPLICATION_CMD=$(basename $0)
+_include
+: ${_CONF_DEV_CHECKSTYLE_VERSION:=12.2.0}
+: ${_CONF_DEV_CHECKSTYLE_VERSION_STYLE:=google}
+: ${_CONF_DEV_CHECKSTYLE_JAR:=$_CONF_APPLICATION_LIBRARY_PATH/checkstyle/checkstyle.jar}
+: ${_CONF_DEV_CHECKSTYLE_CONFIG:=$_CONF_APPLICATION_LIBRARY_PATH/checkstyle/checks/$_CONF_DEV_CHECKSTYLE_VERSION_STYLE_checks.xml}_REQUIRED_APP_CONF=""
 trap _on_hup 1
 trap _on_int 2
 trap _on_quit 3
@@ -557,6 +573,11 @@ trap _on_abort 6
 trap _on_alarm 14
 trap _on_term 15
 trap _success 0
+_is_backgrounded && _BACKGROUNDED=1
+_init_logging
+unset _DEFERS _EXIT
+_APPLICATION_START_TIME=$(date +%s)
+_APPLICATION_CMD=$(basename $0)
 for _ARG in "$@"; do
 	case $_ARG in
 	-h | --help)
@@ -590,6 +611,10 @@ for _ARG in "$@"; do
 		unset _configuration_name
 		shift
 		;;
+	--last-arg)
+		shift
+		break
+		;;
 	*)
 		break
 		;;
@@ -603,6 +628,7 @@ _APPLICATION_CONTEXT_GROUP=$_CONF_RUN_PATH/$_CONF_INSTALL_CONTEXT
 _APPLICATION_CMD_DIR=$_APPLICATION_CONTEXT_GROUP/$_APPLICATION_NAME/$_APPLICATION_CMD
 _waitee_init
 _waiter
+_sub_platform
 _download https://github.com/checkstyle/checkstyle/releases/download/checkstyle-${_CONF_DEV_CHECKSTYLE_VERSION}/checkstyle-${_CONF_DEV_CHECKSTYLE_VERSION}-all.jar
 _download_install_file ${_CONF_APPLICATION_LIBRARY_PATH}/checkstyle/checkstyle.jar
 _download https://raw.githubusercontent.com/checkstyle/checkstyle/master/src/main/resources/google_checks.xml

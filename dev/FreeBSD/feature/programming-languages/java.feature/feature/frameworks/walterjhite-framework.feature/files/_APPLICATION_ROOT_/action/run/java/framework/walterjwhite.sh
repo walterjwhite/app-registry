@@ -1,6 +1,6 @@
 #!/bin/sh
 _APPLICATION_NAME=dev
-java_is_running() {
+_JAVA_IS_RUNNING() {
 	_java_is_running_helper "CommandLineApplicationInstance - doRun(null)"
 }
 _java_is_running_helper() {
@@ -11,6 +11,6 @@ _java_is_running_helper() {
 	}
 	unset _TAIL_PID
 }
-java_new_instance_walterjwhite() {
+_JAVA_NEW_INSTANCE_WALTERJWHITE() {
 	cp -R target/lib $_RUN_INSTANCE_DIR
 }

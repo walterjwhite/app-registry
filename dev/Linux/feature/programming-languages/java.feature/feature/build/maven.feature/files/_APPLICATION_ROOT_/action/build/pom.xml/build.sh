@@ -1,4 +1,14 @@
 #!/bin/sh
 _APPLICATION_NAME=dev
+_include
+: ${_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL:=warn}
+: ${_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL:=warn}
+[ -z "$INTERACTIVE" ] && {
+	_OPTN_DEV_MAVEN_BATCH="-B"
+}
+: ${_CONF_DEV_MAVEN_OPTIONS:="-Dorg.slf4j.simpleLogger.defaultLogLevel=$_CONF_DEV_MAVEN_DEFAULT_LOG_LEVEL \
+    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=$_CONF_DEV_MAVEN_FILE_TRANSFER_LOG_LEVEL \
+    -ntp -q $_OPTN_DEV_MAVEN_BATCH"}
+: ${_CONF_DEV_MAVEN_DEPENDENCY_VERSION:=use-latest-releases}
 _NO_EXEC=1
 mvn clean install $_CONF_DEV_MAVEN_OPTIONS "$@"

@@ -1,0 +1,5 @@
+#!/bin/sh
+ghostty_executable=$(which ghostty 2>/dev/null) && {
+  ln -sf $ghostty_executable /usr/local/bin/x-terminal-emulator
+  ln -sf $ghostty_executable /usr/local/bin/terminal
+}

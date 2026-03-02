@@ -1,0 +1,11 @@
+_has_thunderbird() {
+  local executable
+  for executable in "$@"; do
+    which $executable > /dev/null 2>&1 && return 0
+  done
+  return 1
+}
+_has_thunderbird thunderbird thunderbird-bin || {
+  log_warn "thunderbird not found - disabling feature"
+  feature_thunderbird_profile_mgmt_disabled=1
+}

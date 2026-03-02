@@ -1,1 +1,1 @@
-_EXEC_DIR_CMD="npm audit signatures ;"
+_EXEC_DIR_CMD="npm audit signatures ."

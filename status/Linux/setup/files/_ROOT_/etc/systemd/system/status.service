@@ -1,0 +1,5 @@
+[Unit]
+Description=check status of system
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/status

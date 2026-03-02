@@ -1,0 +1,11 @@
+launch a web browser
+    -conf-browser       whether to use firefox or chromium
+        conf_web_browser_browser
+    -remote-log_debug       enable remote control through chromedp protocol
+        web_browser_remote_debug
+    -new-private-window create private window
+        _WEB_BROWSER_NEW_PRIVATE_WINDOW
+    -http-proxy         address of http proxy server to use
+        web_browser_http_proxy
+    -socks-proxy        address of socks proxy server to use
+        _WEB_BROWSER_SOCKS_PROXY

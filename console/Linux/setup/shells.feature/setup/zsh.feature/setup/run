@@ -1,0 +1,40 @@
+#!/bin/sh
+_console_conf_all() {
+	for _console_user in $($GNU_GREP -P '^(wheel|operator|video):' /etc/group | cut -f4 -d':' | tr ',' '\n' | sort -u); do
+		local _console_home=$(grep "^$_console_user:" /etc/passwd | cut -f6 -d:)
+		_console_conf
+	done
+}
+_console_conf() {
+	[ ! -e "$_console_home" ] && return 1
+	_console_init_shell
+	[ -z "$_console_user" ] && _console_user=$(whoami)
+	local _console_group=$_console_user
+	[ "$_console_user" = "root" ] && _console_group=wheel
+	_console_set_shell
+}
+_console_init_shell() {
+	local src_path=$(find "$REGISTRY_PATH/$target_application_name/$APP_PLATFORM_PLATFORM" -type d -path "*/console/$shell_type") || return
+	[ ! -d "$src_path" ] && {
+		log_warn "$src_path does not exist"
+		return
+	}
+	rsync -a --chmod=u=rwX,go=rX --chown="$_console_user:$_console_group" \
+		"$src_path/" "$_console_home/"
+}
+_console_fix_permissions() {
+	[ "$_console_user" = "root" ] && return 1
+	local chown_args="$_console_user:$_console_group"
+	if [ $APP_PLATFORM_PLATFORM = "Apple" ]; then
+		chown_args="$_console_user"
+	fi
+	chown -R $chown_args $1
+}
+_console_set_shell() {
+	warn_on_error=1 validation_require "$conf_console_shell_cmd" conf_console_shell_cmd || return
+	chsh -s $conf_console_shell_cmd $_console_user
+}
+: ${conf_console_zsh_session_history_size:=1000}
+: ${conf_console_zsh_disk_history_size:=1000}
+: ${conf_console_shell_cmd:=/usr/bin/zsh}
+shell_type=zsh shell_cmd=$conf_console_zsh_cmd _console_conf_all

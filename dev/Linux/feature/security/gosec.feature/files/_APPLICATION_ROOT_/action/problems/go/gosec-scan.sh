@@ -1,3 +1,3 @@
 #!/bin/sh
 _APPLICATION_NAME=dev
-_EXEC_CMD="gosec {} +"
+_EXEC_DIR_CMD="gosec ."

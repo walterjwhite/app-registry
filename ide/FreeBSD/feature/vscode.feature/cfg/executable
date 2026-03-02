@@ -1,0 +1,2 @@
+: ${_CONF_DEV_VSCODE_IDE:=/usr/local/bin/vscode}
+_CONF_DEV_VSCODE_EXECUTABLE=vscode

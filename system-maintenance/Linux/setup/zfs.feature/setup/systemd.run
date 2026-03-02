@@ -1,0 +1,4 @@
+#!/bin/sh
+sudo_run systemctl enable zfs-zap-maintenance-daily.timer
+sudo_run systemctl enable zfs-zap-maintenance-weekly.timer
+sudo_run systemctl enable zfs-zap-maintenance-monthly.timer

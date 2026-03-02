@@ -1,0 +1,38 @@
+- Conduct an analysis on the `main` branch to identify unused code.
+- Utilize static code analysis tools (e.g., SonarQube, Unused, or specific IDE features) along with manual code reviews to pinpoint unused functions, variables, and classes.
+1. **Unused Function 1**
+   - Description: [Brief description of the function and its intended purpose]
+   - Location: [File/line number where the function is defined]
+2. **Unused Variable 1**
+   - Description: [Brief description of the variable]
+   - Location: [File/line number where the variable is defined]
+3. **Unused Class 1**
+   - Description: [Brief description of the class]
+   - Location: [File/line number where the class is defined]
+- Implement the removal of each identified unused component:
+1. **Remove Function: Unused Function 1**
+   - [Details about why this function is unnecessary and how it was removed]
+2. **Remove Variable: Unused Variable 1**
+   - [Details about why this variable is unnecessary and how it was removed]
+3. **Remove Class: Unused Class 1**
+   - [Details about why this class is unnecessary and how it was removed]
+- Confirm that the code compiles successfully after the removals.
+- Run all tests to ensure they pass without errors, validating that the removals did not affect other functionalities.
+- Make all changes on the existing branch; do NOT create a new branch.
+- Stage and commit your changes to the feature branch with a descriptive commit message:
+  ```bash
+  git add .
+  ```
+  ```bash
+  git commit -m 'Remove unused code components:
+  - Eliminate Unused Function 1
+  - Remove Unused Variable 1
+  - Delete Unused Class 1
+  Brief explanations of the changes made.'
+  ```
+- Do NOT commit build artifacts or executables to the repository
+- Push the feature branch containing the removals to the remote repository:
+  ```bash
+  git push origin
+  ```
+- After implementing the removals, re-scan the system/application to ensure that all unused code components have been effectively removed.

@@ -1,0 +1,4 @@
+: ${conf_dev_checkstyle_version:=12.2.0}
+: ${conf_dev_checkstyle_version_STYLE:=google}
+: ${conf_dev_checkstyle_jar:=$APP_LIBRARY_PATH/checkstyle/checkstyle.jar}
+: ${conf_dev_checkstyle_config:=$APP_LIBRARY_PATH/checkstyle/checks/$conf_dev_checkstyle_version_STYLE_checks.xml}

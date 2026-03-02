@@ -1,0 +1,2 @@
+: ${conf_firewall_nftables_table:=global}
+: ${conf_firewall_provider:=nftables}

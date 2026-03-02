@@ -1,0 +1,5 @@
+#!/bin/sh
+kitty_executable=$(which kitty 2>/dev/null) && {
+  ln -sf $kitty_executable /usr/local/bin/x-terminal-emulator
+  ln -sf $kitty_executable /usr/local/bin/terminal
+}

@@ -1,8 +1,8 @@
-_CONF_TIME_WHEN_EXIT_STATUS=254
-: ${_CONF_TIME_FORMAT:="%Y/%m/%d %H:%M:%S"}
-: ${_CONF_TIME_SECONDS_FORMAT:="%Y/%m/%d %H:%M:%S"}
-: ${_CONF_TIME_DATETIME_FORMAT:="%Y/%m/%d %H:%M"}
-: ${_CONF_DATE_TIME_FILEORMAT:="%Y/%m/%d %H:%M"}
-_CONF_TIME_DATETIME_FORMAT="%Y/%m/%d %H:%M:%S"
-_CONF_TIME_TIME_FORMAT="%H:%M"
-_CONF_TIME_TIME_WITH_SECONDS_FORMAT="%H:%M:%S"
+conf_time_when_exit_status=254
+: ${conf_time_format:="%Y/%m/%d %H:%M:%S"}
+: ${conf_time_seconds_format:="%Y/%m/%d %H:%M:%S"}
+: ${conf_time_datetime_format:="%Y/%m/%d %H:%M"}
+: ${conf_date_time_fileormat:="%Y/%m/%d %H:%M"}
+conf_time_datetime_format="%Y/%m/%d %H:%M:%S"
+conf_time_time_format="%H:%M"
+conf_time_time_with_seconds_format="%H:%M:%S"

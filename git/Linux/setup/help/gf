@@ -1,0 +1,3 @@
+git fixup
+	-m=message	commit message to use, may be null in which case the parent commit message will be used
+	NOTE: this makes use of the environmental variable APP_CONTEXT, -conf-install_context=* to inject contextual information into the commit message

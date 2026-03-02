@@ -1,0 +1,11 @@
+[Unit]
+Description=PubSub Exec
+After=network.target
+[Service]
+Type=forking
+PIDFile=/run/pubsub-exec.pid
+ExecStart=/usr/local/bin/pubsub-exec -cmd=/usr/local/bin/_remote-callback -log-target SYSLOG
+ExecStop=/bin/kill $MAINPID
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

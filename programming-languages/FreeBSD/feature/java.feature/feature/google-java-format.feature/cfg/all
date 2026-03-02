@@ -1,0 +1,9 @@
+: ${_CONF_DEV_JAVA_GOOGLE_JAVA_FORMAT_JDK:=java}
+: ${_CONF_DEV_GOOGLE_JAVA_FORMAT_VERSION:=1.32.0}
+: ${_CONF_DEV_GOOGLE_JAVA_FORMAT_JAR:=${_CONF_APPLICATION_LIBRARY_PATH}/google.java.format-$_CONF_DEV_GOOGLE_JAVA_FORMAT_VERSION.jar}
+: ${_CONF_DEV_JAVA_GOOGLE_JAVA_FORMAT_OPTIONS:="--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"}
+: ${_CONF_DEV_GOOGLE_JAVA_FORMAT_ARGUMENTS_PER_INVOCATION:=50}

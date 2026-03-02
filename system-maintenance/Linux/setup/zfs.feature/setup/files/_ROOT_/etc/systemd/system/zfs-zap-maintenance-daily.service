@@ -1,0 +1,5 @@
+[Unit]
+Description=ZFS maintenance
+[Service]
+Type=oneshot
+ExecStart=zfs-zap-maintenance daily && zfs-rclone-backup

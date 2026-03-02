@@ -1,0 +1,13 @@
+#!/bin/sh
+case $APP_PLATFORM_SUB_PLATFORM in
+Gentoo)
+	: ${conf_console_source_highlight:=/usr/bin/lesspipe}
+	;;
+*)
+	: ${conf_console_source_highlight:=/usr/bin/src-hilite-lesspipe.sh}
+	;;
+esac
+for _CONSOLE in $(find /usr/local/walterjwhite/console/shell -mindepth 1 -maxdepth 1 -type d); do
+  printf 'export LESSOPEN="| %s %s"\n' "$conf_console_source_highlight" '%s' > $_CONSOLE/source-highlight-less
+  printf 'export LESS=" -R "\n' >> $_CONSOLE/source-highlight-less
+done

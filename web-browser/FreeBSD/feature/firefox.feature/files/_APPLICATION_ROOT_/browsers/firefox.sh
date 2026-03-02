@@ -26,14 +26,14 @@ _download() {
 	fi
 }
 _download_install_file() {
-	_WARN_ON_ERROR=1 _require "$1" "1 (_download_install_file) target filename" && return 1
+	_WARN_ON_ERROR=1 _require "$1" "1 (_download_install_file) target filename" || return 1
+	[ -z $_INSTALL_FILE_CHMOD ] && _INSTALL_FILE_CHMOD=444
 	_INFO "Installing $_DOWNLOADED_FILE -> $1"
 	_sudo mkdir -p $(dirname $1)
 	_sudo cp $_DOWNLOADED_FILE $1
-	_sudo chmod 444 $1
-	unset _DOWNLOADED_FILE
-	[ ! -e $1 ] && return 1
-	return 0
+	_sudo chmod $_INSTALL_FILE_CHMOD $1
+	unset _DOWNLOADED_FILE _INSTALL_FILE_CHMOD
+	[ -e $1 ] || _WARN "failed to install file to: $1"
 }
 BROWSER_CMD=firefox
 _BROWSER_NEW_INSTANCE() {

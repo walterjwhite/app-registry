@@ -1,0 +1,5 @@
+#!/bin/sh
+_extension_find_default -exec $GNU_SED -i '/System.out.println/d' {} +
+_extension_find_default -exec $GNU_SED -i '/System.out.print/d'  {} +
+_extension_find_default -exec $GNU_SED -i '/System.err.println/d'  {} +
+_extension_find_default -exec $GNU_SED -i '/System.err.print/d'  {} +

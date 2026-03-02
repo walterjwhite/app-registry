@@ -1,0 +1,9 @@
+gui-wm/sway
+gui-apps/swaylock
+gui-apps/swayidle
+#
+app-misc/physlock
+gui-apps/mako
+gui-apps/wmenu
+x11-misc/ydotool
+sys-power/upower

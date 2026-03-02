@@ -1,3 +1,16 @@
-ensure all code is unit tested
-all methods are covered
-all scenarios are tested
+Add comprehensive unit tests to achieve the following coverage goals:
+1. **Minimum Coverage**: 80% code coverage
+2. **Target Coverage**: 100% code coverage (stretch goal)
+- When 80% coverage is reached, calculate remaining time as: (time to reach 80%) × 4
+- Allocate this additional time to reach 100% coverage
+1. Add missing tests for uncovered code paths
+2. Enhance existing tests with additional assertions
+3. Remove any commented-out code
+4. Focus on edge cases and error conditions
+- Show test output and coverage report
+- Do not commit changes automatically
+- Allow for code review before finalizing
+- Ensure tests are maintainable and well-documented
+- Follow existing test patterns in the codebase
+- Include meaningful test descriptions
+- Verify both positive and negative test cases

@@ -1,0 +1,5 @@
+[Unit]
+Description=Publish public IP
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/remote-publish-public-IP

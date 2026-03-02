@@ -1,5 +1,5 @@
-case $_SUB_PLATFORM in
+case $APP_PLATFORM_SUB_PLATFORM in
     Ubuntu)
-        : ${_CONF_GIT_TEMPLATE_PATH:=/usr/share/git-core/templates}
+        : ${conf_git_template_path:=/usr/share/git-core/templates}
         ;;
 esac

@@ -1,7 +1,21 @@
 OS_INSTALLER_INSTANCE=$(date +%s)
+_LOGFILE=/var/log/walterjwhite/os-installer-$OS_INSTALLER_INSTANCE.log
 : ${_CONF_OS_INSTALLER_SSH_KEY_TYPE:=ed25519}
 : ${_CONF_OS_INSTALLER_DISK_TYPE:=ZFS}
 : ${_CONF_OS_INSTALLER_MOUNTPOINT:=/mnt/os}
 : ${_CONF_OS_INSTALLER_SYSTEM_IDENTIFICATION:="/usr/local/etc/walterjwhite/system"}
 : ${_CONF_OS_INSTALLER_EXECUTION_LOG:="/tmp/.os/exec"}
 : ${_CONF_OS_INSTALLER_SYSTEM_WORKSPACE:="/tmp/os"}
+: ${_OS_INSTALLER_DRIVE_MOUNT_POINT:=/mnt/usb}
+: ${_OS_INSTALLER_SYSTEM_TIMEZONE:=America/New_York}
+: ${_OS_INSTALLER_CONFIGURATION_BRANCH:=master}
+: ${_OS_INSTALLER_CACHE_ENABLED:=1}
+: ${_OS_INSTALLER_CACHE:=cache}
+: ${_OS_INSTALLER_CACHE_PATH:=/cache}
+case $_APPLICATION_CMD in
+    *os-installer* | *chroot*)
+        ;;
+    *)
+        unset _LOGFILE
+        ;;
+esac

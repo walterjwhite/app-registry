@@ -1,0 +1,31 @@
+- **Objective:** Create an architectural diagram to outline the system structure.
+- **Components to Include:**
+  - Application layers (presentation, business logic, data access)
+  - Major modules or services
+  - External dependencies (third-party services, databases)
+- **Tools:** Use diagramming tools like Lucidchart, Draw.io, or Microsoft Visio.
+- **Objective:** Develop a network services diagram to represent the interactions between different services.
+- **Components to Include:**
+  - Services and APIs
+  - Communication protocols (HTTP, WebSockets, etc.)
+  - Data flow between services
+- **Tools:** Use diagramming tools like Lucidchart, Draw.io, or Microsoft Visio.
+- **Objective:** Create an entity relationship diagram to illustrate the data model.
+- **Components to Include:**
+  - Entities (tables, collections)
+  - Relationships (one-to-one, one-to-many, many-to-many)
+  - Key attributes (primary keys, foreign keys)
+- **Tools:** Use tools like MySQL Workbench, Lucidchart, or ERDPlus.
+- **Objective:** Generate sequence diagrams to represent the interactions between objects over time.
+- **Components to Include:**
+  - Participants (objects or services involved)
+  - Messages (method calls, responses)
+  - Lifelines and activation boxes to show time progression
+- **Tools:** Use tools like Lucidchart, Draw.io, or Visual Paradigm.
+- Review each diagram for clarity, accuracy, and completeness.
+- Ensure that all components are labeled correctly and adhere to the intended design principles.
+- Export the diagrams in appropriate formats (e.g., PNG, PDF).
+- Compile documentation explaining each diagram and its significance in the project.
+- Share the diagrams with the project team for feedback and collaboration.
+- Publish them to the project repository or documentation site for reference.
+- Make all changes on the existing branch, do NOT create a new branch

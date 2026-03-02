@@ -1,0 +1,5 @@
+git delete old branches
+	--delete-period (conf_git_delete_period)
+		check for branches older than this period
+	--delete-dryrun (conf_git_delete_dryrun)
+		do not actually delete, perform a dry-run

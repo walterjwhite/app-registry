@@ -1,0 +1,5 @@
+#!/bin/sh
+wezterm_executable=$(which wezterm 2>/dev/null) && {
+  ln -sf $wezterm_executable /usr/local/bin/x-terminal-emulator
+  ln -sf $wezterm_executable /usr/local/bin/terminal
+}
