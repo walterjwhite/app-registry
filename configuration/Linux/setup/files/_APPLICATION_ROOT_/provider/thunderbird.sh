@@ -64,6 +64,6 @@ _thunderbird_extension() {
 }
 _thunderbird_provider_load() {
   _download_fetch $2
-  log_detail "copying $downloaded_file -> $thunderbird_provider_path/$1.xpi"
-  cp $downloaded_file $thunderbird_provider_path/$1.xpi
+  log_detail "copying $download_file -> $thunderbird_provider_path/$1.xpi"
+  cp $download_file $thunderbird_provider_path/$1.xpi
 }

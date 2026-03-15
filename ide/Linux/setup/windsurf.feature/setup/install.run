@@ -60,8 +60,8 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
-windsurf_version=1.12.36
-windsurf_sha_version=9472213c2b01d64c024e510cd6fe81abd9b16fb7
+windsurf_version=1.9566.11
+windsurf_sha_version=8911695f6454083fd48c3422f4736eb88053357c
 windsurf_filename=Windsurf-linux-x64-$windsurf_version.tar.gz
 windsurf_installation_path=/opt/windsurf
 _install_windsurf() {
@@ -71,7 +71,13 @@ _install_windsurf() {
     rm -rf $windsurf_installation_path/Windsurf
     ln -sf $windsurf_installation_path/windsurf $APP_PLATFORM_BIN_PATH/windsurf
 }
-if [ ! -e $APP_PLATFORM_BIN_PATH/windsurf ]; then
+_is_windsurf_installed() {
+    [ ! -e $APP_PLATFORM_BIN_PATH/windsurf ] && return 1
+    local installed_windsurf_version=$(jq -r '.windsurfVersion' $windsurf_installation_path/resources/app/product.json)
+    log_detail "windsurf is installed: $installed_windsurf_version"
+    [ "$windsurf_version" = "$installed_windsurf_version" ]
+}
+if ! _is_windsurf_installed; then
     _install_windsurf
 else
     log_detail "windsurf is already installed"

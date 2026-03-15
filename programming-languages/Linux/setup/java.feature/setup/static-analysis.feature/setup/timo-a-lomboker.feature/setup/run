@@ -1,4 +1,25 @@
 #!/bin/sh
+_github_latest_release() {
+	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r ".tag_name"
+}
+_github_fetch_latest_artifact() {
+	local _github_organization_name=$1
+	local _github_repository_name=$2
+	local _artifact_name=$3
+	local _artifact_suffix=$4
+	shift 4
+	local _latest_version=$(_github_latest_release $_github_organization_name $_github_repository_name)
+	[ -z "$git_artifact_url_function" ] && git_artifact_url_function=_github_artifact_url
+	$git_artifact_url_function $_github_organization_name $_github_repository_name $_latest_version $_artifact_name $_artifact_suffix
+	_download_fetch $git_github_artifact_url "$@"
+	unset git_github_artifact_url
+}
+_github_artifact_url() {
+	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}${3}${5}
+}
+_github_artifact_url_static() {
+	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}
+}
 download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
@@ -40,7 +61,23 @@ _download_verify() {
 : ${conf_dev_java_timo_a_lomboker_jdk:=java}
 : ${conf_dev_java_timo_a_lomboker_version:=0.0.0}
 : ${conf_dev_java_timo_a_lomboker_jar_NAME:=lomboker-$conf_dev_java_timo_a_lomboker_version.jar}
-: ${conf_dev_java_timo_a_lomboker_jar:=${APP_LIBRARY_PATH}/$conf_dev_java_timo_a_lomboker_jar_NAME}
-log_info "installing timo-a-lomboker Java JAR"
-_download_fetch https://github.com/timo-a/lomboker/releases/download/v0.0.0/$conf_dev_java_timo_a_lomboker_jar_NAME
-_download_install_file $conf_dev_java_timo_a_lomboker_jar
+: ${conf_dev_java_timo_a_lomboker_jar:=/usr/local/walterjwhite/programming-languages/tools/$conf_dev_java_timo_a_lomboker_jar_NAME}
+_get_installed_timo_a_lomboker_version() {
+  [ -e /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar ] && java -jar /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar version | cut -d' ' -f2
+}
+_get_latest_timo_a_lomboker_version() {
+  _latest_timo_a_lomboker_version=$(_github_latest_release timo-a lomboker | sed -e 's/^v//')
+}
+_is_latest_timo_a_lomboker_installed() {
+  local _installed_version=$(_get_installed_timo_a_lomboker_version)
+  [ "$_installed_version" = "$_latest_timo_a_lomboker_version" ]
+}
+_install_timo_a_lomboker() {
+  log_info "installing timo-a-lomboker Java JAR"
+  _download_fetch https://github.com/timo-a/lomboker/releases/download/v${_latest_timo_a_lomboker_version}/lomboker-${_latest_timo_a_lomboker_version}.jar
+  _download_install_file /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar
+}
+_get_latest_timo_a_lomboker_version
+if ! _is_latest_timo_a_lomboker_installed; then
+  _install_timo_a_lomboker
+fi

@@ -65,9 +65,9 @@ _install_randoop() {
     _download_fetch https://github.com/randoop/randoop/releases/download/v${randoop_version}/randoop-${randoop_version}.zip
     randoop_contents=$(_mktemp_options=d _mktemp_mktemp)
     exit_defer _cleanup_randoop
-    _extract_extract $downloaded_file $randoop_contents
-    downloaded_file=$randoop_contents/randoop-${randoop_version}/randoop-all-${randoop_version}.jar
-    _download_install_file ${APP_LIBRARY_PATH}/randoop-all.jar
+    _extract_extract $download_file $randoop_contents
+    download_file=$randoop_contents/randoop-${randoop_version}/randoop-all-${randoop_version}.jar
+    _download_install_file /usr/local/walterjwhite/programming-languages/tools/randoop-all.jar
 }
 _cleanup_randoop() {
     rm -rf $randoop_contents

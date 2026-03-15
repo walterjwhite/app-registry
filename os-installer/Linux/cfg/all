@@ -3,7 +3,6 @@ log_logfile=/var/log/walterjwhite/os-installer-$os_installer_instance.log
 : ${conf_os_installer_ssh_key_type:=ed25519}
 : ${conf_os_installer_disk_type:=ZFS}
 : ${conf_os_installer_mountpoint:=/mnt/os}
-: ${conf_os_installer_system_identification:="/usr/local/etc/walterjwhite/system"}
 : ${conf_os_installer_execution_log:="/tmp/.os/exec"}
 : ${conf_os_installer_system_workspace:="/tmp/os"}
 : ${os_installer_drive_mount_point:=/mnt/usb}

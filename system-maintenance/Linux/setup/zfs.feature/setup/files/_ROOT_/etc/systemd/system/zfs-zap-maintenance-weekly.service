@@ -2,4 +2,4 @@
 Description=ZFS maintenance
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/zfs-zap-maintenance weekly
+ExecStart=zfs-zap-maintenance weekly

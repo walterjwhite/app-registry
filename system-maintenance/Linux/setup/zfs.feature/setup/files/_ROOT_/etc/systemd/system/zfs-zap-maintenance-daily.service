@@ -2,4 +2,5 @@
 Description=ZFS maintenance
 [Service]
 Type=oneshot
-ExecStart=zfs-zap-maintenance daily && zfs-rclone-backup
+ExecStart=zfs-zap-maintenance daily
+ExecStart=zfs-rclone-backup

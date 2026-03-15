@@ -1,3 +1,0 @@
-#!/bin/sh
-sudo_run systemctl enable pubsub_exec.service
-sudo_run systemctl enable remote-puoblish-public-IP.timer

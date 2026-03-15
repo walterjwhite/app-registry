@@ -2,4 +2,4 @@
 Description=ZFS pool maintenance
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/zfs-pool-maintenance
+ExecStart=zfs-pool-maintenance

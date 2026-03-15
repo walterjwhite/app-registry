@@ -38,7 +38,7 @@ _configuration_walterjwhite_data_clear() {
 }
 _configuration_walterjwhite_data_restore() {
   [ ! -e $APP_DATA_PATH/$provider_name/applications ] && return 1
-  system_get_id
+  system_id=$(_system_get_id)
   local data_application
   while read data_application; do
     if [ -e ~/.data/$data_application ]; then

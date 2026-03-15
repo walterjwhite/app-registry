@@ -2,3 +2,6 @@ texlive-core
 texlive-latex
 texlive-langenglish
 texlive-latexextra
+texlive-fontsextra
+texlive-latexrecommended
+texlive-fontsrecommended

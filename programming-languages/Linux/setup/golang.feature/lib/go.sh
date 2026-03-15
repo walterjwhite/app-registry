@@ -21,18 +21,19 @@ _go_bootstrap_is_go_available() {
 }
 _go_walterjwhite_conf() {
 	[ -e ./.build/go ] && . ./.build/go
+	local _app_name=$(basename $1 | sed -e 's/@.*//')
 	local _build_date=$(date +"%Y/%m/%d-%H:%M:%S")
 	local _version=$(git branch --no-color --show-current)
 	local _scm_id=$(git rev-parse HEAD)
 	local _go_version=$(go version | awk {'print$3'})
 	local _os_architecture=$(go version | awk {'print$4'})
-	local _app_name_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.ApplicationName=$app_name"
-	local _app_version_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.ApplicationVersion=$_version"
-	local _scm_version_id_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.SCMId=$_scm_id"
-	local _build_date_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.BuildDate=$_build_date"
-	local _go_version_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.GoVersion=$_go_version"
-	local _os_architecture_flag="${WALTERJWHITE_GO_APPLICATION_PACKAGE_PREFIX}.OSArchitecture=$_os_architecture"
-	go_build_options="$go_build_options -X $_app_name_flag -X $_app_version_flag -X $_scm_version_id_flag -X $_build_date_flag -X $_go_version_flag -X $_os_architecture_flag"
+	local _app_name_flag="github.com/walterjwhite/go-code/lib/application.ApplicationName=$_app_name"
+	local _app_version_flag="github.com/walterjwhite/go-code/lib/application.ApplicationVersion=$_version"
+	local _scm_version_id_flag="github.com/walterjwhite/go-code/lib/application.SCMId=$_scm_id"
+	local _build_date_flag="github.com/walterjwhite/go-code/lib/application.BuildDate=$_build_date"
+	local _go_version_flag="github.com/walterjwhite/go-code/lib/application.GoVersion=$_go_version"
+	local _os_architecture_flag="github.com/walterjwhite/go-code/lib/application.OSArchitecture=$_os_architecture"
+	go_build_options="-X $_app_name_flag -X $_app_version_flag -X $_scm_version_id_flag -X $_build_date_flag -X $_go_version_flag -X $_os_architecture_flag"
 	log_debug "build flags:"
 	log_debug "$_app_name_flag"
 	log_debug "$_app_version_flag"
@@ -42,26 +43,36 @@ _go_walterjwhite_conf() {
 	log_debug "$_os_architecture_flag"
 }
 _go_install_do() {
+	_go_is_installed $1 && {
+		log_detail "$1 is already installed"
+		return 0
+	}
 	case $1 in
 	*github.com/walterjwhite/*)
-		_go_walterjwhite_conf
+		_go_walterjwhite_conf "$1"
 		;;
 	*)
-		return 1
+		log_debug "using standard go properties"
 		;;
 	esac
-	local go_install_path="$conf_install_go_path"
-	local go_install_opts="$go_options -a -race -ldflags $go_build_options"
 	(
-		exec env GOPATH="$go_install_path" go install $go_install_opts "$1"
+		if [ -n "$go_build_options" ]; then
+			env GOPATH="$conf_install_go_path" CGO_ENABLED=1 go install -a -race -ldflags "$go_build_options" "$1"
+		else
+			env GOPATH="$conf_install_go_path" CGO_ENABLED=1 go install -a -race "$1"
+		fi
 	) || {
-		log_warn "go install failed: $go_install_opts $@"
+		log_warn "go install failed: env GOPATH='$conf_install_go_path' CGO_ENABLED=1 go install -a -race '$go_build_options' $1"
 		log_warn "http_proxy: $http_proxy"
 		log_warn "git  proxy: $(git config --global http.proxy)"
 	}
 }
 _go_uninstall_do() {
 	go uninstall "$@"
+}
+_go_is_installed() {
+	local cmd_name=$(basename $(printf '%s\n' "$1" | sed 's/@.*//; s/\/v[0-9]*$//'))
+	[ -e "$conf_install_go_path/bin/$cmd_name" ]
 }
 go_dependencies() {
   go get -u
@@ -70,20 +81,22 @@ go_mod_tidy() {
   go mod tidy
 }
 go_build_do() {
-  if [ $(grep "package main" *.go -n 2>/dev/null | wc -l) -gt 0 ]; then
-    log_warn 'building cmd'
-    _go_build_cmd
-  else
+  [ $(grep "package main" *.go -n 2>/dev/null | wc -l) -eq 0 ] && {
     _go_build_lib
-  fi
+    return
+  }
+  log_detail 'building cmd'
+  _go_build_cmd
 }
 _go_build_lib() {
   go build -a -race $go_build_options
 }
 _go_build_cmd() {
-  _go_walterjwhite_conf
+  _go_walterjwhite_conf $PWD
   local error_count=0
-  go install -a -race -ldflags "$go_build_options" || error_count=1
+  (
+    env CGO_ENABLED=1 go install -a -race -ldflags "$go_build_options"
+  ) || error_count=1
   unset _app_name_flag _app_version_flag _scm_id_flag _build_date_flag _go_version_flag _os_architecture_flag go_build_options
   return $error_count
 }

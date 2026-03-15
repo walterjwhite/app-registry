@@ -1,2 +1,2 @@
 #!/bin/sh
-agent_extension_batch
+file_extension_filter="*.go" agent_extension_batch

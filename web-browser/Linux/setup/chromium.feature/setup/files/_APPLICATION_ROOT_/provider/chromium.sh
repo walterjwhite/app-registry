@@ -64,7 +64,7 @@ _ghostery_artifact_url() {
 	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}${version_without_v}${5}
 }
 _github_latest_release() {
-	curl -sL https://api.github.com/repos/$1/$2/releases/latest | grep tag_name | awk {'print$2'} | tr -d '"' | tr -d ','
+	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r ".tag_name"
 }
 _github_fetch_latest_artifact() {
 	local _github_organization_name=$1
@@ -224,3 +224,4 @@ _browser_socks_proxy() {
 _browser_cleanup() {
   rm -rf /tmp/.org,chromium.*
 }
+readonly REQUIRED_APP_CONF="conf_install_CACHE_PATH"

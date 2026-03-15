@@ -16,8 +16,8 @@ case $APP_PLATFORM_SUB_PLATFORM in
             postman_install_path=/usr/local/postman
             _download_fetch "https://dl.pstmn.io/download/latest/linux_arm64"
             clean=$postman_install_path _extract_extract "$download_file" "$postman_install_path"
-            _link $BIN_PATH/Postman $postman_install_path/app/Postman
-            chmod +x $BIN_PATH/Postman
+            _link $APP_PLATFORM_BIN_PATH/Postman $postman_install_path/app/Postman
+            chmod +x $APP_PLATFORM_BIN_PATH/Postman
         else
             snap install postman
         fi

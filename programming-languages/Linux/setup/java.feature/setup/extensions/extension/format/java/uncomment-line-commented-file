@@ -1,4 +1,8 @@
 #!/bin/sh
+: ${conf_dev_java_formatter:=google}
+: ${suspend_jvm:=n}
+: ${debug_port:=5005}
+: ${conf_dev_commented_file_action:=delete}
 commented_file_uncomment() {
 	$GNU_SED -i 's/^\/\/ //' $_FILE
 	$GNU_SED -i 's/^\/\/$//' $_FILE
@@ -7,12 +11,3 @@ commented_file_uncomment() {
 commented_file_delete() {
 	rm -f $_FILE
 }
-for _FILE in $(_extension_find_default); do
-	file_line_count=$(wc -l <$_FILE)
-	if [ $file_line_count -gt 0 ]; then
-		if [ $($GNU_GREP -Pc '^//( |$|// )' $_FILE) -eq $(wc -l <$_FILE) ]; then
-			log_warn "entire file ($_FILE) is commented"
-			_COMMENTED_FILE_$conf_dev_commented_file_action
-		fi
-	fi
-done

@@ -76,7 +76,7 @@ Arch | CachyOS)
 	readonly NPM_PACKAGE="npm"
 	readonly RUST_PACKAGE="rust"
 	readonly PYPI_PACKAGE="python"
-	readonly GO_PACKAGE="go"
+	readonly GO_PACKAGE="go gcc"
 	readonly EXPECT_PACKAGE="expect"
 	: ${pacman_silent_install:=1}
 	: ${pacman_auto_install:=1}
@@ -130,9 +130,9 @@ CONF_LOG_HEADER="##################################################"
 : ${conf_log_feature_timeout_error_level:=warn}
 : ${conf_log_long_running_cmd:=30}
 : ${conf_log_long_running_cmd_lines:=1000}
+: ${conf_log_date_time_to_console:=0}
 which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
-[ -t 0 ] && interactive=1
-: ${conf_log_console:=2}
+[ -t 2 ] && [ -c /dev/tty ] && interactive=1
 : ${emerge_portage_refresh_period:=3600}
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
@@ -142,3 +142,4 @@ function _console_fish_hook_after --on-event fish_prompt
 end
 function _console_fish_hook_before --on-event fish_preexec
 end
+readonly REQUIRED_APP_CONF="conf_console_zsh_disk_history_size conf_console_zsh_session_history_size"

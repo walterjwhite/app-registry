@@ -41,8 +41,8 @@ _download_verify() {
 : ${conf_dev_comment_remover_artifact:=cli-comment-remover}
 : ${conf_dev_comment_remover_version:=0.3.4}
 : ${conf_dev_comment_remover_jar_FILENAME:=$conf_dev_comment_remover_artifact-$conf_dev_comment_remover_version.jar}
-: ${conf_dev_comment_remover_jar:=${APP_LIBRARY_PATH}/walterjwhite/comment-remover.jar}
-conf_dev_comment_remover_jar=$APP_LIBRARY_PATH/walterjwhite/comment-remover.jar
+: ${conf_dev_comment_remover_jar:=/usr/local/walterjwhite/programming-languages/tools/walterjwhite/comment-remover.jar}
+conf_dev_comment_remover_jar=/usr/local/walterjwhite/programming-languages/tools/walterjwhite/comment-remover.jar
 comment_remover_jar_url=https://repo1.maven.org/maven2/$conf_dev_comment_remover_group/$conf_dev_comment_remover_artifact/${conf_dev_comment_remover_version}/$conf_dev_comment_remover_jar_FILENAME
 _download_fetch $comment_remover_jar_url
 _download_install_file $conf_dev_comment_remover_jar

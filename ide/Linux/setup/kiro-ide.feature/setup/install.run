@@ -60,10 +60,63 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
-readonly KIRO_VERSION=0.10.0
 readonly KIRO_INSTALLATION_PATH=/opt/Kiro
-_download_fetch "https://prod.download.desktop.kiro.dev/releases/stable/linux-x64/signed/$KIRO_VERSION/tar/kiro-ide-$KIRO_VERSION-stable-linux-x64.tar.gz"
-clean=1 _extract_extract $download_file $KIRO_INSTALLATION_PATH
-mv $KIRO_INSTALLATION_PATH/Kiro/* $KIRO_INSTALLATION_PATH/
-rm -rf $KIRO_INSTALLATION_PATH/Kiro
-ln -sf $KIRO_INSTALLATION_PATH/bin/kiro $APP_PLATFORM_BIN_PATH/kiro
+_is_kiro_installed() {
+  [ -e $APP_PLATFORM_BIN_PATH/kiro ] && {
+    local installed_version=$($APP_PLATFORM_BIN_PATH/kiro --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+    [ -n "$installed_version" ] && log_detail "kiro is installed: $installed_version"
+    return 0
+  }
+  return 1
+}
+_get_latest_kiro_version() {
+  LATEST_KIRO_VERSION=$(curl -s "https://kiro.dev/downloads/" | xmllint --html --xpath '//span[contains(text(),"0.") and contains(text(),".") and string-length(text()) > 5]/text()' - 2>/dev/null | head -1 | tr -d ' \n')
+  if [ -z "$LATEST_KIRO_VERSION" ]; then
+    LATEST_KIRO_VERSION=$(curl -s "https://kiro.dev/downloads/" | grep -o '"latestVersion":"[^"]*' | sed 's/"latestVersion":"//' | head -1)
+  fi
+  if [ -z "$LATEST_KIRO_VERSION" ]; then
+    log_warn "failed to fetch latest Kiro version from downloads page"
+    return 1
+  fi
+  log_debug "latest Kiro version: $LATEST_KIRO_VERSION"
+}
+_get_installed_kiro_version() {
+  local installed_kiro_version
+  if [ -f "$KIRO_INSTALLATION_PATH/resources/app/product.json" ]; then
+    installed_kiro_version=$(jq -r '.version' "$KIRO_INSTALLATION_PATH/resources/app/product.json" 2>/dev/null)
+  fi
+  if [ -z "$installed_kiro_version" ]; then
+    installed_kiro_version=$($APP_PLATFORM_BIN_PATH/kiro --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+  fi
+  printf '%s' "$installed_kiro_version"
+}
+_is_kiro_latest_version() {
+  local installed_version latest_version
+  installed_version=$(_get_installed_kiro_version)
+  [ -z "$installed_version" ] && return 1
+  _get_latest_kiro_version || return 1
+  latest_version="$LATEST_KIRO_VERSION"
+  log_debug "installed version: $installed_version, latest version: $latest_version"
+  [ "$installed_version" = "$latest_version" ]
+}
+_install_kiro() {
+  _get_latest_kiro_version || {
+    log_error "failed to determine latest Kiro version"
+    return 1
+  }
+  log_detail "installing Kiro version: $LATEST_KIRO_VERSION"
+  _download_fetch "https://prod.download.desktop.kiro.dev/releases/stable/linux-x64/signed/$LATEST_KIRO_VERSION/tar/kiro-ide-$LATEST_KIRO_VERSION-stable-linux-x64.tar.gz"
+  clean=1 _extract_extract $download_file $KIRO_INSTALLATION_PATH
+  mv $KIRO_INSTALLATION_PATH/Kiro/* $KIRO_INSTALLATION_PATH/
+  rm -rf $KIRO_INSTALLATION_PATH/Kiro
+  ln -sf $KIRO_INSTALLATION_PATH/bin/kiro $APP_PLATFORM_BIN_PATH/kiro
+}
+if ! _is_kiro_installed; then
+  log_detail "installing"
+  _install_kiro
+elif ! _is_kiro_latest_version; then
+  log_detail "updating"
+  _install_kiro
+else
+  log_detail "up-to-date"
+fi

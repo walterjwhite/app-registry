@@ -1,0 +1,87 @@
+#!/bin/sh
+download_file=""
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e $download_file ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o $download_file -s -L "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp $download_file $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+GOOGLE_ANTIGRAVITY_INSTALL_PATH=/opt/google
+_is_google_antigravity_installed() {
+  [ -e $APP_PLATFORM_BIN_PATH/antigravity ]
+}
+_get_installed_antigravity_version() {
+  local installed_antigravity_version=$(jq -r '.ideVersion' $GOOGLE_ANTIGRAVITY_INSTALL_PATH/Antigravity/resources/app/product.json)
+  [ -z "$installed_antigravity_version" ] && {
+    if [ -e "$GOOGLE_ANTIGRAVITY_INSTALL_PATH/Antigravity/bin/antigravity" ]; then
+      installed_antigravity_version=$("$GOOGLE_ANTIGRAVITY_INSTALL_PATH/Antigravity/bin/antigravity" --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+-[0-9]\+' | head -1)
+    fi
+  }
+  printf '%s' "$installed_antigravity_version"
+}
+_get_latest_antigravity_version() {
+  local antigravity_latest_info=$(curl -sL 'https://antigravity-auto-updater-974169037036.us-central1.run.app/releases' | jq -r '.[0] | {version, execution_id}')
+  antigravity_latest_version=$(printf '%s' "$antigravity_latest_info" | jq -r '.version')
+  antigravity_latest_execution_id=$(printf '%s' "$antigravity_latest_info" | jq -r '.execution_id')
+}
+_is_antigravity_latest_version() {
+  local installed_version
+  installed_version=$(_get_installed_antigravity_version)
+  [ -z "$installed_version" ] && return 1
+  log_debug "installed version: $installed_version, latest version: $antigravity_latest_version"
+  [ "$installed_version" = "$antigravity_latest_version" ]
+}
+_install_google_antigravity() {
+  log_detail "installing Antigravity version: $antigravity_latest_version"
+  _download_fetch "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/${antigravity_latest_version}-${antigravity_latest_execution_id}/linux-x64/Antigravity.tar.gz" Antigravity-$antigravity_latest_version-$antigravity_latest_execution_id.tar.gz
+  clean=1 _extract_extract "$download_file" "$GOOGLE_ANTIGRAVITY_INSTALL_PATH"
+  ln -sf "$GOOGLE_ANTIGRAVITY_INSTALL_PATH/Antigravity/bin/antigravity" "$APP_PLATFORM_BIN_PATH/antigravity"
+}
+case $APP_PLATFORM_SUB_PLATFORM in
+  Arch | CachyOS)
+      _get_latest_antigravity_version
+      if ! _is_google_antigravity_installed; then
+        log_detail "installing Antigravity"
+        _install_google_antigravity
+      elif ! _is_antigravity_latest_version; then
+        log_detail "updating Antigravity"
+        _install_google_antigravity
+      else
+        log_detail "antigravity is up to date"
+      fi
+      ;;
+  *)
+      log_warn "use platform package: $APP_PLATFORM_SUB_PLATFORM"
+      ;;
+esac

@@ -1,0 +1,13 @@
+#!/bin/sh
+_is_physlock_installed() {
+  command -v physlock > /dev/null 2>&1
+}
+_install_physlock() {
+  [ -z "$SUDO_USER" ] && {
+    paru -S physlock --noconfirm
+    return
+  }
+  [ $(getent passwd $SUDO_USER | cut -f3 -d:) -lt 1000 ] && exit_with_error "unable to run as a non-root user"
+  sudo_user=$SUDO_USER sudo_run paru -S physlock --noconfirm
+}
+_is_physlock_installed || _install_physlock

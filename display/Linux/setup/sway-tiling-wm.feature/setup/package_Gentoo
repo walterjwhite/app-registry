@@ -7,3 +7,4 @@ gui-apps/mako
 gui-apps/wmenu
 x11-misc/ydotool
 sys-power/upower
+gui-apps/waypipe

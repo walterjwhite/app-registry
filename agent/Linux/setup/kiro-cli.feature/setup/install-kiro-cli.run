@@ -60,13 +60,47 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
+readonly KIRO_BASE_URL="https://desktop-release.q.us-east-1.amazonaws.com"
+_get_latest_kiro_version_info() {
+    _get_kiro_manifest
+    latest_kiro_version=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .download | split("/")[0]' $kiro_manifest)
+    latest_kiro_download_path=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .download' $kiro_manifest)
+    latest_kiro_checksum=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .sha256' $kiro_manifest)
+}
+_get_kiro_manifest() {
+    no_cache=1 _download_fetch "${KIRO_BASE_URL}/latest/manifest.json"
+    kiro_manifest=$download_file
+}
+_get_installed_kiro_version() {
+    if [ -e $APP_PLATFORM_BIN_PATH/kiro-cli ]; then
+        $APP_PLATFORM_BIN_PATH/kiro-cli --version | cut -d' ' -f2
+    fi
+}
 _kiro_install() {
-    kiro_url="https://desktop-release.q.us-east-1.amazonaws.com/latest/kirocli-$APP_PLATFORM_ARCHITECTURE-linux.zip"
-    _download_fetch $kiro_url
+    kiro_url="${KIRO_BASE_URL}/$latest_kiro_download_path"
+    versioned_filename="kirocli-$latest_kiro_version-$APP_PLATFORM_ARCHITECTURE.zip"
+    _download_fetch $kiro_url "$versioned_filename"
+    log_detail "verifying checksum: $latest_kiro_checksum"
+    printf '%s  %s' "$latest_kiro_checksum" "$download_file" | sha256sum -c - || {
+        log_warn "checksum verification failed for $versioned_filename"
+        return 1
+    }
+    log_detail "checksum verification passed"
     cd /tmp
-    _extract_extract $download_file /tmp/kirocli
-    exit_defer rm -rf /tmp/kirocli
-    mv /tmp/kirocli/kirocli/bin/kiro-cli /tmp/kirocli/kirocli/bin/kiro-cli-chat /tmp/kirocli/kirocli/bin/kiro-cli-term \
+    versioned_extract_dir="kirocli-$latest_kiro_version"
+    _extract_extract $download_file "/tmp/$versioned_extract_dir"
+    exit_defer rm -rf "/tmp/$versioned_extract_dir"
+    mv /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli-chat /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli-term \
         $APP_PLATFORM_BIN_PATH/
 }
-[ -e $APP_PLATFORM_BIN_PATH/kiro-cli ] || _kiro_install
+_kiro_is_latest_version() {
+    local installed_kiro_version=$(_get_installed_kiro_version)
+    [ "$installed_kiro_version" = "$latest_kiro_version" ]
+}
+_get_latest_kiro_version_info
+if ! _kiro_is_latest_version; then
+    _kiro_install
+fi

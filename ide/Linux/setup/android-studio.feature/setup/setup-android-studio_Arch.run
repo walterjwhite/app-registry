@@ -60,11 +60,51 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
-readonly ANDROID_STUDIO_VERSION="2025.3.1.8"
-readonly ANDROID_STUDIO_SUB_VERSION="panda1-patch1"
+readonly ANDROID_STUDIO_VERSION="2025.3.2"
+readonly ANDROID_STUDIO_SUB_VERSION="panda2"
 readonly ANDROID_STUDIO_INSTALL_PATH=/opt/Google/AndroidStudio
-_download_fetch "https://dl.google.com/android/studio/ide-zips/${ANDROID_STUDIO_VERSION}/android-studio-${ANDROID_STUDIO_SUB_VERSION}-linux.tar.gz"
-clean=1 _extract_extract $download_file $ANDROID_STUDIO_INSTALL_PATH
-mv $ANDROID_STUDIO_INSTALL_PATH/android-studio/* $ANDROID_STUDIO_INSTALL_PATH/
-rm -rf $ANDROID_STUDIO_INSTALL_PATH/android-studio
-ln -sf $ANDROID_STUDIO_INSTALL_PATH/bin/studio /usr/local/bin/android-studio
+_is_android_studio_installed() {
+  [ -e $APP_PLATFORM_BIN_PATH/android-studio ]
+}
+_get_latest_android_studio_version() {
+  local android_studio_updates_xml=$(curl -s "https://dl.google.com/android/studio/patches/updates.xml")
+  local latest_android_studio_build_xml=$(echo "$android_studio_updates_xml" | xmllint --xpath "//channel[@status='release']/build[1]" - 2>/dev/null)
+  latest_android_studio_api_version=$(printf '%s' "$latest_android_studio_build_xml" | xmllint --xpath "string(//build/@apiVersion)" -)
+  latest_android_studio_version_name=$(printf '%s' "$latest_android_studio_build_xml" | xmllint --xpath "string(//build/@version)" -)
+  latest_android_studio_patch_version=$(printf '%s' "$latest_android_studio_version_name" | cut -f1 -d'|')
+  latest_android_studio_build_number=$(printf '%s' "$latest_android_studio_build_xml" | xmllint --xpath "string(//build/@number)" -)
+  latest_android_studio_version_num=$(printf '%s' "$latest_android_studio_version_name" | grep -oP '\d+\.\d+\.\d+')
+}
+_get_installed_android_studio_version() {
+  local installed_version=$(head -1 $ANDROID_STUDIO_INSTALL_PATH/build.txt)
+  if [ -z "$installed_version" ] && [ -e "$APP_PLATFORM_BIN_PATH/android-studio" ]; then
+    installed_version=$("$APP_PLATFORM_BIN_PATH/android-studio" --version 2>/dev/null | sed 1d | sed -e 's/Build #//')
+  fi
+  printf '%s' "$installed_version"
+}
+_is_android_studio_latest_version() {
+  local installed_version latest_info latest_version latest_sub_version
+  installed_version=$(_get_installed_android_studio_version)
+  [ -z "$installed_version" ] && return 1
+  [ -z "$latest_android_studio_build_number" ] && return 2
+  log_debug "installed version: $installed_version, latest version: $latest_android_studio_build_number"
+  [ "$installed_version" = "$latest_android_studio_build_number" ]
+}
+_install_android_studio() {  
+  log_detail "installing Android Studio version: $latest_android_studio_version_num $latest_android_studio_patch_version"
+  _download_fetch "https://dl.google.com/android/studio/ide-zips/${latest_android_studio_version_num}/android-studio-${latest_android_studio_patch_version}-linux.tar.gz"
+  clean=1 _extract_extract $download_file $ANDROID_STUDIO_INSTALL_PATH
+  mv $ANDROID_STUDIO_INSTALL_PATH/android-studio/* $ANDROID_STUDIO_INSTALL_PATH/
+  rm -rf $ANDROID_STUDIO_INSTALL_PATH/android-studio
+  ln -sf $ANDROID_STUDIO_INSTALL_PATH/bin/studio $APP_PLATFORM_BIN_PATH/android-studio
+}
+_get_latest_android_studio_version
+if ! _is_android_studio_installed; then
+  log_detail "installing Android Studio"
+  _install_android_studio
+elif ! _is_android_studio_latest_version; then
+  log_detail "updating Android Studio"
+  _install_android_studio
+else
+  log_detail "android Studio is up to date"
+fi

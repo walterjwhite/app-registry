@@ -61,7 +61,7 @@ assert_file_contains() {
 }
 _test_failure() {
 	test_function_failed_asserts=$(($test_function_failed_asserts + 1))
-	log_logfile="" _print_log 2 FLL "$conf_log_c_ERR" "$conf_log_beep_WRN" "$1 $2"
+	log_logfile="" _print_log 2 FLL "$conf_log_c_err" "$conf_log_beep_wrn" "$1 $2"
 	cat "$TEST_TEMP_FILE" >&2
 	printf '\n\n' >&2
 }

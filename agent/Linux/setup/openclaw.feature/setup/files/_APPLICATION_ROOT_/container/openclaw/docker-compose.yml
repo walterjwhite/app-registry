@@ -1,0 +1,90 @@
+#
+#
+#
+name: openclaw
+x-openclaw-base: &openclaw-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: openclaw:latest
+  working_dir: /workspace
+  stdin_open: true
+  tty: true
+  restart: "no"
+  volumes:
+    - ${HOST_WORKSPACE:-./workspace}:/workspace
+    - ${HOME}/.codex:/root/.codex:rw
+    - ${HOME}/.copilot:/root/.copilot:rw
+    - ${HOME}/.gemini:/root/.gemini:rw
+    - ${HOME}/.aws/sso/cache:/root/.aws/sso/cache:rw
+    - ${HOME}/.kiro:/root/.kiro:rw
+    - ${HOME}/.local/share/kiro-cli:/root/.local/share/kiro-cli:rw
+    - ${HOME}/.local/share/opencode:/root/.local/share/opencode:rw
+    - ${HOME}/.qwen:/root/.qwen:rw
+    - openclaw-config:/root/.config
+services:
+  claude:
+    <<: *openclaw-base
+    profiles: [claude]
+    container_name: openclaw-claude
+    environment:
+      AI_PROVIDER: claude
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5}
+    command: ["claude"]
+  codex:
+    <<: *openclaw-base
+    profiles: [codex]
+    container_name: openclaw-codex
+    environment:
+      AI_PROVIDER: codex
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    command: ["bash"]   # openai CLI / codex binary as entry point
+  copilot:
+    <<: *openclaw-base
+    profiles: [copilot]
+    container_name: openclaw-copilot
+    environment:
+      AI_PROVIDER: copilot
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+    command: ["github-copilot-cli", "suggest"]
+  gemini:
+    <<: *openclaw-base
+    profiles: [gemini]
+    container_name: openclaw-gemini
+    environment:
+      AI_PROVIDER: gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+    command: ["gemini"]
+  kiro:
+    <<: *openclaw-base
+    profiles: [kiro]
+    container_name: openclaw-kiro
+    environment:
+      AI_PROVIDER: kiro
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    command: ["kiro"]
+  qwen:
+    <<: *openclaw-base
+    profiles: [qwen]
+    container_name: openclaw-qwen
+    environment:
+      AI_PROVIDER: qwen
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-max}
+    command: ["bash"]
+  opencode:
+    <<: *openclaw-base
+    profiles: [opencode]
+    container_name: openclaw-opencode
+    environment:
+      AI_PROVIDER: opencode
+      OPENCODE_CONFIG: ${OPENCODE_CONFIG:-}
+    command: ["opencode"]
+volumes:
+  openclaw-config:
+    driver: local

@@ -66,8 +66,8 @@ spring_cli_contents=$(_mktemp_options=d _mktemp_mktemp)
 _cleanup_spring() {
 	rm -rf $spring_cli_contents
 }
-_extract_extract $downloaded_file $spring_cli_contents
+_extract_extract $download_file $spring_cli_contents
 exit_defer _cleanup_spring
-$_SUDO_CMD mkdir -p ${APP_LIBRARY_PATH}/$feature_name
-$_SUDO_CMD mv $spring_cli_contents/spring-${spring_cli_version}/lib/spring-boot-cli-${spring_cli_version}.jar \
-	${APP_LIBRARY_PATH}/$feature_name/spring-boot-cli.jar
+mkdir -p /usr/local/walterjwhite/programming-languages/tools/$feature_name
+mv $spring_cli_contents/spring-${spring_cli_version}/lib/spring-boot-cli-${spring_cli_version}.jar \
+	/usr/local/walterjwhite/programming-languages/tools/$feature_name/spring-boot-cli.jar

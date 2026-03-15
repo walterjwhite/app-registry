@@ -1,0 +1,4 @@
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$DISPLAY" ]; then
+    log_warn "disabling python-detect-secrets as no graphical environment was detected"
+    feature_python_detect_secrets_disabled=1
+fi

@@ -8,3 +8,6 @@ _agent_add_path() {
 _agent_is_rate_limit_error() {
   tail -100 $log_logfile | grep -cqm1 'rate limit'
 }
+_agent_cmd() {
+  _AGENT_CMD="kiro-cli chat -a --no-interactive"
+}

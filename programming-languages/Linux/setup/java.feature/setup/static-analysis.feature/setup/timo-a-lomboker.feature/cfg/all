@@ -1,4 +1,4 @@
 : ${conf_dev_java_timo_a_lomboker_jdk:=java}
 : ${conf_dev_java_timo_a_lomboker_version:=0.0.0}
 : ${conf_dev_java_timo_a_lomboker_jar_NAME:=lomboker-$conf_dev_java_timo_a_lomboker_version.jar}
-: ${conf_dev_java_timo_a_lomboker_jar:=${APP_LIBRARY_PATH}/$conf_dev_java_timo_a_lomboker_jar_NAME}
+: ${conf_dev_java_timo_a_lomboker_jar:=/usr/local/walterjwhite/programming-languages/tools/$conf_dev_java_timo_a_lomboker_jar_NAME}

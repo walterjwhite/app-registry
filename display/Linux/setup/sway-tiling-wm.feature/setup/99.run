@@ -1,7 +1,7 @@
 #!/bin/sh
 for _USER in $($GNU_GREP -P '^(wheel|operator|video):' /etc/group | cut -f4 -d':' | tr ',' '\n' | sort -u); do
 	log_detail "adding $_USER to seat and pipewire groups"
-	usermod -a -G seat,pipewire $_USER
+	usermod -aG seat,pipewire $_USER
 	log_detail "removing $_USER from audio group"
-	usermod -G audio $_USER
+	usermod -rG audio $_USER
 done

@@ -48,7 +48,7 @@ _download_lightpanda() {
     _download_fetch "$download_url"
 }
 _install_lightpanda() {
-    _install_file_chmod=755 _download_install_file $BIN_PATH/lightpanda
+    _install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/lightpanda
 }
 which lightpanda > /dev/null 2>&1 || {
     _download_lightpanda && _install_lightpanda
