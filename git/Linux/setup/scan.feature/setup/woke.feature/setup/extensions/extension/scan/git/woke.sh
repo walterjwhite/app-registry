@@ -28,7 +28,6 @@ _stdin_continue_if() {
 		_proceed=$_default
 	fi
 	printf '%s' "$_proceed" | tr '[:lower:]' '[:upper:]' | $GNU_GREP -Pcqm1 '^Y$'
-	unset _proceed
 }
 _stdin_read_if() {
 	if [ $(set | grep -c "^$2=.*") -eq 1 ]; then

@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -714,7 +733,7 @@ _buildfile_import_append_file() {
 	esac
 	if [ -e "${src}.test" ]; then
 		if ! (. "${src}.test" "$buildfile_output_package_file"); then
-			log_debug "skipping $src (test failed)"
+			log_debug "skipping $src (test failed) | $buildfile_output_package_file"
 			return 0
 		fi
 	fi
@@ -840,7 +859,7 @@ _buildfile_inject_full() {
 	buildfile_optional=1 _buildfile_imports init $1 "$init_imports"
 	chmod +x $buildfile_output_package_file $1
 	_buildfile_format_shell_scripts
-	$GNU_GREP -Pvh '^(#|var |lib |cfg |constant |init |readonly REQUIRED_ARGUMENTS=|readonly REQUIRED_APP_CONF=)' $1 >>$buildfile_output_package_file
+	$GNU_GREP -Pvh '^(#|var |lib |cfg |constant |init |readonly REQUIRED_ARGUMENTS=)' $1 >>$buildfile_output_package_file
 	[ -n "$post_build_function" ] && $post_build_function
 	[ -z "$no_remove_unused_functions" ] && {
 		_buildfile_remove_unused_functions
@@ -849,7 +868,7 @@ _buildfile_inject_full() {
 	[ "$conf_log_level" -eq 0 ] && _build_has_missing_functions
 }
 _buildfile_inject_lite() {
-	$GNU_GREP -Pcq '^(init |readonly REQUIRED_ARGUMENTS=|readonly REQUIRED_APP_CONF=)' $1 && exit_with_error "files may not contain init or required_arguments"
+	$GNU_GREP -Pcq '^(init |readonly REQUIRED_ARGUMENTS=)' $1 && exit_with_error "files may not contain init or required_arguments"
 	_buildfile_inject_header
 	_buildfile_imports lib $1
 	_buildfile_imports constant $1
@@ -872,7 +891,12 @@ validation_required_cfg() {
 		$GNU_GREP -Poh '\$conf_[\w_]{3,}' | sed -e 's/^\$//' | sort -u)
 	local defaults=$($GNU_GREP -Poh 'conf_[\w]{3,}:?=' $buildfile_output_package_file | sed -e 's/^\$//' -e 's/:=$//' -e 's/=$//' | sort -u | tr '\n' '|' | sed -e 's/|$//' -e 's/^/(/' -e 's/$/)/')
 	buildfile_required_app_conf=$(printf '%s\n' "$required_cfg" | $GNU_GREP -Pv "$defaults" | tr '\n' ' ' | sed -e 's/ $//')
-	[ -n "$buildfile_required_app_conf" ] && printf 'readonly REQUIRED_APP_CONF="%s"\n' "$buildfile_required_app_conf" >>$buildfile_output_package_file
+	[ -z "$buildfile_required_app_conf" ] && {
+		$GNU_SED -i '/^__REQUIRED_APP_CONF_PLACEHOLDER__$/d' $buildfile_output_package_file
+		$GNU_SED -i '/^_cfg_validate_required$/d' $buildfile_output_package_file
+		return
+	}
+	$GNU_SED -i "s/^__REQUIRED_APP_CONF_PLACEHOLDER__$/readonly REQUIRED_APP_CONF=\"$buildfile_required_app_conf\"/" $buildfile_output_package_file
 }
 _buildfile_list_variables() {
 	{
@@ -1436,7 +1460,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-readonly BUILDFILE_FULL_LIB="beep.sh context.sh environment.sh exec.sh exit.sh help.sh io/file.sh include.sh logging metadata.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"
+readonly BUILDFILE_FULL_LIB="beep.sh cfg.sh context.sh environment.sh exec.sh exit.sh help.sh io/file.sh include.sh logging metadata.sh mktemp.sh platform.sh processes.sh stdin.sh syslog.sh sudo.sh time.sh wait.sh validation.sh net/mail.sh alert.sh"
 readonly BUILDFILE_FULL_CFG="beep context logging net paths platform wait"
 readonly BUILDFILE_FULL_INIT="full platform.sh full"
 readonly APPLICATION_METADATA_PATH=$APP_LIBRARY_PATH/install/.metadata

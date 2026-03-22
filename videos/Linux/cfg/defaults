@@ -1,2 +1,14 @@
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
+: ${conf_videos_movie_trailer_fetch_count:=10}
+: ${conf_videos_movie_trailer_genre:=Action}
+: ${conf_videos_movie_trailer_region:=US}
+: ${conf_videos_movie_trailer_language:=en-US}
+: ${conf_videos_movie_trailer_days_back:=90}
+: ${conf_videos_movie_trailer_days_ahead:=90}
+: ${conf_videos_movie_trailer_min_votes:=10}
+: ${conf_videos_yt_days_back:=7}
+: ${conf_videos_yt_max_results:=50}
+: ${conf_videos_yt_max_pages:=5}
+: ${conf_videos_yt_order:=date}
+: ${conf_videos_yt_type:=video}

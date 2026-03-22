@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -648,15 +667,6 @@ _video_meta() {
 _videos_git() {
 	_data_app_save "$_action - $video_key" "$@"
 }
-_videos_clipboard_get() {
-	videos_url=$(_clipboard_get | sed -e 's/&.*$//')
-}
-_clipboard_get() {
-	wl-paste
-}
-_clipboard_clear() {
-	wl-copy </dev/null
-}
 _data_app_save() {
 	local _message="$1"
 	shift
@@ -689,6 +699,7 @@ _data_app_init() {
 		}
 	fi
 	cd $git_project_path
+	git pull
 }
 _system_get_id() {
 	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
@@ -770,6 +781,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+readonly REQUIRED_ARGUMENTS="video_id:ID of video (can be a substring)"
 _include_optional beep context git logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
@@ -873,6 +885,28 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_download_path conf_videos_video_player"
+_cfg_validate_required
+readonly ACTUAL_ARGUMENT_COUNT=$#
+readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
+arg_index=1
+while [ $arg_index -le $DISCOVERED_ARGUMENT_COUNT ]; do
+	_argument_name=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/:.*$//')
+	_argument_message=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/^.*://')
+	if [ -z "$1" ]; then
+		log_warn "$arg_index:$_argument_message was not provided"
+	else
+		log_debug "$arg_index:$_argument_name=$1"
+		eval "$_argument_name=\"$1\""
+		shift
+	fi
+	arg_index=$(($arg_index + 1))
+done
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && exit_with_error "missing arguments"
+unset arg_index _argument_name _argument_message
+readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
+log_debug "remaining args: $*"
 wait_waitee_init
 wait_waiter
 sudo_ensure_not_root
@@ -880,10 +914,8 @@ _action=watch
 : ${_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION:=1}
 _watch() {
   video_key=$(basename $video_media_file | $GNU_GREP -Po "\-{0,1}[0-9A-Za-z_-]{10}[048AEIMQUYcgkosw]\." | tail -1 | sed -e "s/^\-//" -e "s/\.$//" -e "s/\-/\\\-/g")
-  video_file=$(grep $video_key downloaded -rl)
-  if [ -z "$video_file" ]; then
-    exit_with_error "downloaded video not found for: $video_key" 2
-  fi
+  video_file=$(grep "$video_key" downloaded -rl | head -1)
+  validation_require "$video_file" "video file not found for $video_key"
   _video_read_meta
   _video_meta
   _play
@@ -910,40 +942,24 @@ _move_watched_video() {
     _path_remove_empty_directories $conf_videos_download_path
     mkdir -p $(dirname $video_watched_file)
     git mv $video_file $video_watched_file
+    grep -lr "$video_key" downloaded | grep -cqm1 '.' && {
+      log_warn "other instances found, moving those to watched too"
+      watch_date=$(date +%Y/%m/%d)
+      git mv $(grep -lr "$video_key" downloaded) watched/$watch_date
+    }
     _videos_git $video_file $video_watched_file
   fi
+  unset _RETAIN
 }
 _watch_specified() {
   video_file=$1
   if [ ! -e $video_file ]; then
-    video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' | grep $video_file)
+    video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' | grep "$video_file")
   fi
   if [ -z "$video_media_file" ]; then
     return 1
   fi
   _watch
 }
-_watch_clipboard() {
-  _videos_clipboard_get
-  if [ -n "$videos_url" ]; then
-    video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
-    if [ -n "$video_key" ]; then
-      _clipboard_clear
-      _watch_specified $video_key
-      return $?
-    fi
-  fi
-  return 1
-}
-_watch_all() {
-  for video_media_file in $(find $conf_videos_download_path -type f ! -name '*.part'); do
-    _watch
-  done
-}
 _data_app_init
-if [ "$#" -eq "1" ]; then
-  _watch_specified $1
-else
-  _watch_clipboard || _watch_all
-fi
-readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_download_path conf_videos_video_player"
+_watch_specified $video_id

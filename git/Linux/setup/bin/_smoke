@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -775,6 +794,8 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_git_smoke_commit_message conf_git_smoke_repository_url conf_git_smoke_target_branch conf_smoke_iterations"
+_cfg_validate_required
 wait_waitee_init
 wait_waiter
 _git_smoke_cleanup() {
@@ -814,4 +835,3 @@ else
     _git_smoke_iteration_delay
   done
 fi
-readonly REQUIRED_APP_CONF="conf_git_smoke_commit_message conf_git_smoke_repository_url conf_git_smoke_target_branch conf_smoke_iterations"

@@ -142,4 +142,3 @@ function _console_fish_hook_after --on-event fish_prompt
 end
 function _console_fish_hook_before --on-event fish_preexec
 end
-readonly REQUIRED_APP_CONF="conf_console_zsh_disk_history_size conf_console_zsh_session_history_size"

@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -629,7 +648,7 @@ _video_download() {
 		_video_download_extract_audio
 		return
 	fi
-	_video_downloadexit_with_success
+	_video_download_success
 	_video_download_convert
 }
 _videos_download_setup_proxy() {
@@ -644,18 +663,18 @@ _videos_download_setup_proxy() {
 	return 1
 }
 _video_download_error() {
-	_video_download_git exit_with_error "download error"
+	_video_download_git error "download error"
 	exit_with_error "error downloading video - $video_key" $_status
 }
 _video_download_extract_audio() {
 	_video_download_git extracted "download / extract"
 }
-_video_downloadexit_with_success() {
+_video_download_success() {
 	_video_download_git downloaded "download"
 	log_info "successfully downloaded $videos_url - $video_title @ $video_duration"
 }
 _video_download_git() {
-	local _video_target=$1/$(_target)
+	local _video_target=$1/$(_videos_date)
 	mkdir -p $(dirname $_video_target)
 	git mv $video_file $_video_target || {
 		git add $video_file && git mv $video_file $_video_target || exit_with_error "error moving $video_file -> $_video_target"
@@ -664,18 +683,19 @@ _video_download_git() {
 	unset _video_target _DOWNLOAD_ARGS
 }
 _video_download_convert() {
-	if [ -z "$video_profiles" ]; then
-		return 1
-	fi
+	[ -z "$video_profiles" ] && return 1
 	video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' -name "*$video_key*")
 	validation_require "$video_media_file" video_media_file
-	for _VIDEO_PROFILE in $video_profiles; do
-		log_info "converting video with $_VIDEO_PROFILE"
-		local video_profile_name=$(printf $_VIDEO_PROFILE | tr '[:lower:]' '[:upper:]')
+	for video_profile in $video_profiles; do
+		log_info "converting video with $video_profile"
+		local video_profile_name=$(printf $video_profile | tr '[:lower:]' '[:upper:]')
 		local profile_video_format=$(set | grep "^conf_videos_profile_${video_profile_name}_VIDEO_FORMAT=.*" | sed -e 's/^.*\=//')
 		local profile_options=$(set | grep "^conf_videos_profile_${video_profile_name}_options=.*" | sed -e 's/^.*\=//')
-		ffmpeg -i "$video_media_file" $profile_options ${video_media_file}-$_VIDEO_PROFILE.$profile_video_format
+		ffmpeg -i "$video_media_file" $profile_options ${video_media_file}-$video_profile.$profile_video_format
 	done
+}
+_videos_date() {
+	date +%Y/%m/%d/%H.%M.%S
 }
 _video_read_meta() {
 	[ ! -e $video_file ] && return 1
@@ -727,6 +747,7 @@ _data_app_init() {
 		}
 	fi
 	cd $git_project_path
+	git pull
 }
 _system_get_id() {
 	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
@@ -911,6 +932,8 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_audio_format conf_videos_download_path conf_videos_youtube_download_cmd"
+_cfg_validate_required
 wait_waitee_init
 wait_waiter
 sudo_ensure_not_root
@@ -935,4 +958,3 @@ while :; do
   videos_downloaded=$(($videos_downloaded + 1))
   unset extract_audio video_profiles is_playlist _options videos_url video_key video_title video_duration video_date video_uploader_id video_uploader_name
 done
-readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_audio_format conf_videos_download_path conf_videos_youtube_download_cmd"

@@ -38,4 +38,3 @@ _console_set_shell() {
 : ${conf_console_zsh_disk_history_size:=1000}
 : ${conf_console_shell_cmd:=/usr/bin/zsh}
 shell_type=zsh shell_cmd=$conf_console_zsh_cmd _console_conf_all
-readonly REQUIRED_APP_CONF="conf_console_zsh_cmd"

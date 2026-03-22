@@ -31,6 +31,7 @@ _data_app_init() {
 		}
 	fi
 	cd $git_project_path
+	git pull
 }
 _project_directory_get_project_directory() {
 	git_project_path=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -114,7 +115,6 @@ _stdin_continue_if() {
 		_proceed=$_default
 	fi
 	printf '%s' "$_proceed" | tr '[:lower:]' '[:upper:]' | $GNU_GREP -Pcqm1 '^Y$'
-	unset _proceed
 }
 _stdin_read_if() {
 	if [ $(set | grep -c "^$2=.*") -eq 1 ]; then

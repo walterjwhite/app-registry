@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -447,7 +466,6 @@ _stdin_continue_if() {
 		_proceed=$_default
 	fi
 	printf '%s' "$_proceed" | tr '[:lower:]' '[:upper:]' | $GNU_GREP -Pcqm1 '^Y$'
-	unset _proceed
 }
 _stdin_read_if() {
 	if [ $(set | grep -c "^$2=.*") -eq 1 ]; then
@@ -629,22 +647,22 @@ _alert_long_running_cmd() {
 }
 _load_media_prepare_target() {
 	mkdir -p "$conf_load_media_mount_point/$conf_load_media_target_path"
-	_LOAD_MEDIA_SOURCE_DIRECTORY=$(_file_readlink "$_LOAD_MEDIA_SOURCE_DIRECTORY")
-	_TARGET_DIRECTORY_NAME=$(basename "$_LOAD_MEDIA_SOURCE_DIRECTORY")
-	if [ -e "$conf_load_media_mount_point/$conf_load_media_target_path/$_TARGET_DIRECTORY_NAME" ]; then
-		_stdin_continue_if "Delete existing target?" "Y/n" || exit_with_error "$conf_load_media_mount_point/$conf_load_media_target_path/$_TARGET_DIRECTORY_NAME already exists"
-		rm -rf "$conf_load_media_mount_point/$conf_load_media_target_path/$_TARGET_DIRECTORY_NAME"
+	media_dir=$(_file_readlink "$media_dir")
+	target_dir_name=$(basename "$media_dir")
+	if [ -e "$conf_load_media_mount_point/$conf_load_media_target_path/$target_dir_name" ]; then
+		_stdin_continue_if "Delete existing target?" "Y/n" || exit_with_error "$conf_load_media_mount_point/$conf_load_media_target_path/$target_dir_name already exists"
+		rm -rf "$conf_load_media_mount_point/$conf_load_media_target_path/$target_dir_name"
 	fi
 }
 _load_media_copy() {
-	log_info "copying $_LOAD_MEDIA_SOURCE_DIRECTORY -> $conf_load_media_target_path"
+	log_info "copying $media_dir -> $conf_load_media_target_path"
 	local file_to_copy
-	for file_to_copy in $(find "$load_media_source_directory" -type f ! -name '*.secrets' ! -path '*/.archived/*'); do
-		local target=$(printf '%s' "$file_to_copy" | sed -e "s|^$load_media_source_directory||")
+	for file_to_copy in $(find "$media_dir" -type f ! -name '*.secrets' ! -path '*/.archived/*'); do
+		local target=$(printf '%s' "$file_to_copy" | sed -e "s|^$media_dir||")
 		local target_directory=$(dirname "$target")
 		local extension=$(_load_media_extension "$file_to_copy")
-		mkdir -p "$conf_load_media_mount_point/$conf_load_media_target_path/$_TARGET_DIRECTORY_NAME/$target_directory"
-		cp -R "$file_to_copy" "$conf_load_media_mount_point/$conf_load_media_target_path/$_TARGET_DIRECTORY_NAME/$target$extension"
+		mkdir -p "$conf_load_media_mount_point/$conf_load_media_target_path/$target_dir_name/$target_directory"
+		cp -R "$file_to_copy" "$conf_load_media_mount_point/$conf_load_media_target_path/$target_dir_name/$target$extension"
 	done
 }
 _load_media_extension() {
@@ -662,9 +680,6 @@ _load_media_extension() {
 		;;
 	esac
 }
-_load_media_cleanup() {
-	umount $conf_load_media_mount_point
-}
 _load_media_mount() {
 	mkdir -p $conf_load_media_mount_point
 	case $conf_media_copy_fs in
@@ -676,7 +691,7 @@ _load_media_mount() {
 		;;
 	esac
 	[ $? -eq 0 ] || exit_with_error 'exit_with_error mounting media'
-	exit_defer _load_media_cleanup
+	exit_defer umount $conf_load_media_mount_point
 	find "$conf_load_media_mount_point" -maxdepth 1 -mindepth 1 -print -quit >/dev/null 2>&1 || exit_with_error "error checking phone contents"
 }
 _load_media_is_mounted() {
@@ -759,7 +774,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-readonly REQUIRED_ARGUMENTS="_load_media_source_directory:Source Directory"
+readonly REQUIRED_ARGUMENTS="media_dir:Media Source Directory"
 _include_optional beep context load-media logging net paths platform wait
 _metadata_load
 : ${beep_enabled:=0}
@@ -854,6 +869,8 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_load_media_mount_point conf_load_media_target_path conf_media_copy_fat_mount_cmd conf_media_copy_fs"
+_cfg_validate_required
 readonly ACTUAL_ARGUMENT_COUNT=$#
 readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
 [ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
@@ -876,9 +893,8 @@ readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
 log_debug "remaining args: $*"
 wait_waitee_init
 wait_waiter
-file_require "$_load_media_source_directory" "Source Directory"
-sudo_ensure_root "$@"
+file_require "$media_dir" "Media Source Directory"
+sudo_ensure_root "$media_dir" "$@"
 _load_media_is_mounted || _load_media_mount
 _load_media_prepare_target
 _load_media_copy
-readonly REQUIRED_APP_CONF="conf_load_media_mount_point conf_load_media_target_path conf_media_copy_fat_mount_cmd conf_media_copy_fs"

@@ -1,2 +1,1 @@
-: ${log_logfile:=/var/log/walterjwhite/remote}
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}

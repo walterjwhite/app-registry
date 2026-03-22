@@ -31,6 +31,7 @@ _data_app_init() {
 		}
 	fi
 	cd $git_project_path
+	git pull
 }
 _git_in_project_base_path() {
 	_path_in_path $GIT_PROJECT_BASE_PATH
@@ -130,7 +131,6 @@ _stdin_continue_if() {
 		_proceed=$_default
 	fi
 	printf '%s' "$_proceed" | tr '[:lower:]' '[:upper:]' | $GNU_GREP -Pcqm1 '^Y$'
-	unset _proceed
 }
 _stdin_read_if() {
 	if [ $(set | grep -c "^$2=.*") -eq 1 ]; then
@@ -313,4 +313,3 @@ _scan_review() {
   detect-secrets audit "$report_path"
 }
 _scan_run detect-secrets json
-readonly REQUIRED_APP_CONF="conf_git_clone_timeout conf_git_mirror conf_log_beep_stdin conf_log_c_stdin conf_log_date_time_format"

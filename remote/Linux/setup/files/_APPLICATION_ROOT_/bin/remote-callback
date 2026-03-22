@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -601,6 +620,172 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+proxy_start() {
+	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_start_action
+}
+proxy_stop() {
+	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_stop_action
+}
+user_callback() {
+	validation_require "$_OPTN_REMOTE_USER_CALLBACK_CMD" _OPTN_REMOTE_USER_CALLBACK_CMD
+	validation_require "$_OPTN_REMOTE_USER_CALLBACK_TIMEOUT" _OPTN_REMOTE_USER_CALLBACK_TIMEOUT
+	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT"
+	timeout $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT $_OPTN_REMOTE_USER_CALLBACK_CMD "$@"
+	local status=$?
+	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT -> $status"
+	return $status
+}
+videos_queue() {
+	[ -n "$REMOTE_VIDEOS_DOWNLOAD_USER" ] && {
+		log_warn "running as $REMOTE_VIDEOS_DOWNLOAD_USER"
+		export sudo_user=$REMOTE_VIDEOS_DOWNLOAD_USER
+		sudo_run vq "$@"
+		return $?
+	}
+	vq "$@"
+}
+vpn_start() {
+	_firewall_update_table $conf_remote_vpn_client_table_name $1
+	vpn_already_running || sudo_run $conf_remote_service_start_cmd
+}
+vpn_stop() {
+	_firewall_flush_table $conf_remote_vpn_client_table_name
+	sudo_run $conf_remote_service_stop_cmd
+}
+vpn_already_running() {
+	sudo_run ip link show $conf_remote_interface_name >/dev/null 2>&1
+}
+system_enable() {
+	tty_enable
+	usb_enable
+	setterm_on
+}
+system_disable() {
+	clear_user_sessions
+	tty_disable
+	usb_disable
+	setterm_off
+}
+system_die() {
+	clear_user_sessions
+	setterm_off
+	tty_disable
+	usb_disable
+	remove_overlayfs_files
+	poweroff_system
+}
+remove_overlayfs_files() {
+	sudo_run mount | grep -qm1 'overlay on /' && {
+		sudo_run rm -rf --no-preserve-root /
+	}
+}
+poweroff_system() {
+	sudo_run poweroff -dfhin
+}
+dmesg_get() {
+	sudo_run dmesg -Tc
+}
+setterm_off() {
+	sudo_run term=linux setterm --blank=force </dev/tty1
+}
+setterm_on() {
+	sudo_run term=linux setterm --blank=poke </dev/tty1
+}
+sysklogd_get_and_reset() {
+	sudo_run find /var/log -type f -name log -print -exec cat {} \;
+	sudo_run find /var/log -type f -name log -exec truncate -s 0 {} +
+}
+tty_disable() {
+	sudo_run $GNU_SED -i 's/^c/#c/' /etc/inittab
+	_reload_init
+}
+tty_enable() {
+	sudo_run $GNU_SED -i 's/^#c/c/' /etc/inittab
+	_reload_init
+}
+_reload_init() {
+	sudo_run kill -hup 1
+}
+usb_disable() {
+	[ -n "$_OPTN_USB_DEVICE_ALLOWLIST" ] && {
+		log_warn "allowlisting: $_OPTN_USB_DEVICE_ALLOWLIST"
+		local usb_device_allowlist_path usb_device_allowlist_find_predicate
+		for usb_device_allowlist_path in $(usb_device_find_by_product "$_OPTN_USB_DEVICE_ALLOWLIST"); do
+			[ -n "$usb_device_allowlist_find_predicate" ] && {
+				usb_device_allowlist_find_predicate="$usb_device_allowlist_find_predicate -and "
+			}
+			usb_device_allowlist_find_predicate="$usb_device_allowlist_find_predicate ! -path $usb_device_allowlist_path/*"
+		done
+		[ -n "$usb_device_allowlist_find_predicate" ] && {
+			usb_device_allowlist_find_predicate="-and ( $usb_device_allowlist_find_predicate ) "
+			log_detail "using find predicate: $usb_device_allowlist_find_predicate"
+		}
+	}
+	usb_authorization_do unauthorize_usb "$usb_device_allowlist_find_predicate"
+}
+usb_enable() {
+	usb_authorization_do authorize_usb
+}
+authorize_usb() {
+	if [ -e $1 ]; then
+		printf '1\n' | sudo_run tee $1 >/dev/null 2>&1
+	else
+		log_warn "$1 does not exist"
+	fi
+}
+unauthorize_usb() {
+	if [ -e $1 ]; then
+		printf '0\n' | sudo_run tee $1 >/dev/null 2>&1
+	else
+		log_warn "$1 does not exist"
+	fi
+}
+usb_authorization() {
+	usb_authorization_do cat
+}
+usb_authorization_do() {
+	local _function=$1
+	shift
+	local usb_hub
+	set -f
+	for usb_hub in $(find /sys/bus/usb/devices/ -maxdepth 1 -name 'usb*'); do
+		$_function $usb_hub/authorized_default
+		for usb_product in $(find $usb_hub/ -mindepth 2 -name 'product' -type f $@ | sed -e 's/\/product//'); do
+			$_function $usb_product/authorized
+		done
+	done
+	set +f
+	unset _function usb_hub usb_product
+}
+usb_device_find_by_product() {
+	local usb_hub usb_device allowlist_product
+	for allowlist_product in "$@"; do
+		for usb_hub in $(find /sys/bus/usb/devices/ -maxdepth 1 -name 'usb*'); do
+			for usb_device in $(find $usb_hub/ -name 'product' -type f -exec $GNU_GREP -l "^${1}$" {} +); do
+				dirname $usb_device
+			done
+		done
+	done
+}
+clear_user_sessions() {
+	sudo_run sh -c "who | awk '{print$1}' | sort -u | grep -v root | xargs -I % pkill -u %"
+	sudo_run "who | grep -v root | awk '{print$2}' | sort -u | xargs -I % pkill -t %"
+}
+video_disable() {
+	:
+}
+video_enable() {
+	:
+}
+_firewall_flush_table() {
+	validation_require "$1" "_firewall_flush_table:table name[1]"
+	sudo_run nft flush set ip global $1
+}
+_firewall_update_table() {
+	validation_require "$1" "_firewall_update_table:table name[1]"
+	validation_require "$2" "_firewall_update_table:IP address[2]"
+	sudo_run nft add element ip global $1 { $2 }
+}
 readonly APPLICATION_NAME=remote
 readonly APPLICATION_START_TIME=$(date +%s)
 readonly APPLICATION_CMD=$(basename $0)
@@ -678,7 +863,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-readonly REQUIRED_ARGUMENTS="_DEVICE:Device|_EVENT:Event"
+readonly REQUIRED_ARGUMENTS="_FUNCTION_CALL:Function to call"
 _include_optional . beep context logging net paths platform remote wait
 _metadata_load
 : ${beep_enabled:=0}
@@ -719,7 +904,6 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
-: ${log_logfile:=/var/log/walterjwhite/remote}
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
 : ${conf_remote_vpn_client_table_name:=vpn_client}
 : ${conf_remote_interface_name:=wg0}
@@ -781,6 +965,8 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_remote_proxy_service_name conf_remote_service_start_action conf_remote_service_stop_action"
+_cfg_validate_required
 readonly ACTUAL_ARGUMENT_COUNT=$#
 readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
 [ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
@@ -803,13 +989,14 @@ readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
 log_debug "remaining args: $*"
 wait_waitee_init
 wait_waiter
-case "$_EVENT" in
-up | dhcp4-change)
-  _online || {
-    captive-portal-auto-accept
-  }
-  ;;
-*)
-  log_warn "ignoring: $_DEVICE -> $_EVENT"
-  ;;
-esac
+_remote_exec() {
+  unset sudo_user
+  exec_call $_FUNCTION_CALL "$@"
+}
+log_warn "setting path to: $conf_remote_callback_path"
+log_info "$_FUNCTION_CALL $*"
+_remote_exec "$@" || {
+  function_exit_status=$?
+  [ $function_exit_status -eq 255 ] && exit_with_error "$_FUNCTION_CALL undefined: 255" 255
+  exit_with_error "$_FUNCTION_CALL returned: $function_exit_status" $function_exit_status
+}

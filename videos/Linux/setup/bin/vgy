@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -601,165 +620,122 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
-proxy_start() {
-	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_start_action
+_youtube_download() {
+	vq -videos-url="$YOUTUBE_BASE?v=$youtube_video_id" -videos-tags="$youtube_video_channel_title"
 }
-proxy_stop() {
-	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_stop_action
-}
-user_callback() {
-	validation_require "$_OPTN_REMOTE_USER_CALLBACK_CMD" _OPTN_REMOTE_USER_CALLBACK_CMD
-	validation_require "$_OPTN_REMOTE_USER_CALLBACK_TIMEOUT" _OPTN_REMOTE_USER_CALLBACK_TIMEOUT
-	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT"
-	timeout $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT $_OPTN_REMOTE_USER_CALLBACK_CMD "$@"
-	local status=$?
-	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT -> $status"
-	return $status
-}
-vpn_start() {
-	_firewall_update_table $conf_remote_vpn_client_table_name $1
-	vpn_already_running || $conf_remote_service_start_cmd
-}
-vpn_stop() {
-	_firewall_flush_table $conf_remote_vpn_client_table_name
-	$conf_remote_service_stop_cmd
-}
-vpn_already_running() {
-	ifconfig $conf_remote_interface_name >/dev/null 2>&1
-}
-system_enable() {
-	tty_enable
-	usb_enable
-	setterm_on
-}
-system_disable() {
-	clear_user_sessions
-	tty_disable
-	usb_disable
-	setterm_off
-}
-system_die() {
-	clear_user_sessions
-	setterm_off
-	tty_disable
-	usb_disable
-	remove_overlayfs_files
-	poweroff_system
-}
-remove_overlayfs_files() {
-	mount | grep -qm1 'overlay on /' && {
-		rm -rf --no-preserve-root /
-	}
-}
-poweroff_system() {
-	poweroff -dfhin
-}
-dmesg_get() {
-	dmesg -Tc
-}
-setterm_off() {
-}
-setterm_on() {
-}
-sysklogd_get_and_reset() {
-	find /var/log -type f -name log -print -exec cat {} \;
-	find /var/log -type f -name log -exec truncate -s 0 {} +
-	/etc/init.d/sysklogd restart
-}
-tty_disable() {
-	$GNU_SED -i 's/^c/#c/' /etc/inittab
-	_reload_init
-}
-tty_enable() {
-	$GNU_SED -i 's/^#c/c/' /etc/inittab
-	_reload_init
-}
-_reload_init() {
-	kill -hup 1
-}
-usb_disable() {
-	[ -n "$_OPTN_USB_DEVICE_ALLOWLIST" ] && {
-		log_warn "allowlisting: $_OPTN_USB_DEVICE_ALLOWLIST"
-		local usb_device_allowlist_path usb_device_allowlist_find_predicate
-		for usb_device_allowlist_path in $(usb_device_find_by_product "$_OPTN_USB_DEVICE_ALLOWLIST"); do
-			[ -n "$usb_device_allowlist_find_predicate" ] && {
-				usb_device_allowlist_find_predicate="$usb_device_allowlist_find_predicate -and "
-			}
-			usb_device_allowlist_find_predicate="$usb_device_allowlist_find_predicate ! -path $usb_device_allowlist_path/*"
+_youtube_fetch_channel() {
+	_all_json_items="[]"
+	_page=1
+	_page_token=""
+	_total=0
+	while true; do
+		log_info "fetching page ${_page} of up to ${conf_videos_yt_max_pages} ..."
+		_page_json=$(yt_search \
+			"$youtube_channel_id" \
+			"$_published_after" \
+			"$_page_token") || exit 1
+		_item_count=$(printf '%s' "$_page_json" | jq '.items | length')
+		log_info "  items on this page: ${_item_count}"
+		if [ "$_item_count" -eq 0 ]; then
+			log_info "  no more items."
+			break
+		fi
+		_idx=0
+		while [ "$_idx" -lt "$_item_count" ]; do
+			_item=$(printf '%s' "$_page_json" | jq ".items[${_idx}]")
+			_all_json_items=$(printf '%s\n%s' \
+				"$_all_json_items" \
+				"[$_item]" |
+				jq -s 'add')
+			_idx=$((_idx + 1))
+			_total=$((_total + 1))
 		done
-		[ -n "$usb_device_allowlist_find_predicate" ] && {
-			usb_device_allowlist_find_predicate="-and ( $usb_device_allowlist_find_predicate ) "
-			log_detail "using find predicate: $usb_device_allowlist_find_predicate"
-		}
-	}
-	usb_authorization_do unauthorize_usb "$usb_device_allowlist_find_predicate"
-}
-usb_enable() {
-	usb_authorization_do authorize_usb
-}
-authorize_usb() {
-	if [ -e $1 ]; then
-		printf '1\n' >$1
-	else
-		log_warn "$1 does not exist"
-	fi
-}
-unauthorize_usb() {
-	if [ -e $1 ]; then
-		printf '0\n' >$1 2>/dev/null
-	else
-		log_warn "$1 does not exist"
-	fi
-}
-usb_authorization() {
-	usb_authorization_do cat
-}
-usb_authorization_do() {
-	local _command=$1
-	shift
-	local usb_hub
-	set -f
-	for usb_hub in $(find /sys/bus/usb/devices/ -maxdepth 1 -name 'usb*'); do
-		$_command $usb_hub/authorized_default
-		for usb_product in $(find $usb_hub/ -mindepth 2 -name 'product' -type f $@ | sed -e 's/\/product//'); do
-			$_command $usb_product/authorized
-		done
+		_next_token=$(printf '%s' "$_page_json" |
+			jq -r '.nextPageToken // empty')
+		if [ -z "$_next_token" ]; then
+			log_info "  no nextPageToken — reached last page."
+			break
+		fi
+		if [ "$_page" -ge "$conf_videos_yt_max_pages" ]; then
+			log_warn "reached max pages (${conf_videos_yt_max_pages}). Stopping."
+			break
+		fi
+		_page_token="$_next_token"
+		_page=$((_page + 1))
 	done
-	set +f
-	unset _command usb_hub usb_product
+	printf '%s' "$_all_json_items" | jq '.'
+	log_info "=== Done — ${_total} video(s) found ==="
 }
-usb_device_find_by_product() {
-	local usb_hub usb_device allowlist_product
-	for allowlist_product in "$@"; do
-		for usb_hub in $(find /sys/bus/usb/devices/ -maxdepth 1 -name 'usb*'); do
-			for usb_device in $(find $usb_hub/ -name 'product' -type f -exec $GNU_GREP -l "^${1}$" {} +); do
-				dirname $usb_device
-			done
-		done
+_youtube_filter() {
+	local youtube_json_data
+	jq -c '.[]' | while read -r youtube_json_data; do
+		_youtube_filter_each
 	done
 }
-clear_user_sessions() {
-	who | awk {'print$1'} | sort -u | grep -v root |
-		xargs -I % pkill -u %
-	who | grep -v root | awk {'print$2'} | sort -u |
-		xargs -I % pkill -t %
+_youtube_filter_each() {
+	youtube_video_id=$(printf '%s\n' "$youtube_json_data" | jq -r '.id.videoId')
+	youtube_video_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.title')
+	youtube_video_channel_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.channelTitle')
+	_youtube_channel_filter && {
+		log_warn "passed $youtube_video_id - $youtube_video_title"
+		printf '%s\n' $youtube_video_id
+	}
 }
-video_disable() {
-	:
+yt_search() {
+	_channel_id="$1"
+	_published_after="$2"
+	_page_token="$3" # may be empty for first page
+	_qs="part=snippet"
+	_qs="${_qs}&channelId=$(_utils_urlencode "$_channel_id")"
+	_qs="${_qs}&publishedAfter=$(_utils_urlencode "$_published_after")"
+	_qs="${_qs}&type=$(_utils_urlencode "$conf_videos_yt_type")"
+	_qs="${_qs}&order=$(_utils_urlencode "$conf_videos_yt_order")"
+	_qs="${_qs}&maxResults=${conf_videos_yt_max_results}"
+	_qs="${_qs}&key=$(_utils_urlencode "$conf_videos_yt_api_key")"
+	if [ -n "$_page_token" ]; then
+		_qs="${_qs}&pageToken=$(_utils_urlencode "$_page_token")"
+	fi
+	_url="${YT_SEARCH_URL}?${_qs}"
+	log_info "get search.list (pageToken=${_page_token:-<first>}) ..."
+	_response=$(curl -sS \
+		-H "Accept: application/json" \
+		-w '\n__HTTP_STATUS__%{http_code}' \
+		"$_url") || {
+		exit_with_error "curl request failed."
+	}
+	_http_code=$(printf '%s' "$_response" | grep -o '__HTTP_STATUS__[0-9]*' | sed 's/__HTTP_STATUS__//')
+	_body=$(printf '%s' "$_response" | sed 's/__HTTP_STATUS__[0-9]*$//')
+	if [ "$_http_code" -lt 200 ] || [ "$_http_code" -ge 300 ]; then
+		_api_msg=$(printf '%s' "$_body" |
+			jq -r '.error.message // "unknown error"' 2>/dev/null ||
+			echo "unknown error")
+		exit_with_error "youtube API HTTP ${_http_code}: ${_api_msg}"
+	fi
+	printf '%s' "$_body"
 }
-video_enable() {
-	:
+_compute_published_after() {
+	if date --version >/dev/null 2>&1; then
+		date -u -d "-${conf_videos_yt_days_back} days" '+%Y-%m-%dT%H:%M:%SZ'
+	else
+		date -u -v "-${conf_videos_yt_days_back}d" '+%Y-%m-%dT%H:%M:%SZ'
+	fi
 }
-_firewall_flush_table() {
-	validation_require "$1" "_firewall_flush_table:table name[1]"
-	nft flush set ip global $1
+_utils_urlencode() {
+	_input="$1"
+	_encoded=""
+	_len=${#_input}
+	_i=0
+	while [ "$_i" -lt "$_len" ]; do
+		_char=$(printf '%s' "$_input" | cut -c$((_i + 1)))
+		case "$_char" in
+		[A-Za-z0-9._~-]) _encoded="${_encoded}${_char}" ;;
+		*) _encoded="${_encoded}$(printf '%%%02X' "'$_char")" ;;
+		esac
+		_i=$((_i + 1))
+	done
+	printf '%s' "$_encoded"
 }
-_firewall_update_table() {
-	validation_require "$1" "_firewall_update_table:table name[1]"
-	validation_require "$2" "_firewall_update_table:IP address[2]"
-	nft add element ip global $1 { $2 }
-}
-readonly APPLICATION_NAME=remote
+readonly APPLICATION_NAME=videos
 readonly APPLICATION_START_TIME=$(date +%s)
 readonly APPLICATION_CMD=$(basename $0)
 readonly APP_PLATFORM_ARCHITECTURE=$(uname -m)
@@ -836,8 +812,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-readonly REQUIRED_ARGUMENTS="_FUNCTION_CALL:Function to call"
-_include_optional . beep context logging net paths platform remote wait
+_include_optional . beep context logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
 : ${conf_log_beep_timeout:=5}
@@ -877,14 +852,20 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
-: ${log_logfile:=/var/log/walterjwhite/remote}
-: ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
-: ${conf_remote_vpn_client_table_name:=vpn_client}
-: ${conf_remote_interface_name:=wg0}
-: ${conf_remote_service_start_cmd:=wg-quick up wg0}
-: ${conf_remote_service_stop_cmd:=wg-quick down wg0}
-: ${conf_remote_vpn_client_table_name:=vpn_client}
-: ${conf_remote_service_cmd:=systemctl}
+: ${conf_videos_audio_format:=aac}
+: ${conf_videos_youtube_download_cmd:=yt-dlp}
+: ${conf_videos_movie_trailer_fetch_count:=10}
+: ${conf_videos_movie_trailer_genre:=Action}
+: ${conf_videos_movie_trailer_region:=US}
+: ${conf_videos_movie_trailer_language:=en-US}
+: ${conf_videos_movie_trailer_days_back:=90}
+: ${conf_videos_movie_trailer_days_ahead:=90}
+: ${conf_videos_movie_trailer_min_votes:=10}
+: ${conf_videos_yt_days_back:=7}
+: ${conf_videos_yt_max_results:=50}
+: ${conf_videos_yt_max_pages:=5}
+: ${conf_videos_yt_order:=date}
+: ${conf_videos_yt_type:=video}
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3
@@ -939,33 +920,17 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly ACTUAL_ARGUMENT_COUNT=$#
-readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
-[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
-arg_index=1
-while [ $arg_index -le $DISCOVERED_ARGUMENT_COUNT ]; do
-	_argument_name=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/:.*$//')
-	_argument_message=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/^.*://')
-	if [ -z "$1" ]; then
-		log_warn "$arg_index:$_argument_message was not provided"
-	else
-		log_debug "$arg_index:$_argument_name=$1"
-		eval "$_argument_name=\"$1\""
-		shift
-	fi
-	arg_index=$(($arg_index + 1))
-done
-[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && exit_with_error "missing arguments"
-unset arg_index _argument_name _argument_message
-readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
-log_debug "remaining args: $*"
+readonly REQUIRED_APP_CONF="conf_videos_youtube_channels conf_videos_yt_api_key"
+_cfg_validate_required
 wait_waitee_init
 wait_waiter
-log_warn "setting path to: $conf_remote_callback_path"
-log_info "$_FUNCTION_CALL $*"
-exec_call $_FUNCTION_CALL "$@" || {
-  function_exit_status=$?
-  [ $function_exit_status -eq 255 ] && exit_with_error "$_FUNCTION_CALL undefined: 255" 255
-  exit_with_error "$_FUNCTION_CALL returned: $function_exit_status" $function_exit_status
+_youtube_fetch_channels() {
+  for youtube_channel_id in $conf_videos_youtube_channels; do
+    _youtube_fetch_channel | _youtube_filter | while read -r youtube_video_id; do
+      _youtube_download
+    done
+  done
 }
-readonly REQUIRED_APP_CONF="conf_remote_proxy_service_name conf_remote_service_start_action conf_remote_service_stop_action"
+_published_after=$(_compute_published_after) || exit_with_error "could not compute 'published after' date."
+log_info "fetching videos published after: ${_published_after}"
+_youtube_fetch_channels

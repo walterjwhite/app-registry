@@ -12,11 +12,27 @@ Linux | FreeBSD)
 		prefs.js session.json sessionCheckpoints.json SiteSecurityServiceState.txt \
 		xulstore.json"
   if [ -e "$provider_path" ] && [ -e ~/.thunderbird/installs.ini ]; then
-    thunderbird_instance_path=$(grep Default ~/.thunderbird/installs.ini | sed -e 's/^.*=//')
-    thunderbird_message_filters=$(find "$provider_path"/$thunderbird_instance_path -type f -name msgFilterRules.dat | sed -e "s/^.*$thunderbird_instance_path/$thunderbird_instance_path/" | tr '\n' ' ')
-    provider_include="$provider_include $thunderbird_message_filters"
-    for thunderbird_file in $thunderbird_profile_files; do
-      provider_include="$provider_include $thunderbird_instance_path/$thunderbird_file"
+    for thunderbird_instance_path in $(grep Default ~/.thunderbird/installs.ini | sed -e 's/^.*=//'); do
+      [ ! -e "$provider_path"/$thunderbird_instance_path ] && {
+        log_warn "removing invalid instance reference: $thunderbird_instance_path"
+        awk -v thunderbird_instance_path="$thunderbird_instance_path" '
+        /^\[/ {
+          if (!drop) printf "%s", buf
+          buf = $0 "\n"
+          drop = 0
+          next
+        }
+        $0 == "Default=" target { drop = 1 }
+        { buf = buf $0 "\n" }
+        END { if (!drop) printf "%s", buf }
+      ' ~/.thunderbird/installs.ini >~/.thunderbird/installs.ini.new && mv ~/.thunderbird/installs.ini.new ~/.thunderbird/installs.ini
+        continue
+      }
+      thunderbird_message_filters=$(find "$provider_path"/$thunderbird_instance_path -type f -name msgFilterRules.dat | sed -e "s|^.*$thunderbird_instance_path|$thunderbird_instance_path|" | tr '\n' ' ')
+      provider_include="$provider_include $thunderbird_message_filters"
+      for thunderbird_file in $thunderbird_profile_files; do
+        provider_include="$provider_include $thunderbird_instance_path/$thunderbird_file"
+      done
     done
   fi
   ;;

@@ -224,4 +224,3 @@ _browser_socks_proxy() {
 _browser_cleanup() {
   rm -rf /tmp/.org,chromium.*
 }
-readonly REQUIRED_APP_CONF="conf_install_CACHE_PATH"

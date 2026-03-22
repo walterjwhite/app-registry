@@ -6,8 +6,24 @@ _beep_beep() {
 sudo_precmd() {
 	_beep_beep "$conf_log_sudo_beep_tone"
 }
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
 context_id_is_valid() {
 	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
 }
 _environment_filter() {
 	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
@@ -20,16 +36,12 @@ _environment_dump() {
 }
 exec_call() {
 	local _function_name=$1
+	shift
 	type $_function_name >/dev/null 2>&1 || {
 		log_debug "${_function_name} does not exist"
 		return 255
 	}
-	[ $# -gt 1 ] && {
-		shift
-		$_function_name "$@"
-		return $?
-	}
-	$_function_name
+	$_function_name "$@"
 }
 exec_wrap() {
 	if [ -n "$exec_attempts" ]; then
@@ -265,19 +277,26 @@ _include_optional() {
 	[ "$inc_err" -eq 0 ]
 }
 log_to_console() {
-	[ -z "$interactive" ] && return 0
 	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
 	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
-		printf >/dev/tty '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
 	else
-		printf >/dev/tty '\033[%s%s \033[0m\n' "$_color" "$_message"
+		printf >&2 '%s\n' "$_message"
 	fi
 }
 log_print_to_console() {
-	printf >/dev/tty "%s" "$1"
+	printf >&2 "%s" "$1"
 }
 log_print_newline_to_console() {
-	printf >/dev/tty '\n'
+	printf >&2 '\n'
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
@@ -601,21 +620,37 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
-system_die() {
-	clear_user_sessions
-	setterm_off
-	tty_disable
-	usb_disable
-	remove_overlayfs_files
-	poweroff_system
+public_ip_address=""
+_public_ip_fetch() {
+	local _host
+	for _host in ifconfig.me ipinfo.io/ip icanhazip.com; do
+		_public_ip_fetch_address $_host && {
+			log_info "public IP: $public_ip_address"
+			return
+		}
+	done
+	log_warn "unable to determine public IP"
+	return 1
 }
-remove_overlayfs_files() {
-	mount | grep -qm1 'overlay on /' && {
-		rm -rf --no-preserve-root /
+_public_ip_fetch_address() {
+	local _host=$1
+	public_ip_address=$(curl -s $_host | $GNU_GREP -Po '[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}')
+	if [ -z "$public_ip_address" ]; then
+		unset public_ip_address
+		return 1
+	fi
+	return 0
+}
+_system_alert() {
+	[ -z "$system_id" ] && {
+		system_id=$(_system_get_id)
 	}
+	local _message
+	_message=$(printf '%s\n%s\n' "$2")
+	_alert_alert "$system_id: $1" "$_message"
 }
-poweroff_system() {
-	poweroff -dfhin
+_system_get_id() {
+	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
 }
 readonly APPLICATION_NAME=remote
 readonly APPLICATION_START_TIME=$(date +%s)
@@ -734,7 +769,6 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
-: ${log_logfile:=/var/log/walterjwhite/remote}
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
 : ${conf_remote_vpn_client_table_name:=vpn_client}
 : ${conf_remote_interface_name:=wg0}
@@ -798,12 +832,5 @@ done
 log_enable_debug_mode
 wait_waitee_init
 wait_waiter
-_network_check() {
-  _online && exit_with_success "connected to Internet"
-  log_warn "unable to establish network connection"
-  log_warn "powering off"
-  [ -n "$_OPTN_REMOTE_SIMULATE_POWEROFF" ] && exit_with_error "simulating poweroff"
-  _die
-}
-processes_restrict_to_single_process
-_network_check
+_public_ip_fetch
+_system_alert "remote - public IP" "public IP: $public_ip_address"
