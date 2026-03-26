@@ -1,0 +1,748 @@
+#!/bin/sh
+_beep_beep() {
+	[ $# -eq 0 ] && return 1
+	if [ -n "$beeping" ]; then
+		log_debug "another 'beep' is in progress"
+		return 2
+	fi
+	beeping=1
+	_do_beep "$@" &
+}
+_do_beep() {
+	powershell "[console]::beep($1)"
+	unset beeping
+}
+_cfg_validate_required() {
+	[ -n "$REQUIRED_APP_CONF" ] && {
+		for required_app_conf_element in $REQUIRED_APP_CONF; do
+			_environment_variable_is_set $required_app_conf_element || {
+				log_warn "required configuration unset: $required_app_conf_element"
+				missing_required_conf=1
+			}
+		done
+		if [ -n "$missing_required_conf" ]; then
+			exit_with_error "required configuration is missing, please refer to above error(s)"
+		fi
+	}
+}
+context_id_is_valid() {
+	printf '%s' "$1" | $GNU_GREP -Pq '^[a-zA-Z0-9_+-]+$' || exit_with_error "context ID *MUST* only contain alphanumeric characters and +-: '^[a-zA-Z0-9_+-]+$' | ($1)"
+}
+_environment_variable_is_set() {
+	set | grep -cqm1 "^$1=.*$"
+}
+_environment_filter() {
+	$GNU_GREP -P "(^conf_|^optn_|^install_|^${target_application_name}_)"
+}
+_environment_dump() {
+	[ -z "$application_pipe_dir" ] && return
+	[ -z "$environment_file" ] && environment_file=$application_pipe_dir/environment
+	mkdir -p $(dirname $environment_file)
+	set | _environment_filter | sort -u | grep -v '^$' | sed -e 's/=/="/' -e 's/$/"/' >>$environment_file
+}
+exec_call() {
+	local _function_name=$1
+	shift
+	type $_function_name >/dev/null 2>&1 || {
+		log_debug "${_function_name} does not exist"
+		return 255
+	}
+	$_function_name "$@"
+}
+exec_wrap() {
+	if [ -n "$exec_attempts" ]; then
+		local _attempt=1
+		while [ $_attempt -le $exec_attempts ]; do
+			[ $_attempt -gt 1 ] && [ -n "$exec_delay" ] && sleep $exec_delay
+			warn_on_error=1 _exec_do_exec "$@" && return
+			_attempt=$(($_attempt + 1))
+		done
+		exit_with_error "failed after $_attempt attempts: $*"
+	fi
+	_exec_do_exec "$@"
+}
+_exec_do_exec() {
+	local _successful_exit_status=0
+	if [ -n "$successful_exit_status" ]; then
+		_successful_exit_status=$successful_exit_status
+		unset successful_exit_status
+	fi
+	log_info "$*"
+	local _exit_status
+	if [ -z "$dry_run" ]; then
+		if [ -z "$log_logfile" ]; then
+			"$@"
+			_exit_status=$?
+		else
+			"$@" 2>&1 | sed -u 's/^/    /' | tee -a "$log_logfile"
+			_exit_status=$?
+		fi
+	else
+		log_warn "using dry run status: $dry_run"
+		_exit_status=$dry_run
+	fi
+	if [ $_exit_status -ne $_successful_exit_status ]; then
+		if [ -n "$on_failure" ]; then
+			$on_failure
+			return
+		fi
+		if [ -z "$warn_on_error" ]; then
+			exit_with_error "previous cmd failed: $* - $_exit_status"
+		else
+			unset warn_on_error
+			log_warn "previous cmd failed: $* - $_exit_status"
+			environment_file=$(_mktemp_mktemp error) _environment_dump
+			return $_exit_status
+		fi
+	fi
+}
+exit_with_error() {
+	[ -n "$exit_status" ] && return
+	if [ $# -ge 2 ]; then
+		exit_status=$2
+	else
+		exit_status=1
+	fi
+	[ -n "$3" ] && {
+		_exit_print_line $3
+	}
+	exit_log_level=4
+	exit_status_code="ERR"
+	exit_color_code="$conf_log_c_err"
+	exit_message="$1 ($exit_status)"
+	exit_beep="$conf_log_beep_err"
+	exit_defer _exit_log_app_exit
+	exit_defer _environment_dump
+	_exit_run_defers
+	exit $exit_status
+}
+exit_with_success() {
+	[ -n "$exit_status" ] && return
+	exit_status=0
+	exit_log_level=1
+	exit_status_code="SCS"
+	exit_color_code="$conf_log_c_scs"
+	exit_message="$1"
+	[ -z "$exit_message" ] && exit_message="success"
+	exit_beep="$conf_log_beep_scs"
+	exit_defer _alert_long_running_cmd
+	exit_defer _exit_log_app_exit
+	_exit_run_defers
+	exit $exit_status
+}
+_exit_on_hup() {
+	log_info "hup received"
+}
+_exit_on_int() {
+	exit_with_error "interrupted" $? $1
+}
+_exit_on_quit() {
+	exit_with_error "quit" $? $1
+}
+_exit_on_illegal() {
+	exit_with_error "illegal instruction" $? $1
+}
+_exit_on_abort() {
+	exit_with_error "abort" $? $1
+}
+_exit_on_alarm() {
+	exit_with_error "alarm" $? $1
+}
+_exit_on_term() {
+	exit_with_error "term" $? $1
+}
+_exit_print_line() {
+	log_warn "unhandled error"
+	local _exception_line
+	_exception_line=$($GNU_SED -n "${1}p" $0)
+	printf '  %s @ %s:%s\n' "$_exception_line" $0 $1
+}
+exit_defer() {
+	log_debug "deferring: $*"
+	if [ $# -gt 1 ]; then
+		local _defer_with_args
+		_defer_with_args=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+		exit_defers="$_defer_with_args $exit_defers"
+	else
+		exit_defers="$1 $exit_defers"
+	fi
+}
+exit_undefer() {
+	log_debug "undeferring: $*"
+	local _undefer_target
+	if [ $# -gt 1 ]; then
+		_undefer_target=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+	else
+		_undefer_target="$1"
+	fi
+	local _new_defers=""
+	local _defer
+	for _defer in $exit_defers; do
+		if [ "$_defer" != "$_undefer_target" ]; then
+			_new_defers="$_defer $_new_defers"
+		fi
+	done
+	exit_defers=""
+	for _defer in $_new_defers; do
+		exit_defers="$_defer $exit_defers"
+	done
+}
+_exit_run_defers() {
+	[ -z "$exit_defers" ] && return 1
+	for exit_defer in $exit_defers; do
+		case "$exit_defer" in
+		*:*)
+			local _func_name=$(printf '%s' "$exit_defer" | cut -d':' -f1)
+			local _args=$(printf '%s' "$exit_defer" | cut -d':' -f2 | tr ',' ' ')
+			exec_call $_func_name $_args
+			;;
+		*)
+			exec_call $exit_defer
+			;;
+		esac
+	done
+	unset exit_defers
+}
+_exit_log_app_exit() {
+	[ "$exit_message" ] && {
+		_exit_disable_beep
+		log_print_log $exit_log_level "$exit_status_code" "$exit_color_code" "$exit_beep" "$exit_message"
+	}
+	log_app exit
+	[ -n "$log_logfile" ] && [ -n "$optn_log_exit_cmd" ] && {
+		$optn_log_exit_cmd -file $log_logfile
+	}
+}
+_exit_disable_beep() {
+	[ -z "$APPLICATION_START_TIME" ] && {
+		unset exit_beep
+		return
+	}
+	local _current_time=$(date +%s)
+	local _timeout=$(($APPLICATION_START_TIME + $conf_log_beep_timeout))
+	[ $_current_time -ge $_timeout ] && return
+	unset exit_beep
+}
+_help_print() {
+	if [ -e $2 ]; then
+		log_info "$1:"
+		cat $2
+		printf '\n'
+	fi
+}
+_help_print_and_exit() {
+	_help_print 'system-wide options' $LIBRARY_PATH/install/help/default
+	if [ "$APPLICATION_NAME" != "install" ]; then
+		_help_print $APPLICATION_NAME $LIBRARY_PATH/$APPLICATION_NAME/help/default
+		_help_print "$APPLICATION_NAME/$APPLICATION_CMD" $LIBRARY_PATH/$APPLICATION_NAME/help/$APPLICATION_CMD
+	fi
+	exit 0
+}
+file_require() {
+	local _filename=$1
+	local _message=$2
+	validation_require "$_filename" "filename file_require"
+	[ -e "$_filename" ] && return
+	[ -z "$warn_on_error" ] && exit_with_error "file: $_filename does not exist | $_message"
+	log_warn "file: $_filename does not exist | $_message"
+	return 1
+}
+_file_readlink() {
+	local _path=$1
+	if [ $# -lt 1 ] || [ -z "$_path" ]; then
+		return 1
+	fi
+	if [ "$_path" = "/" ]; then
+		printf '%s\n' "$_path"
+		return
+	fi
+	if [ ! -e "$_path" ]; then
+		if [ -z $mkdir ] || [ $mkdir -eq 1 ]; then
+			mkdir -p "$_path" >/dev/null 2>&1
+		fi
+	fi
+	readlink -f "$_path"
+}
+_include_optional() {
+	inc_err=0
+	inc_dir="$HOME/.config/walterjwhite/shell"
+	for inc_file in "$@"; do
+		case "$inc_file" in
+		*/*) ;;
+		*)
+			inc_file="$inc_dir/$inc_file"
+			;;
+		esac
+		if [ -f "$inc_file" ] && . "$inc_file"; then
+			:
+		else
+			inc_err=$(($inc_err + 1))
+		fi
+	done
+	unset inc_file inc_dir
+	[ "$inc_err" -eq 0 ]
+}
+log_to_console() {
+	local _color=$1 _event_date_time=$2 _message=$3
+	[ -n "$interactive" ] && {
+		if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+			printf >&2 '\033[%s%s - %s \033[0m\n' "$_color" "$_event_date_time" "$_message"
+		else
+			printf >&2 '\033[%s%s \033[0m\n' "$_color" "$_message"
+		fi
+		return
+	}
+	if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+		printf >&2 '%s - %s\n' "$_event_date_time" "$_message"
+	else
+		printf >&2 '%s\n' "$_message"
+	fi
+}
+log_print_to_console() {
+	printf >&2 "%s" "$1"
+}
+log_print_newline_to_console() {
+	printf >&2 '\n'
+}
+log_add_context() {
+	[ -z "$1" ] && return 1
+	case "$1" in
+	*:*)
+		exit_with_error "context string contains colon, which is not allowed"
+		;;
+	esac
+	if [ -z "$logging_context" ]; then
+		logging_context="$1"
+	else
+		logging_context="${logging_context}:$1"
+	fi
+}
+log_remove_context() {
+	[ -z "$logging_context" ] && return 1
+	case $logging_context in
+	*:*)
+		logging_context=$(printf '%s' "$logging_context" | sed -e 's/\:[a-zA-Z0-9/@\. _-]*$//')
+		;;
+	*)
+		unset logging_context
+		;;
+	esac
+}
+log_to_file() {
+	[ -z "$log_logfile" ] && return 0
+	printf '%s %s %s\n' "$1" "$2" "$3" >>$log_logfile
+}
+log_open_logfile() {
+	less +G $log_logfile
+}
+log_move_logfile() {
+	[ -z "$1" ] && return
+	[ -z "$log_logfile" ] && {
+		log_set_logfile "$1"
+		return
+	}
+	local original_logfile="$log_logfile"
+	local original_fifo_pid="$log_fifo_pid"
+	log_reset_logging
+	log_set_logfile "$1"
+	if [ -f "$original_logfile" ] && [ "$original_logfile" != "$log_logfile" ]; then
+		cat "$original_logfile" >>"$log_logfile"
+		rm -f "$original_logfile"
+	fi
+}
+log_set_logfile() {
+	[ -z "$1" ] && return
+	log_logfile="$(_file_readlink $(dirname $1))/$(basename $1)"
+	mkdir -p $(dirname $log_logfile)
+	log_to_console "${conf_log_c_wrn}" "        writing logs to ${log_logfile}${log_msg}"
+}
+log_warn() {
+	log_print_log 3 WRN "${conf_log_c_wrn}" "${conf_log_beep_wrn}" "$1"
+}
+log_info() {
+	log_print_log 2 INF "${conf_log_c_info}" "${conf_log_beep_info}" "$1"
+}
+log_detail() {
+	log_print_log 2 DTL "${conf_log_c_detail}" "${conf_log_beep_detail}" "$1"
+}
+log_debug() {
+	log_print_log 1 DBG "${conf_log_c_debug}" "${conf_log_beep_debug}" "($$) $1"
+}
+log_colorize_text() {
+	printf '\033[%s%s\033[0m' "$1" "$2"
+}
+log_sanitize_input() {
+	sed -e 's/\x1b\[[0-9;]*[mGKH]//g' -e 's/[^[:print:][:space:]]//g' -e 's/  */ /g' -e 's/^ //' -e 's/ $//'
+}
+log_init() {
+	[ -n "$log_logfile" ] && log_set_logfile "$log_logfile"
+	if [ -n "$add_log_context" ]; then
+		log_add_context "$add_log_context"
+		unset add_log_context
+	fi
+	log_enable_debug_mode
+}
+log_enable_debug_mode() {
+	[ "$conf_log_level" -gt 0 ] && {
+		set +x
+		return
+	}
+	[ -z "$log_logfile" ] && {
+		log_msg=" - DEBUG"
+		log_set_logfile "$(_mktemp_mktemp debug)" || return 1
+	}
+	set -x
+}
+log_print_log() {
+	local _level=$1 _level_str=$2 _color=$3 _tone=$4 _message="$5"
+	[ $_level -lt $conf_log_level ] && return 0
+	[ -n "$logging_context" ] &&
+		_message="${logging_context} - ${_message}"
+	[ -n "$_tone" ] && [ $beep_enabled -eq 1 ] && _beep_beep "$_tone"
+	local log_event_date_time="$(date '+%Y/%m/%d %H:%M:%S')"
+	log_to_file "$_level_str" "$log_event_date_time" "$_message"
+	log_to_console "$_color" "$log_event_date_time" "$_message"
+	log_user_log "$_level_str" "$log_event_date_time" "$_message"
+	[ -n "$log_syslog" ] && _syslog_syslog "$_message"
+	return 0
+}
+log_app() {
+	log_debug "$APPLICATION_NAME:$APPLICATION_CMD - $1 ($$)"
+}
+log_user_log() { :; }
+_metadata_load() {
+	[ -f $APP_LIBRARY_PATH/.metadata ] || return 1
+	. $APP_LIBRARY_PATH/.metadata
+}
+_mktemp_mktemp() {
+	local _suffix=$1
+	[ -n "$_suffix" ] && _suffix=".$_suffix"
+	mktemp -${_mktemp_options}t ${APPLICATION_NAME}.${APPLICATION_CMD}${_suffix}.XXXXXXXX
+}
+platform_is_supported() {
+	case $APP_PLATFORM_PLATFORM in
+	$APP_PLATFORM_PLATFORM)
+		return 0
+		;;
+	*)
+		printf '%s\n' "$APP_PLATFORM_SUPPORTED_PLATFORMS" | tr ' ' '\n' | grep -cqm1 "^$APP_PLATFORM_PLATFORM$" && {
+			exit_with_error "please use the appropriate platform application: ($APP_PLATFORM_PLATFORM)"
+		}
+		exit_with_error "unsupported platform ($APP_PLATFORM_PLATFORM)"
+		;;
+	esac
+}
+processes_restrict_to_single_process() {
+	_processes_has_other_instances && {
+		exit_with_error "$APPLICATION_CMD is restricted to a single instance and another instance is running"
+	}
+	processes_setup_app_pipe
+}
+_processes_has_other_instances() {
+	find $APPLICATION_CMD_DIR -maxdepth 1 -type p ! -name $$ 2>/dev/null | grep -qm1 '.'
+}
+processes_setup_app_pipe() {
+	mkdir -p $APPLICATION_PIPE_DIR
+	mkfifo $APPLICATION_PIPE
+	exit_defer processes_cleanup_app_pipe
+}
+processes_cleanup_app_pipe() {
+	rm -rf $APPLICATION_PIPE_DIR
+}
+_processes_is_backgrounded() {
+	return 1
+}
+_syslog_syslog() {
+	:
+}
+sudo_run() {
+	runas "$@"
+}
+time_timeout() {
+	local _timeout=$1
+	shift
+	local _message=$1
+	shift
+	local _timeout_units='s'
+	if [ $(printf '%s' "$_timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+		unset _timeout_units
+	fi
+	local _sudo
+	[ -n "$sudo_required" ] || [ -n "$sudo_user" ] && _sudo=sudo_run
+	$_sudo timeout $options $_timeout "$@" || {
+		local _error_status=$?
+		local _error_message="Other error"
+		if [ $_error_status -eq 124 ]; then
+			_error_message="Timed Out"
+		fi
+		[ $timeout_err_function ] && $timeout_err_function
+		local timeout_error_msg="time_timeout: $_error_message: ${_timeout}${_timeout_units} - $_message ($_error_status): $_sudo timeout $options $_timeout $* ($USER)"
+		[ $warn_on_error ] && {
+			log_warn "$timeout_error_msg"
+			return $_error_status
+		}
+		exit_with_error "$timeout_error_msg"
+	}
+}
+wait_waitee_init() {
+	[ -z "$WAIT_WAITEE" ] && return
+	processes_setup_app_pipe
+	log_warn "please use -w=$$ ($APPLICATION_CMD)"
+	exit_defer wait_waitee_done
+}
+wait_waitee_done() {
+	[ -z "$WAIT_WAITEE" ] && return
+	[ -e $application_pipe ] || return
+	log_info "$0 process completed, notifying ($exit_status)"
+	printf '%s\n' "$exit_status" >$application_pipe
+	log_info "$0 downstream process picked up"
+}
+wait_waiter() {
+	local _upstream_application_pipe
+	local _upstream_application_status
+	local _upstream_status
+	[ -z "$wait_waiter_pid" ] && return
+	_upstream_application_pipe=$(find $APPLICATION_CONTEXT_GROUP -type p -name $wait_waiter_pid 2>/dev/null | head -1)
+	[ -z "$_upstream_application_pipe" ] && exit_with_error "$wait_waiter_pid not found"
+	[ ! -e $_upstream_application_pipe ] && {
+		log_warn "$_upstream_application_pipe does not exist, did upstream start?"
+		return
+	}
+	log_info "waiting for upstream to complete: $wait_waiter_pid"
+	while :; do
+		if [ ! -e $_upstream_application_pipe ]; then
+			exit_with_error "upstream pipe no longer exists"
+		fi
+		_upstream_application_status=$(time_timeout $conf_wait_interval "wait_waiter:upstream" cat $_upstream_application_pipe 2>/dev/null)
+		_upstream_status=$?
+		if [ $_upstream_status -eq 0 ]; then
+			if [ -z "$_upstream_application_status" ] || [ $_upstream_application_status -gt 0 ]; then
+				exit_with_error "upstream exited with exit_with_error ($_upstream_application_status)"
+			fi
+			log_warn "upstream finished: $_upstream_application_pipe ($_upstream_status)"
+			break
+		fi
+		log_detail "upstream is still running: $_upstream_application_pipe ($_upstream_status)"
+		sleep 1
+	done
+}
+validation_require() {
+	[ -n "$1" ] && return
+	[ -n "$warn_on_error" ] && {
+		log_warn "$2 required $required_message" $3
+		return 1
+	}
+	exit_with_error "$2 required $required_message" $3
+}
+_mail_send() {
+	[ -n "$conf_log_mail_disabled" ] && {
+		log_warn "mail is disabled"
+		return 1
+	}
+	if [ $# -lt 3 ]; then
+		log_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+		return 2
+	fi
+	local _recipients
+	_recipients=$(printf '%s' "$1" | tr '|' ' ')
+	shift
+	local _subject
+	_subject="$1"
+	shift
+	local _message
+	_message="$1"
+	shift
+	printf '%s\n' "$_message" | mail -s "$_subject" $_recipients
+}
+_alert_alert() {
+	local _recipients
+	local _subject
+	local _log_color
+	case $exit_status in
+	0)
+		_log_color=$conf_log_c_scs
+		;;
+	*)
+		_log_color=$conf_log_c_err
+		;;
+	esac
+	log_print_log 5 ALRT "$_log_color" "$conf_log_beep_alrt" "$1"
+	_recipients="$optn_log_alert_recipients"
+	_subject="Alert: $0 - $1"
+	if [ -z "$_recipients" ]; then
+		log_debug "recipients is empty, aborting"
+		return 1
+	fi
+	_mail_send "$_recipients" "$_subject" "$2"
+}
+_alert_long_running_cmd() {
+	[ -n "$optn_disable_long_running_cmd_notification" ] && return
+	local _application_end_time
+	local _application_runtime
+	local _subject
+	local _message
+	_application_end_time=$(date +%s)
+	_application_runtime=$(($_application_end_time - $APPLICATION_START_TIME))
+	[ $_application_runtime -lt $conf_log_long_running_cmd ] && return
+	_subject="[$APPLICATION_NAME] - $exit_message - ($exit_status)"
+	_message=""
+	if [ -n "$log_logfile" ]; then
+		_message=$(tail -$conf_log_long_running_cmd_lines $log_logfile)
+	fi
+	_alert_alert "$_subject" "$_message"
+}
+readonly APPLICATION_NAME=media-management
+readonly APPLICATION_START_TIME=$(date +%s)
+readonly APPLICATION_CMD=$(basename $0)
+readonly APP_PLATFORM_ARCHITECTURE=$(uname -m)
+readonly APP_PLATFORM_OS_NAME=$(uname)
+case "$APP_PLATFORM_OS_NAME" in
+Darwin)
+	readonly APP_PLATFORM_PLATFORM="Apple"
+	;;
+MINGW64_NT-*)
+	readonly APP_PLATFORM_PLATFORM="Windows"
+	;;
+*)
+	readonly APP_PLATFORM_PLATFORM="$APP_PLATFORM_OS_NAME"
+	;;
+esac
+if [ -z "$APP_PLATFORM_ROOT" ]; then
+	APP_PLATFORM_ROOT=/
+else
+	APP_PLATFORM_ROOT=$(_file_readlink $APP_PLATFORM_ROOT)
+fi
+readonly CACHE_PATH=$HOME/.cache
+readonly CONFIG_PATH=$HOME/.config/walterjwhite/shell
+readonly DATA_PATH=$HOME/.data
+readonly RUN_PATH=/tmp/$USER/walterjwhite/app
+readonly APP_CONTEXT="default"
+readonly APPLICATION_CONTEXT_GROUP=$RUN_PATH/$APP_CONTEXT
+readonly APPLICATION_CMD_DIR=$APPLICATION_CONTEXT_GROUP/$APPLICATION_NAME/$APPLICATION_CMD
+readonly APPLICATION_PIPE=$APPLICATION_CMD_DIR/$$
+readonly APPLICATION_PIPE_DIR=$(dirname $APPLICATION_PIPE)
+if command -v winget >/dev/null 2>&1; then
+	log_warn "found winget"
+elif command -v choco >/dev/null 2>&1; then
+	log_warn "found chocolatey"
+elif command -v scoop >/dev/null 2>&1; then
+	log_warn "found scoop"
+else
+	exit_with_error "no package manager found"
+fi
+: ${IO_STAT_ARGS:='-c %a'}
+: ${SOFTWARE_CENTER_EXECUTABLE:="C:/Windows/CCM/ClientUX/scclient.exe"}
+readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$BIN_PATH | tr -s /)
+readonly APP_PLATFORM_CACHE_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$CACHE_PATH | tr -s /)
+readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$CONFIG_PATH | tr -s /)
+readonly APP_PLATFORM_DATA_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$DATA_PATH | tr -s /)
+readonly APP_PLATFORM_LIBRARY_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$LIBRARY_PATH | tr -s /)
+readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
+readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
+readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+_include_optional beep context logging media-management net paths platform wait
+_metadata_load
+: ${beep_enabled:=0}
+conf_log_beep_timeout=5
+: ${APP_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${APP_CONTEXT:=default}
+: ${conf_log_c_err:="1;31m"}
+: ${conf_log_c_scs:="1;32m"}
+: ${conf_log_c_wrn:="1;33m"}
+: ${conf_log_c_info:="1;36m"}
+: ${conf_log_c_detail:="1;0;36m"}
+: ${conf_log_c_debug:="1;35m"}
+: ${conf_log_c_stdin:="1;34m"}
+: ${conf_log_date_format:="%y/%m/%d|%h:%m:%s"}
+: ${conf_log_date_time_format:="%y/%m/%d %h:%m:%s"}
+: ${conf_log_level:=2}
+: ${conf_log_indent:="  "}
+: ${conf_log_validation_function:=warn}
+: ${conf_log_waiter_level:=debug}
+: ${conf_log_feature_timeout_error_level:=warn}
+: ${conf_log_long_running_cmd:=30}
+: ${conf_log_long_running_cmd_lines:=1000}
+: ${conf_log_date_time_to_console:=0}
+which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
+[ -t 2 ] && [ -c /dev/tty ] && interactive=1
+: ${conf_network_test_timeout:=5}
+: ${conf_network_test_targets:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${conf_log_beep_err:='500,400'}
+: ${conf_log_beep_alrt:='600,200'}
+: ${conf_log_beep_SCS:='700,100'}
+: ${conf_log_beep_wrn:=''}
+: ${conf_log_beep_info:=''}
+: ${conf_log_beep_detail:=''}
+: ${conf_log_beep_debug:=''}
+: ${conf_log_beep_stdin:='700,200'}
+readonly PLATFORM_SYSTEM_ID_PATH=$HOME/.local/walterjwhite/system
+: ${conf_wait_interval:=30}
+trap '_exit_on_hup $LINENO' 1
+trap '_exit_on_int $LINENO' 2
+trap '_exit_on_quit $LINENO' 3
+trap '_exit_on_illegal $LINENO' 4
+trap '_exit_on_abort $LINENO' 6
+trap '_exit_on_alarm $LINENO' 14
+trap '_exit_on_term $LINENO' 15
+trap exit_with_success 0
+_processes_is_backgrounded && backgrounded=1
+log_init
+for _ARG in "$@"; do
+	case $_ARG in
+	-h | --help)
+		_help_print_and_exit
+		;;
+	-w=*)
+		wait_waiter_pid="${1#*=}"
+		shift
+		;;
+	-w)
+		readonly WAIT_WAITEE=1
+		shift
+		;;
+	-conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
+		_configuration_name=${_ARG#*-}
+		_configuration_name=${_configuration_name%%=*}
+		printf '%s' "$_configuration_name" | grep -cqm1 '_$' && {
+			_configuration_name=${_configuration_name%%_*}
+			printf '%s' "$_configuration_name" | grep -cqm1 '^conf' && {
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$APPLICATION_NAME-/" -e 's/--/-/')
+			} || {
+				_configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$APPLICATION_NAME-/" -e 's/--/-/')
+			}
+		}
+		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
+			_configuration_value=1
+		else
+			_configuration_value=${_ARG#*=}
+		fi
+		eval "${_configuration_name}=\"$_configuration_value\""
+		unset _configuration_name _configuration_value
+		shift
+		;;
+	--last-arg)
+		shift
+		break
+		;;
+	*)
+		break
+		;;
+	esac
+done
+log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_log_beep_scs"
+_cfg_validate_required
+wait_waitee_init
+wait_waiter
+cd /media/output
+_media_extension() {
+  for file in $(grep '.jpeg$' ~/Desktop/media.links); do
+    new_file=$(printf '%s' "$file" | sed -e 's/\.jpeg$/\.jpg/')
+    mkdir -p $(dirname "$new_file")
+    mv -n "$file" "$new_file"
+    git annex add "$new_file"
+  done
+}
+_media_extension

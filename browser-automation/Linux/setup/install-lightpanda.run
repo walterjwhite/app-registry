@@ -1,5 +1,46 @@
 #!/bin/sh
-download_file=""
+_github_latest_release() {
+	[ -z "$4" ] && {
+		get_latest_${1}_version
+		return
+	}
+	curl -sL https://api.github.com/repos/$2/$3/releases/latest | jq -r "$4"
+}
+_github_fetch() {
+	local download_url=$(curl -s https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3")
+	[ -z "$download_url" ] && {
+		log_warn "no matching artifact found"
+		return 1
+	}
+	_download_fetch "$download_url" $4-$5
+}
+_github_install_latest() {
+	local function_name=$(printf '%s' $1 | tr '-' '_')
+	local latest_version=$(_github_latest_release "$function_name" "$2" "$3" "$4")
+	local installed_version=$(get_installed_${function_name}_version)
+	[ "$installed_version" = "$latest_version" ] && {
+		log_detail "$1 is already installed and up-to-date"
+		return
+	}
+	if [ -z "$installed_version" ]; then
+		log_detail "installing $1"
+	else
+		log_detail "updating $1"
+	fi
+	_github_fetch "$2" "$3" "$5" "$6" "$latest_version"
+	[ -z "$7" ] && {
+		log_warn "not installing $download_file"
+		install_$function_name
+		return
+	}
+	_install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/$7
+}
+get_latest_lightpanda_version() {
+	git ls-remote --refs https://github.com/lightpanda-io/browser.git refs/heads/main | cut -f1 | cut -c1-7
+}
+get_installed_lightpanda_version() {
+	lightpanda version 2>&1
+}
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -24,6 +65,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)
@@ -37,19 +79,17 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
-REPO="lightpanda-io/browser"
-API_URL="https://api.github.com/repos/$REPO/releases/latest"
-_download_lightpanda() {
-    local download_url=$(curl -s $API_URL | jq -r '.assets[] | select(.name | test(".*x86_64.*linux.*")) | .browser_download_url')
-    [ -z "$download_url" ] && {
-        log_warn "no 64-bit Linux executable found in the latest release."
-        return 1
-    }
-    _download_fetch "$download_url"
-}
-_install_lightpanda() {
-    _install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/lightpanda
-}
-which lightpanda > /dev/null 2>&1 || {
-    _download_lightpanda && _install_lightpanda
-}
+case $APP_PLATFORM_PLATFORM in
+  Apple)
+    lightpanda_platform=macos
+    ;;
+  FreeBSD)
+    lightpanda_platform=linux
+    ;;
+  *)
+    lightpanda_platform=$(printf '%s' $APP_PLATFORM_PLATFORM | tr '[:upper:]' '[:lower:]')
+    ;;
+esac
+_github_install_latest lightpanda lightpanda-io browser '' \
+    ".assets[] | select(.name | test(\"lightpanda-$APP_PLATFORM_ARCHITECTURE-$lightpanda_platform\")) | .browser_download_url" \
+    lightpanda-$lightpanda_platform-$APP_PLATFORM_ARCHITECTURE lightpanda

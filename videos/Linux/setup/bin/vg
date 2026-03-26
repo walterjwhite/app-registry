@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -466,7 +468,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -648,7 +652,7 @@ _data_app_init() {
 		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
 		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
 			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
-			log_warn "initialized empty project"
+			log_warn "clone failed, initialized empty project"
 			git init $git_project_path
 		}
 	fi

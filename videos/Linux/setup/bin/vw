@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -482,7 +484,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -694,7 +698,7 @@ _data_app_init() {
 		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
 		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
 			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
-			log_warn "initialized empty project"
+			log_warn "clone failed, initialized empty project"
 			git init $git_project_path
 		}
 	fi
@@ -942,23 +946,27 @@ _move_watched_video() {
     _path_remove_empty_directories $conf_videos_download_path
     mkdir -p $(dirname $video_watched_file)
     git mv $video_file $video_watched_file
-    grep -lr "$video_key" downloaded | grep -cqm1 '.' && {
-      log_warn "other instances found, moving those to watched too"
-      watch_date=$(date +%Y/%m/%d)
-      git mv $(grep -lr "$video_key" downloaded) watched/$watch_date
-    }
+    _move_other_downloaded
     _videos_git $video_file $video_watched_file
   fi
   unset _RETAIN
 }
+_move_other_downloaded() {
+  grep -lr "$video_key" downloaded | grep -cqm1 '.' || return
+  log_warn "other instances found, moving those to watched too"
+  watch_date=$(date +%Y/%m/%d)
+  git mv $(grep -lr "$video_key" downloaded) watched/$watch_date
+}
 _watch_specified() {
-  video_file=$1
-  if [ ! -e $video_file ]; then
-    video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' | grep "$video_file")
-  fi
-  if [ -z "$video_media_file" ]; then
+  video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' | grep "$video_id")
+  [ -z "$video_media_file" ] && {
+    local video_date=$(_videos_date)
+    local video_path=error/$video_date
+    mkdir -p $video_path
+    git mv $(git grep -rl "$video_id" downloaded) $video_path
+    _videos_git downloaded $video_path
     return 1
-  fi
+  }
   _watch
 }
 _data_app_init

@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -466,7 +468,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -628,21 +632,30 @@ _youtube_fetch_channel() {
 	_page=1
 	_page_token=""
 	_total=0
+	_all_video_ids=""
+	log_add_context "youtube_fetch_channel"
+	log_add_context "$youtube_channel_id"
 	while true; do
-		log_info "fetching page ${_page} of up to ${conf_videos_yt_max_pages} ..."
+		log_info "fetching page ${_page} of up to ${conf_videos_yt_max_pages}"
 		_page_json=$(yt_search \
 			"$youtube_channel_id" \
 			"$_published_after" \
 			"$_page_token") || exit 1
 		_item_count=$(printf '%s' "$_page_json" | jq '.items | length')
-		log_info "  items on this page: ${_item_count}"
+		log_debug "items on this page: ${_item_count}"
 		if [ "$_item_count" -eq 0 ]; then
-			log_info "  no more items."
+			log_debug "no more items"
 			break
 		fi
 		_idx=0
 		while [ "$_idx" -lt "$_item_count" ]; do
 			_item=$(printf '%s' "$_page_json" | jq ".items[${_idx}]")
+			_video_id=$(printf '%s' "$_item" | jq -r '.id.videoId')
+			if [ -n "$_all_video_ids" ]; then
+				_all_video_ids="${_all_video_ids},${_video_id}"
+			else
+				_all_video_ids="$_video_id"
+			fi
 			_all_json_items=$(printf '%s\n%s' \
 				"$_all_json_items" \
 				"[$_item]" |
@@ -653,33 +666,52 @@ _youtube_fetch_channel() {
 		_next_token=$(printf '%s' "$_page_json" |
 			jq -r '.nextPageToken // empty')
 		if [ -z "$_next_token" ]; then
-			log_info "  no nextPageToken — reached last page."
+			log_debug "no nextPageToken — reached last page"
 			break
 		fi
 		if [ "$_page" -ge "$conf_videos_yt_max_pages" ]; then
-			log_warn "reached max pages (${conf_videos_yt_max_pages}). Stopping."
+			log_debug "reached max pages (${conf_videos_yt_max_pages})"
 			break
 		fi
 		_page_token="$_next_token"
 		_page=$((_page + 1))
 	done
+	if [ -n "$_all_video_ids" ]; then
+		log_debug "fetching durations for ${_total} video(s)"
+		_durations_json=$(_youtube_video_duration "$_all_video_ids")
+		_all_json_items=$(printf '%s' "$_all_json_items" | jq \
+			--argjson durations "$_durations_json" \
+			'map(. + {duration: ("\(.id.videoId)" as $vid | $durations.items[] | select(.id == $vid) | .contentDetails.duration | 
+        gsub("PT"; "") | 
+        gsub("H"; "h") | 
+        gsub("M"; "m") | 
+        gsub("S"; "s") | 
+        if test("h") then (capture("(?<hours>\\d+)h").hours | tonumber) * 3600
+        elif test("m") then (capture("(?<minutes>\\d+)m").minutes | tonumber) * 60
+        elif test("s") then (capture("(?<seconds>\\d+)s").seconds | tonumber)
+        elif test("\\d+h\\d+m") then 
+          (capture("(?<hours>\\d+)h(?<minutes>\\d+)m").hours | tonumber) * 3600 + (capture("(?<hours>\\d+)h(?<minutes>\\d+)m").minutes | tonumber) * 60
+        elif test("\\d+h\\d+s") then 
+          (capture("(?<hours>\\d+)h(?<seconds>\\d+)s").hours | tonumber) * 3600 + (capture("(?<hours>\\d+)h(?<seconds>\\d+)s").seconds | tonumber)
+        elif test("\\d+m\\d+s") then 
+          (capture("(?<minutes>\\d+)m(?<seconds>\\d+)s").minutes | tonumber) * 60 + (capture("(?<minutes>\\d+)m(?<seconds>\\d+)s").seconds | tonumber)
+        elif test("\\d+h\\d+m\\d+s") then 
+          (capture("(?<hours>\\d+)h(?<minutes>\\d+)m(?<seconds>\\d+)s").hours | tonumber) * 3600 + (capture("(?<hours>\\d+)h(?<minutes>\\d+)m(?<seconds>\\d+)s").minutes | tonumber) * 60 + (capture("(?<hours>\\d+)h(?<minutes>\\d+)m(?<seconds>\\d+)s").seconds | tonumber)
+        else 0 end)})')
+	fi
 	printf '%s' "$_all_json_items" | jq '.'
-	log_info "=== Done — ${_total} video(s) found ==="
+	log_info "${_total} video(s) found"
+	log_remove_context
+	log_remove_context
+}
+_youtube_video_duration() {
+	curl -sS -H 'Accept: application/json' \
+		"https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${1}&key=${conf_videos_yt_api_key}"
 }
 _youtube_filter() {
-	local youtube_json_data
-	jq -c '.[]' | while read -r youtube_json_data; do
-		_youtube_filter_each
-	done
-}
-_youtube_filter_each() {
 	youtube_video_id=$(printf '%s\n' "$youtube_json_data" | jq -r '.id.videoId')
-	youtube_video_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.title')
 	youtube_video_channel_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.channelTitle')
-	_youtube_channel_filter && {
-		log_warn "passed $youtube_video_id - $youtube_video_title"
-		printf '%s\n' $youtube_video_id
-	}
+	_youtube_channel_filter
 }
 yt_search() {
 	_channel_id="$1"
@@ -812,6 +844,10 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+readonly TMDB_BASE="https://api.themoviedb.org/3"
+readonly YOUTUBE_BASE="https://www.youtube.com/watch"
+readonly YT_SEARCH_URL="https://www.googleapis.com/youtube/v3/search"
+readonly TMDB_GENRE_MAP="28:Action 12:Adventure 16:Animation 35:Comedy 80:Crime 99:Documentary 18:Drama 10751:Family 14:Fantasy 36:History 27:Horror 10402:Music 9648:Mystery 10749:Romance 878:Science-Fiction 10770:TV-Movie 53:Thriller 10752:War 37:Western"
 _include_optional . beep context logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
@@ -854,13 +890,16 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_movie_trailer_fetch_count:=10}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_movie_trailer_fetch_count:=50}
 : ${conf_videos_movie_trailer_genre:=Action}
 : ${conf_videos_movie_trailer_region:=US}
+: ${conf_videos_movie_trailer_origin_country:=US}
 : ${conf_videos_movie_trailer_language:=en-US}
 : ${conf_videos_movie_trailer_days_back:=90}
 : ${conf_videos_movie_trailer_days_ahead:=90}
 : ${conf_videos_movie_trailer_min_votes:=10}
+: ${conf_videos_movie_trailer_sort_by:=primary_release_date.desc}
 : ${conf_videos_yt_days_back:=7}
 : ${conf_videos_yt_max_results:=50}
 : ${conf_videos_yt_max_pages:=5}
@@ -926,10 +965,19 @@ wait_waitee_init
 wait_waiter
 _youtube_fetch_channels() {
   for youtube_channel_id in $conf_videos_youtube_channels; do
-    _youtube_fetch_channel | _youtube_filter | while read -r youtube_video_id; do
+    _youtube_fetch_channel | jq -c '.[]' | while read -r youtube_json_data; do
+      _youtube_filter || {
+        log_info "skipping"
+        _youtube_after_each
+        continue
+      }
       _youtube_download
+      _youtube_after_each
     done
   done
+}
+_youtube_after_each() {
+  unset extract_audio video_profiles video_tags
 }
 _published_after=$(_compute_published_after) || exit_with_error "could not compute 'published after' date."
 log_info "fetching videos published after: ${_published_after}"

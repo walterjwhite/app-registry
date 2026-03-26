@@ -1,0 +1,16 @@
+#!/bin/sh
+_vscode_install_extensions() {
+	if [ -z "$feature_vscode_extensions" ]; then
+		log_warn "feature_vscode_extensions is empty"
+		return 1
+	fi
+	local normal_user
+	for normal_user in $(getent group wheel | cut -d: -f4); do
+		sudo_user=$normal_user
+		local vscode_extension
+		for vscode_extension in $feature_vscode_extensions; do
+			sudo_run $conf_dev_vscode_executable --install-extension $vscode_extension
+		done
+	done
+}
+_vscode_install_extensions

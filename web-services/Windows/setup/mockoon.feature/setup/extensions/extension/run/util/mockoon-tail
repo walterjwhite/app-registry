@@ -1,0 +1,10 @@
+#!/bin/sh
+escape_sequence=$(printf '\033')
+tail -f $log_logfile |
+	sed -u -e "s,\"level\":\"trace\",${escape_sequence}[34mTRACE${escape_sequence}[0m,"\
+	-e "s,\"level\":\"debug\",${escape_sequence}[35mDEBUG${escape_sequence}[0m,"\
+	-e "s,\"level\":\"info\",${escape_sequence}[36mINFO${escape_sequence}[0m,"\
+	-e "s,\"level\":\"warn\",${escape_sequence}[33mWARN${escape_sequence}[0m,"\
+	-e "s,\"level\":\"error\",${escape_sequence}[31mERROR${escape_sequence}[0m,"\
+    -e "s/,\"[[:alpha:]]*\":\"/ /g"\
+    -e "s/[\"{}]//g"

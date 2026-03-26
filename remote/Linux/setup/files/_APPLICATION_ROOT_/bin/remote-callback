@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -466,7 +468,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -620,11 +624,9 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
-proxy_start() {
-	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_start_action
-}
-proxy_stop() {
-	$conf_remote_service_cmd $conf_remote_proxy_service_name $conf_remote_service_stop_action
+script_exec() {
+	[ $conf_log_level -gt 0 ] && exit_defer rm -f $1
+	sh $1
 }
 user_callback() {
 	validation_require "$_OPTN_REMOTE_USER_CALLBACK_CMD" _OPTN_REMOTE_USER_CALLBACK_CMD
@@ -965,8 +967,6 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_remote_proxy_service_name conf_remote_service_start_action conf_remote_service_stop_action"
-_cfg_validate_required
 readonly ACTUAL_ARGUMENT_COUNT=$#
 readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
 [ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"

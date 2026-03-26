@@ -1,0 +1,74 @@
+#!/bin/sh
+_github_latest_release() {
+	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3"
+}
+_github_fetch() {
+	local download_url=$(curl -s https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3")
+	[ -z "$download_url" ] && {
+		log_warn "no matching artifact found"
+		return 1
+	}
+	_download_fetch "$download_url" $4-$5
+}
+_github_install_latest() {
+	local function_name=$(printf '%s' $1 | tr '-' '_')
+	local latest_version=$(_github_latest_release "$2" "$3" "$4")
+	local installed_version=$(get_installed_${function_name}_version)
+	[ "$installed_version" = "$latest_version" ] && {
+		log_detail "$1 is already installed and up-to-date"
+		return
+	}
+	if [ -z "$installed_version" ]; then
+		log_detail "installing $1"
+	else
+		log_detail "updating $1"
+	fi
+	_github_fetch "$2" "$3" "$5" "$6" "$latest_version"
+	[ -z "$7" ] && {
+		log_warn "not installing $download_file"
+		install_$function_name
+		return
+	}
+	_install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/$7
+}
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e $download_file ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o $download_file -s -L "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp $download_file $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+get_installed_cagent_version() {
+  cagent version 2>/dev/null | head -1 | sed -e 's/^.*v/v/'
+}

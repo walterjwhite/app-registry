@@ -26,7 +26,7 @@ _data_app_init() {
 		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
 		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
 			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
-			log_warn "initialized empty project"
+			log_warn "clone failed, initialized empty project"
 			git init $git_project_path
 		}
 	fi

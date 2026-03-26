@@ -1,5 +1,4 @@
 #!/bin/sh
-download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -24,6 +23,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)
@@ -46,5 +46,17 @@ _download_verify() {
     --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
     --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"}
 : ${conf_dev_google_java_format_arguments_per_invocation:=50}
-_download_fetch https://repo1.maven.org/maven2/com/google/googlejavaformat/google-java-format/${conf_dev_google_java_format_version}/google-java-format-${conf_dev_google_java_format_version}-all-deps.jar
-_download_install_file $conf_dev_google_java_format_jar
+_google_java_format_latest_version() {
+    curl -fsS 'https://central.sonatype.com/api/internal/browse/component/versions?sortField=normalizedVersion&sortDirection=desc&page=0&size=1&filter=namespace%3Acom.google.googlejavaformat%2Cname%3Agoogle-java-format' |
+        jq -r '.components[0].version'
+}
+_google_java_format_installed_version() {
+    google-java-format -v 2>&1 | grep 'google-java-format: Version ' | sed -e 's/^.*Version //'
+}
+latest_google_java_format_version=$(_google_java_format_latest_version)
+installed_google_java_format_version=$(_google_java_format_installed_version)
+if [ -z "$installed_google_java_format_version" ] || [ "$installed_google_java_format_version" != "$latest_google_java_format_version" ]; then
+    log_detail "installing google java format: $latest_google_java_format_version"
+    _download_fetch https://repo1.maven.org/maven2/com/google/googlejavaformat/google-java-format/${latest_google_java_format_version}/google-java-format-${latest_google_java_format_version}-all-deps.jar
+    _download_install_file $conf_dev_google_java_format_jar
+fi

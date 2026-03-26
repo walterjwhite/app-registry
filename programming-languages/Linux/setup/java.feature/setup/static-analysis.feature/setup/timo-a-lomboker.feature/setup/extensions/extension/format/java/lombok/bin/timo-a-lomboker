@@ -466,7 +466,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -717,7 +719,7 @@ _extension_run() {
 			continue
 		}
 		log_add_context $extension_sub_feature_name
-		log_detail $extension_sub_feature_name
+		log_detail "$extension_sub_feature_name"
 		cd $extension_opwd
 		. $extension_executor || _error_count=$(($_error_count + 1))
 		log_remove_context

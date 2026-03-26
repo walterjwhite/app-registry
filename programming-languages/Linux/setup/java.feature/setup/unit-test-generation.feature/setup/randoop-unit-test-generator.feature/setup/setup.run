@@ -22,7 +22,6 @@ _extract_extract() {
 		;;
 	esac
 }
-download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -47,6 +46,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)
@@ -60,7 +60,7 @@ _download_verify() {
 	_hash_algorithm=512
 	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
 }
-randoop_version=4.3.2
+randoop_version=4.3.4
 _install_randoop() {
     _download_fetch https://github.com/randoop/randoop/releases/download/v${randoop_version}/randoop-${randoop_version}.zip
     randoop_contents=$(_mktemp_options=d _mktemp_mktemp)

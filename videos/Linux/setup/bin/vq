@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -466,7 +468,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -625,16 +629,14 @@ _videos_date() {
 }
 _video_fetch_metadata() {
 	log_info "fetching metadata for: $videos_url"
-	$conf_videos_youtube_download_cmd --print \
-		--replace-in-metadata "title" "\|" "-" \
+	$conf_videos_youtube_download_cmd --replace-in-metadata "title" "\|" "-" \
+		--print \
 		"%(original_url)s|%(upload_date>%Y/%m/%d)s|%(duration>%H:%M:%S)s|%(title)s|%(uploader_id)s|%(uploader)s" \
-		"$videos_url" | sed -e "s/$/|$_VIDEOSextract_audio|$video_profiles/" |
+		"$videos_url" | sed -e "s/$/|$videos_tags|$extract_audio|$video_profiles/" |
 		while IFS= read -r video_metadata; do
 			video_file=${_action}d/$(_videos_date)
 			mkdir -p $(dirname $video_file)
-			printf '%s' "$video_metadata" >$video_file
-			[ -n "$videos_tags" ] && printf '|%s' "$videos_tags" >>$video_file
-			printf '\n' >>$video_file
+			printf '%s\n' "$video_metadata" >$video_file
 			_video_meta
 			_videos_git $video_file
 		done
@@ -647,6 +649,8 @@ _video_meta() {
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')
 	video_uploader_id=$(printf '%s' $video_metadata | cut -f5 -d'|')
 	video_uploader_name=$(printf '%s' $video_metadata | cut -f6 -d'|')
+	extract_audio=$(printf '%s' $video_metadata | cut -f8 -d'|')
+	video_profiles=$(printf '%s' $video_metadata | cut -f9 -d'|')
 	log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
 }
 _videos_git() {
@@ -685,7 +689,7 @@ _data_app_init() {
 		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
 		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
 			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
-			log_warn "initialized empty project"
+			log_warn "clone failed, initialized empty project"
 			git init $git_project_path
 		}
 	fi
@@ -772,7 +776,7 @@ readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
 [ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-_include_optional beep context git logging net paths platform videos wait
+_include_optional . beep context git logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
 : ${conf_log_beep_timeout:=5}
@@ -812,6 +816,23 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
+: ${conf_videos_audio_format:=aac}
+: ${conf_videos_youtube_download_cmd:=yt-dlp}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_movie_trailer_fetch_count:=50}
+: ${conf_videos_movie_trailer_genre:=Action}
+: ${conf_videos_movie_trailer_region:=US}
+: ${conf_videos_movie_trailer_origin_country:=US}
+: ${conf_videos_movie_trailer_language:=en-US}
+: ${conf_videos_movie_trailer_days_back:=90}
+: ${conf_videos_movie_trailer_days_ahead:=90}
+: ${conf_videos_movie_trailer_min_votes:=10}
+: ${conf_videos_movie_trailer_sort_by:=primary_release_date.desc}
+: ${conf_videos_yt_days_back:=7}
+: ${conf_videos_yt_max_results:=50}
+: ${conf_videos_yt_max_pages:=5}
+: ${conf_videos_yt_order:=date}
+: ${conf_videos_yt_type:=video}
 : ${conf_git_system_template_path:=/usr/share/git/templates}
 : ${conf_git_clone_timeout:=30}
 : ${conf_git_compression_format:=xz}
@@ -875,7 +896,7 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_youtube_download_cmd"
+readonly REQUIRED_APP_CONF="conf_git_mirror"
 _cfg_validate_required
 wait_waitee_init
 wait_waiter

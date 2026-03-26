@@ -466,7 +466,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -683,7 +685,7 @@ _data_app_init() {
 		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
 		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
 			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
-			log_warn "initialized empty project"
+			log_warn "clone failed, initialized empty project"
 			git init $git_project_path
 		}
 	fi

@@ -1,2 +1,1 @@
-: ${_DISPLAY_SWAY_TILING_WM_LOCK_CMD:="physlock -Lms"}
-: ${_DISPLAY_SWAY_TILING_WM_LAUNCH_SWAY_CMD:="dbus-run-session sway"}
+: ${conf_display_sway_tiling_wm_refresh_interval:=5}

@@ -1,26 +1,36 @@
 #!/bin/sh
 _github_latest_release() {
-	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r ".tag_name"
+	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3"
 }
-_github_fetch_latest_artifact() {
-	local _github_organization_name=$1
-	local _github_repository_name=$2
-	local _artifact_name=$3
-	local _artifact_suffix=$4
-	shift 4
-	local _latest_version=$(_github_latest_release $_github_organization_name $_github_repository_name)
-	[ -z "$git_artifact_url_function" ] && git_artifact_url_function=_github_artifact_url
-	$git_artifact_url_function $_github_organization_name $_github_repository_name $_latest_version $_artifact_name $_artifact_suffix
-	_download_fetch $git_github_artifact_url "$@"
-	unset git_github_artifact_url
+_github_fetch() {
+	local download_url=$(curl -s https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3")
+	[ -z "$download_url" ] && {
+		log_warn "no matching artifact found"
+		return 1
+	}
+	_download_fetch "$download_url" $4-$5
 }
-_github_artifact_url() {
-	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}${3}${5}
+_github_install_latest() {
+	local function_name=$(printf '%s' $1 | tr '-' '_')
+	local latest_version=$(_github_latest_release "$2" "$3" "$4")
+	local installed_version=$(get_installed_${function_name}_version)
+	[ "$installed_version" = "$latest_version" ] && {
+		log_detail "$1 is already installed and up-to-date"
+		return
+	}
+	if [ -z "$installed_version" ]; then
+		log_detail "installing $1"
+	else
+		log_detail "updating $1"
+	fi
+	_github_fetch "$2" "$3" "$5" "$6" "$latest_version"
+	[ -z "$7" ] && {
+		log_warn "not installing $download_file"
+		install_$function_name
+		return
+	}
+	_install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/$7
 }
-_github_artifact_url_static() {
-	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}
-}
-download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -45,6 +55,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)
@@ -62,22 +73,14 @@ _download_verify() {
 : ${conf_dev_java_timo_a_lomboker_version:=0.0.0}
 : ${conf_dev_java_timo_a_lomboker_jar_NAME:=lomboker-$conf_dev_java_timo_a_lomboker_version.jar}
 : ${conf_dev_java_timo_a_lomboker_jar:=/usr/local/walterjwhite/programming-languages/tools/$conf_dev_java_timo_a_lomboker_jar_NAME}
-_get_installed_timo_a_lomboker_version() {
-  [ -e /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar ] && java -jar /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar version | cut -d' ' -f2
+get_installed_timo_a_lomboker_version() {
+  [ ! -e /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar ] && return
+  printf 'v'
+  java -jar /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar version | cut -d' ' -f2
 }
-_get_latest_timo_a_lomboker_version() {
-  _latest_timo_a_lomboker_version=$(_github_latest_release timo-a lomboker | sed -e 's/^v//')
+install_timo_a_lomboker() {
+  _download_install_file /usr/local/walterjwhite/programming-languages/tools/timo-a-lomboker.jar
 }
-_is_latest_timo_a_lomboker_installed() {
-  local _installed_version=$(_get_installed_timo_a_lomboker_version)
-  [ "$_installed_version" = "$_latest_timo_a_lomboker_version" ]
-}
-_install_timo_a_lomboker() {
-  log_info "installing timo-a-lomboker Java JAR"
-  _download_fetch https://github.com/timo-a/lomboker/releases/download/v${_latest_timo_a_lomboker_version}/lomboker-${_latest_timo_a_lomboker_version}.jar
-  _download_install_file /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar
-}
-_get_latest_timo_a_lomboker_version
-if ! _is_latest_timo_a_lomboker_installed; then
-  _install_timo_a_lomboker
-fi
+_github_install_latest timo-a-lomboker timo-a lomboker '.tag_name' \
+    ".assets[] | select(.name | test(\"lomboker-.*.jar\")) | .browser_download_url" \
+    timo-a-lomboker.jar

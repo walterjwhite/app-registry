@@ -1,0 +1,3 @@
+: ${conf_weather_report_max_age:=3600}
+readonly WEATHER_VERSION=2
+readonly WEATHER_URL=v2.wttr.in

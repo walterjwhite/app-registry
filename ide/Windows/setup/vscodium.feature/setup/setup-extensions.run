@@ -1,0 +1,16 @@
+#!/bin/sh
+_vscodium_install_extensions() {
+	if [ -z "$feature_vscodium_extensions" ]; then
+		log_warn "feature_vscodium_extensions is empty"
+		return 1
+	fi
+	local normal_user
+	for normal_user in $(getent group wheel | cut -d: -f4); do
+		sudo_user=$normal_user
+		local vscodium_extension
+		for vscodium_extension in $feature_vscodium_extensions; do
+			sudo_run $conf_dev_vscodium_executable --install-extension $vscodium_extension
+		done
+	done
+}
+_vscodium_install_extensions

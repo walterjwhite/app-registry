@@ -305,15 +305,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -471,7 +473,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -717,6 +721,8 @@ app_install() {
 	_install_filter_file_callback $1 _app_install_do
 }
 _app_install_do() {
+	[ -z "$APP_INSTALL_DEPENDENCY" ] && readonly APP_INSTALL_DEPENDENCY=1
+	app-install $1
 }
 app_uninstall() {
 	_install_uninstall_filter_file_callback $1 app_uninstall_do
@@ -1096,7 +1102,7 @@ crontab_default_get() {
 crontab_default_write() {
 	_crontab_default_header $1 $2
 	sudo_user=$1 sudo_run crontab $2 || {
-		log_warn "exit_with_error writing crontab"
+		log_warn "error writing crontab"
 		sudo_user=$1 sudo_run cat $2
 	}
 }

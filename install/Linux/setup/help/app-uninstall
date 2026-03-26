@@ -1,0 +1,13 @@
+app-uninstall - Uninstall applications
+USAGE:
+    app-uninstall <app-name>
+DESCRIPTION:
+    Uninstall a specific application from the system.
+ARGUMENTS:
+    app-name
+        Name of the application to uninstall (required)
+CONFIGURATION:
+    -conf-install-step-timeout SECONDS
+        Timeout per uninstall step (default: 300)
+EXAMPLES:
+    app-uninstall my-app

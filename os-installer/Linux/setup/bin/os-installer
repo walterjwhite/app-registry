@@ -503,7 +503,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -1267,7 +1269,6 @@ _emerge_portage_mount_rbind() {
 	mount --rbind /$mount_point $APP_PLATFORM_ROOT/$mount_point
 	mount --make-rslave $APP_PLATFORM_ROOT/$mount_point
 }
-download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -1292,6 +1293,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)

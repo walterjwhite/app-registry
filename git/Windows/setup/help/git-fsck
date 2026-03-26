@@ -1,0 +1,3 @@
+perform git fsck on mirrors as administrator (conf_git_git_user)
+	--git-user=USER (conf_git_git_user)
+	PWD, run this cmd in the root directory where git repositories are kept

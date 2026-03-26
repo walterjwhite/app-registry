@@ -1,0 +1,16 @@
+: ${conf_install_go_path:=/usr/local}
+: ${conf_install_no_pager:=0}
+: ${conf_install_app_build_depth:=3}
+: ${conf_install_step_timeout:=300}
+: ${conf_install_iostat_duration:=5}
+: ${conf_install_app_registry_git_url:=https://github.com/walterjwhite/app.registry.git}
+: ${conf_install_auto_update_packages:=0}
+: ${conf_clean_app_registry_workspace:=1}
+: ${conf_install_random_default_length:=8}
+[ "$conf_install_no_pager" = "1" ] && PAGER=cat
+: ${conf_install_checksum_cmd:="sha256 -q"}
+: ${conf_install_remove_unused_functions:=1}
+: ${platforms:=$APP_PLATFORM_PLATFORM}
+which shfmt > /dev/null 2>&1 || _optn_install_disable_shfmt=1
+: ${conf_install_max_concurrent_jobs:=$(nproc)}
+: ${conf_install_app_registry_timeout:=5}

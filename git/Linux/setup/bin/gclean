@@ -466,7 +466,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -833,5 +835,39 @@ git ls-files | while IFS= read -r file; do
     git rm -f "$file"
   fi
 done
+log_warn 'removing gitignore files should they be improperly committed to git'
+find . -type f \( \
+  -path '*/.idea/workspace.xml' \
+  -or -path '*/.idea/tasks.xml' \
+  -or -path '*/.idea/usage.statistics.xml' \
+  -or -path '*/.idea/shelf/*' \
+  -or -path '*/.idea/caches/*' \
+  -or -path '*/.idea/libraries/*' \
+  -or -path '*/.idea/dataSources/*' \
+  -or -path '*/.idea/dataSources.local.xml' \
+  -or -path '*/.idea/sqlDataSources.xml' \
+  -or -path '*/.idea/dynamic.xml' \
+  -or -path '*/.idea/uiDesigner.xml' \
+  -or -path '*/.idea/navEditor.xml' \
+  -or -path '*/.idea/assetWizardSettings.xml' \
+  -or -path '*/.idea/modules.xml' \
+  -or -path '*/.idea/*.iml' \
+  -or -path '*/local.properties' \
+  -or -path '*/.gradle/*' \
+  -or -path '*/build/*' \
+  -or -path '*/captures/*' \
+  -or -path '*/*.apk' \
+  -or -path '*/*.aab' \
+  -or -path '*/*.cxx/*' \
+  -or -path '*/*.externalNativeBuild/*' \
+  -or -path '*/*.log' \
+  -or -path '*/*.jks' \
+  -or -path '*/*.keystore' \
+  -or -path '*/*.hprof' \
+  -or -path '*/proguard' \
+  -or -path '*/*.mapping' \
+  -or -path '*/.kotlin/errors' \
+  -or -path '*/.DS_Store' \) \
+  -exec git rm --cached -f {} + >/dev/null 2>&1
 log_info "git repository cleaned"
 gss

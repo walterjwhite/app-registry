@@ -1,0 +1,4 @@
+: ${conf_log_c_TEST_FAIL:=$conf_log_c_err}
+: ${conf_log_c_TEST_PASS:=$conf_log_c_SCS}
+: ${conf_log_beep_TEST_FAIL:=$conf_log_beep_err}
+: ${conf_log_beep_TEST_PASS:=$conf_log_beep_SCS}

@@ -1,0 +1,13 @@
+app-publish - Publish applications
+USAGE:
+    app-publish
+DESCRIPTION:
+    Publish the current application to the app registry.
+    Must be run from app directory.
+CONFIGURATION:
+    -conf-install-app-registry-git-url URL
+        Git URL for app registry (default: https://github.com/walterjwhite/app.registry.git)
+    -conf-install-app-registry-timeout SECONDS
+        App registry timeout (default: 5)
+EXAMPLES:
+    app-publish

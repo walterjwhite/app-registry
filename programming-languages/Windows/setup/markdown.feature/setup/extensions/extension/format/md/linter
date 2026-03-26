@@ -1,0 +1,3 @@
+#!/bin/sh
+markdownlint-cli2 --fix "**/.md" "#node_modules"
+_extension_find_default -exec prettier -w {} +

@@ -1,0 +1,9 @@
+: ${conf_dev_java_google_java_format_jdk:=java}
+: ${conf_dev_google_java_format_version:=1.35.0}
+: ${conf_dev_google_java_format_jar:=/usr/local/walterjwhite/programming-languages/tools/google.java.format-$conf_dev_google_java_format_version.jar}
+: ${conf_dev_java_google_java_format_options:="--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"}
+: ${conf_dev_google_java_format_arguments_per_invocation:=50}

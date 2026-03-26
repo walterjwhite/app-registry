@@ -1,2 +1,3 @@
-: ${conf_console_zsh_session_history_size:=1000}
+: ${conf_console_shell_cmd:=/usr/bin/zsh}
+=1000}
 : ${conf_console_zsh_disk_history_size:=1000}

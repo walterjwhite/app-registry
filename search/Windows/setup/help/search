@@ -1,0 +1,37 @@
+search a git repository
+    -a search all projects AND branches
+    -r search all the projects in the current directory
+    -l list matched files
+    -x=CMD execute CMD for each found file
+    -C search project contents only (no filenames or logs)
+    -F search project filenames only (no logs or contents)
+    -L search project logs only (no filenames or contents)
+    -A search activity only /activity/
+    -s=start date (only applicable for searching logs)
+        -s=2021/01/01
+    -e=end date   (only applicable for searching logs)
+        -e=2021/01/01
+    -contents (default)
+        -xedit      use $conf_search_xeditor
+        -edit       use $conf_search_editor
+        -files      use $conf_search_file_manager
+        -commits=current    search only contents from current working tree (default)
+        -commits=any        search across all commits in current branch
+        -commits=all        search across current HEAD of each branch
+    -changes
+        -branches       search in specified branch for a given change
+        -all-branches   search in all branches for a given change
+        -i             case insensitive
+    -logs
+        -branches       search in specified branch for a given log message
+        -all-branches   search in all branches for a given log message
+        -i             case insensitive
+    -branches
+        search branch names
+    -tags
+        search tag names
+    -type=git/branches
+    -type=git/changes
+    -type=git/logs
+    -type=system
+    -type=git/tags

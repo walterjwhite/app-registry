@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -466,7 +468,9 @@ sudo_run() {
 		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
 	}
 	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
 	unset sudo_options
+	return $sudo_return_status
 }
 sudo_is_validation_required() {
 	[ -n "$sudo_user" ] && {
@@ -621,37 +625,33 @@ _alert_long_running_cmd() {
 	_alert_alert "$_subject" "$_message"
 }
 _tmdb_fetch_movies() {
-	local date_from date_to
-	date_from=$(date -d "-${conf_videos_movie_trailer_days_back} days" '+%Y-%m-%d' 2>/dev/null ||
+	local date_from=$(date -d "-${conf_videos_movie_trailer_days_back} days" '+%Y-%m-%d' 2>/dev/null ||
 		date -v "-${conf_videos_movie_trailer_days_back}d" '+%Y-%m-%d') # macOS fallback
-	date_to=$(date -d "+${conf_videos_movie_trailer_days_ahead} days" '+%Y-%m-%d' 2>/dev/null ||
+	local date_to=$(date -d "+${conf_videos_movie_trailer_days_ahead} days" '+%Y-%m-%d' 2>/dev/null ||
 		date -v "+${conf_videos_movie_trailer_days_ahead}d" '+%Y-%m-%d')
 	log_info "fetching movies: without_genre=${conf_videos_movie_trailer_exclude_genres} | window=${date_from} → ${date_to} | max=${conf_videos_movie_trailer_fetch_count}"
 	local collected=0 page=1 all_movies="[]"
-	while [[ $collected -lt $conf_videos_movie_trailer_fetch_count ]]; do
+	while [ $collected -lt $conf_videos_movie_trailer_fetch_count ]; do
 		local page_json
 		page_json=$(_tmdb_get "/discover/movie" \
 			"without_genres=${conf_videos_movie_trailer_exclude_genres}" \
 			"primary_release_date.gte=${date_from}" \
 			"primary_release_date.lte=${date_to}" \
 			"vote_count.gte=${conf_videos_movie_trailer_min_votes}" \
-			"sort_by=popularity.desc" \
+			"sort_by=${conf_videos_movie_trailer_sort_by}" \
 			"region=${conf_videos_movie_trailer_region}" \
+			"with_origin_country=${conf_videos_movie_trailer_origin_country}" \
 			"page=${page}") || break
 		local page_results total_pages
 		page_results=$(printf '%s' "$page_json" | jq '.results | length')
 		total_pages=$(printf '%s' "$page_json" | jq '.total_pages')
-		if [[ "$page_results" -eq 0 ]]; then
-			break
-		fi
+		[ "$page_results" -eq 0 ] && break
 		all_movies=$(printf '%s\n%s' "$all_movies" \
 			"$(printf '%s' "$page_json" | jq '.results')" |
 			jq -s 'add')
 		collected=$(printf '%s' "$all_movies" | jq 'length')
 		log_detail "  Page ${page}/${total_pages} — collected ${collected} movies so far"
-		if [[ $page -ge $total_pages ]]; then
-			break
-		fi
+		[ $page -ge $total_pages ] && break
 		page=$(($page + 1))
 	done
 	printf '%s' "$all_movies" | jq --argjson n "$conf_videos_movie_trailer_fetch_count" '.[0:$n]'
@@ -664,7 +664,7 @@ _tmdb_get() {
 		qs="${qs}&${param}"
 	done
 	local url="${TMDB_BASE}${path}?${qs}"
-	log_info "get ${TMDB_BASE}${path} ..."
+	log_debug "get ${TMDB_BASE}${path}"
 	local response http_code body
 	response=$(curl -sS --fail-with-body \
 		-H "Accept: application/json" \
@@ -674,17 +674,23 @@ _tmdb_get() {
 	}
 	http_code=$(printf '%s' "$response" | grep -o '__HTTP_STATUS__[0-9]*' | sed -e 's/__HTTP_STATUS__//')
 	body=$(printf '%s' "$response" | sed 's/__HTTP_STATUS__[0-9]*$//')
-	if [[ "${http_code}" -lt 200 || "${http_code}" -ge 300 ]]; then
-		local tmdb_msg=$(printf '%s' "$body" | jq -r '.status_message // "unknown error"' 2>/dev/null || echo "unknown error")
+	[ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ] && {
+		tmdb_msg=$(printf '%s' "$body" | jq -r '.status_message // "unknown error"' 2>/dev/null || echo "unknown error")
 		exit_with_error "tmdb HTTP ${http_code}: ${tmdb_msg}"
-	fi
+	}
 	printf '%s' "$body"
 }
+_tmdb_get_movie_certification() {
+	_tmdb_get "/movie/${movie_id}/release_dates" | jq -r '
+    .results[]
+    | select(.iso_3166_1 == "US")
+    | .release_dates[]
+    | select(.certification != "" and .certification != null)
+    | .certification
+  ' | head -1
+}
 _tmdb_fetch_movie_trailers() {
-	local movie_id="$1"
-	local videos_json
-	videos_json=$(_tmdb_get "/movie/${movie_id}/videos") || return 1
-	printf '%s' "$videos_json" | jq '
+	_tmdb_get "/movie/${1}/videos" | jq '
     [ .results[]
       | select(.site == "YouTube" and .type == "Trailer")
     ]
@@ -696,6 +702,11 @@ _tmdb_fetch_movie_trailers() {
         ) | unique_by(.key) | .[0:1]
       end
   '
+}
+_download_trailer() {
+	local youtube_video_url="${YOUTUBE_BASE}?v=${trailer_key}"
+	log_info "downloading trailer: $youtube_video_url | $movie_genre_id_names"
+	vq -videos-url="${youtube_video_url}" -videos-tags="movie trailer $movie_genre_id_names $movie_certification"
 }
 readonly APPLICATION_NAME=videos
 readonly APPLICATION_START_TIME=$(date +%s)
@@ -820,13 +831,16 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_movie_trailer_fetch_count:=10}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_movie_trailer_fetch_count:=50}
 : ${conf_videos_movie_trailer_genre:=Action}
 : ${conf_videos_movie_trailer_region:=US}
+: ${conf_videos_movie_trailer_origin_country:=US}
 : ${conf_videos_movie_trailer_language:=en-US}
 : ${conf_videos_movie_trailer_days_back:=90}
 : ${conf_videos_movie_trailer_days_ahead:=90}
 : ${conf_videos_movie_trailer_min_votes:=10}
+: ${conf_videos_movie_trailer_sort_by:=primary_release_date.desc}
 : ${conf_videos_yt_days_back:=7}
 : ${conf_videos_yt_max_results:=50}
 : ${conf_videos_yt_max_pages:=5}
@@ -888,29 +902,9 @@ done
 log_enable_debug_mode
 wait_waitee_init
 wait_waiter
-_download_trailer() {
-  local youtube_video_url="${YOUTUBE_BASE}?v=${trailer_key}"
-  log_info "downloading trailer: ${movie_title}"
-  log_info "  URL: ${youtube_video_url}"
-  log_detail "genres: $movie_genre_id_names"
-  vq -videos-url="${youtube_video_url}" -videos-tags="movie trailer $movie_genre_id_names" || {
-    log_warn "vq failed for '${movie_title}' (${youtube_video_url})"
-    return 1
-  }
-}
-movies_json=$(_tmdb_fetch_movies)
-movie_count=$(printf '%s' "$movies_json" | jq 'length')
-if [[ "$movie_count" -eq 0 ]]; then
-  exit_with_error "no movies found for the given criteria. Try widening the date window or changing the genre."
-fi
-log_info "found ${movie_count} movie(s). Fetching trailers...\n"
-printf '%s' "$movies_json" | jq -c '.[]' | while IFS= read -r movie; do
-  movie_id=$(printf '%s' "$movie" | jq -r '.id')
-  movie_title=$(printf '%s' "$movie" | jq -r '.title')
-  release_date=$(printf '%s' "$movie" | jq -r '.release_date // "TBA"')
-  movie_genre_ids=$(printf '%s' "$movie" | jq -r '.genre_ids' | awk -F'[^0-9]+' '{
-    for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) print $i
-  }')
+sudo_ensure_not_root
+processes_restrict_to_single_process
+_movie_trailer_genre_names() {
   movie_genre_id_names=""
   for movie_genre_id in $movie_genre_ids; do
     pair=$(printf '%s\n' "$TMDB_GENRE_MAP" | tr ' ' '\n' | awk -F: -v k="$movie_genre_id" '$1==k{print $0; exit}')
@@ -921,20 +915,35 @@ printf '%s' "$movies_json" | jq -c '.[]' | while IFS= read -r movie; do
     fi
     movie_genre_id_names="$movie_genre_id_names $genre"
   done
-  log_info "── ${movie_title} (${release_date}) [TMDb ID: ${movie_id}]"
-  trailers_json=$(_tmdb_fetch_movie_trailers "$movie_id") || {
-    log_warn "could not fetch videos for '${movie_title}'"
-    ( (skipped++))
-    continue
-  }
-  trailer_count=$(printf '%s' "$trailers_json" | jq 'length')
-  if [[ "$trailer_count" -eq 0 ]]; then
-    log_warn "no YouTube trailer found for '${movie_title}' — skipping"
-    ( (skipped++))
-    continue
-  fi
-  trailer_key=$(printf '%s' "$trailers_json" | jq -r '.[0].key')
-  trailer_name=$(printf '%s' "$trailers_json" | jq -r '.[0].name')
-  log_info "  trailer: ${trailer_name} (${trailer_key})"
+}
+_movie_trailer_process_movie_record() {
+  local oifs=$IFS
+  IFS=
+  read -r -d '' movie_id || true
+  read -r -d '' movie_title || true
+  read -r -d '' release_date || true
+  read -r -d '' movie_genre_ids || true
+  IFS=$oifs
+  log_add_context "fetch-trailer"
+  log_add_context "$movie_title"
+  movie_genre_ids=$(printf '%s' "$movie_genre_ids" | awk -F'[^0-9]+' '{
+  for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) print $i
+  }')
+  _movie_trailer_genre_names
+  _tmdb_fetch_movie_trailers "$movie_id" | jq -r -j '.[0].key, "\u0000", .[0].name, "\u0000"' | _movie_trailer_process_movie_trailer_record
+  log_remove_context
+  log_remove_context
+}
+_movie_trailer_process_movie_trailer_record() {
+  local oifs=$IFS
+  IFS=
+  read -r -d '' trailer_key || true
+  read -r -d '' trailer_name || true
+  IFS=$oifs
+  movie_certification=$(_tmdb_get_movie_certification "$movie_id")
   _download_trailer
+  unset movie_certification
+}
+_tmdb_fetch_movies | jq -c '.[]' | while IFS= read -r obj; do
+  printf '%s' "$obj" | jq -r -j '.id, "\u0000", .title, "\u0000", .release_date, "\u0000", .genre_ids, "\u0000"' | _movie_trailer_process_movie_record
 done

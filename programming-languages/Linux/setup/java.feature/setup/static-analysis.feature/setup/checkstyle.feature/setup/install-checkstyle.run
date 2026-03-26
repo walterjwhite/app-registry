@@ -1,26 +1,36 @@
 #!/bin/sh
 _github_latest_release() {
-	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r ".tag_name"
+	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3"
 }
-_github_fetch_latest_artifact() {
-	local _github_organization_name=$1
-	local _github_repository_name=$2
-	local _artifact_name=$3
-	local _artifact_suffix=$4
-	shift 4
-	local _latest_version=$(_github_latest_release $_github_organization_name $_github_repository_name)
-	[ -z "$git_artifact_url_function" ] && git_artifact_url_function=_github_artifact_url
-	$git_artifact_url_function $_github_organization_name $_github_repository_name $_latest_version $_artifact_name $_artifact_suffix
-	_download_fetch $git_github_artifact_url "$@"
-	unset git_github_artifact_url
+_github_fetch() {
+	local download_url=$(curl -s https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3")
+	[ -z "$download_url" ] && {
+		log_warn "no matching artifact found"
+		return 1
+	}
+	_download_fetch "$download_url" $4-$5
 }
-_github_artifact_url() {
-	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}${3}${5}
+_github_install_latest() {
+	local function_name=$(printf '%s' $1 | tr '-' '_')
+	local latest_version=$(_github_latest_release "$2" "$3" "$4")
+	local installed_version=$(get_installed_${function_name}_version)
+	[ "$installed_version" = "$latest_version" ] && {
+		log_detail "$1 is already installed and up-to-date"
+		return
+	}
+	if [ -z "$installed_version" ]; then
+		log_detail "installing $1"
+	else
+		log_detail "updating $1"
+	fi
+	_github_fetch "$2" "$3" "$5" "$6" "$latest_version"
+	[ -z "$7" ] && {
+		log_warn "not installing $download_file"
+		install_$function_name
+		return
+	}
+	_install_file_chmod=755 _download_install_file $APP_PLATFORM_BIN_PATH/$7
 }
-_github_artifact_url_static() {
-	git_github_artifact_url=https://github.com/$1/$2/releases/download/${3}/${4}
-}
-download_file=""
 _download_fetch() {
 	mkdir -p $APP_PLATFORM_CACHE_PATH
 	local _cached_filename
@@ -45,6 +55,7 @@ _download_fetch() {
 }
 _download_install_file() {
 	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
 	: ${_install_file_chmod:=444}
 	log_info "installing $download_file -> $1"
 	mkdir -p $(dirname $1)
@@ -62,13 +73,10 @@ _download_verify() {
 : ${conf_dev_checkstyle_version_STYLE:=google}
 : ${conf_dev_checkstyle_jar:=/usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar}
 : ${conf_dev_checkstyle_config:=/usr/local/walterjwhite/programming-languages/tools/checkstyle/checks/$conf_dev_checkstyle_version_STYLE_checks.xml}
-_get_installed_checkstyle_version() {
-    if [ -e /usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar ]; then
-        java -jar /usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar -V 2>/dev/null | head -1 | cut -d' ' -f3
-    fi
-}
-_get_latest_checkstyle_version() {
-    _github_latest_release checkstyle checkstyle | sed -e 's/checkstyle-//'
+get_installed_checkstyle_version() {
+  [ ! -e /usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar ] && return
+  printf 'checkstyle-'
+  java -jar /usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar -V 2>/dev/null | head -1 | cut -d' ' -f3
 }
 _get_xml_checksum() {
     local xml_url="$1"
@@ -105,13 +113,11 @@ _install_xml_file() {
     log_detail "$xml_name is up to date"
   fi
 }
-_install_checkstyle() {
-  _download_fetch "https://github.com/checkstyle/checkstyle/releases/download/checkstyle-${latest_checkstyle_version}/checkstyle-${latest_checkstyle_version}-all.jar"
+install_checkstyle() {
   _download_install_file /usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar
 }
-_get_latest_checkstyle_version
-if ! _is_latest_checkstyle_installed; then
-    _install_checkstyle
-fi
+_github_install_latest checkstyle checkstyle checkstyle '.tag_name' \
+    ".assets[] | select(.name | test(\"checkstyle-.*-all.jar\")) | .browser_download_url" \
+    checkstyle-all.jar
 _install_xml_file "google_checks.xml"
 _install_xml_file "sun_checks.xml"

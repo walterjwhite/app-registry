@@ -1,0 +1,2 @@
+: ${conf_dev_windsurf_ide:=/usr/local/bin/windsurf}
+conf_dev_windsurf_executable=windsurf

@@ -1,0 +1,36 @@
+app-install - Install applications
+USAGE:
+    app-install [app-name...]
+DESCRIPTION:
+    Install one or more applications. If no app names are specified,
+    installs the current application (must be in app directory).
+CONFIGURATION:
+    -conf-install-go-path PATH
+        Set Go installation path (default: /usr/local)
+    -conf-install-no-pager 0|1
+        Disable pager output (default: 0)
+    -conf-install-app-build-depth NUM
+        Set build depth (default: 3)
+    -conf-install-step-timeout SECONDS
+        Timeout per installation step (default: 300)
+    -conf-install-iostat-duration SECONDS
+        Duration for iostat monitoring (default: 5)
+    -conf-install-app-registry-git-url URL
+        Git URL for app registry (default: https://github.com/walterjwhite/app.registry.git)
+    -conf-install-auto-update-packages 0|1
+        Auto-update packages after install (default: 0)
+    -conf-clean-app-registry-workspace 0|1
+        Clean app registry workspace (default: 1)
+    -conf-install-random-default-length NUM
+        Length for random defaults (default: 8)
+    -conf-install-checksum-cmd CMD
+        Checksum command (default: "sha256 -q")
+    -conf-install-remove-unused-functions 0|1
+        Remove unused functions (default: 1)
+    -conf-install-max-concurrent-jobs NUM
+        Maximum concurrent jobs (default: nproc)
+    -conf-install-app-registry-timeout SECONDS
+        App registry timeout (default: 5)
+EXAMPLES:
+    app-install my-app
+    app-install app1 app2 app3
