@@ -1,0 +1,20 @@
+vd - Video Downloader
+USAGE:
+    vd
+DESCRIPTION:
+    Download videos from the queue. Processes all queued videos
+    one by one, downloading them according to their metadata
+    (audio extraction, profiles, etc.).
+CONFIGURATION:
+    -conf-videos-audio-format FORMAT
+        Audio format for extraction (default: aac)
+    -conf-videos-youtube-download-cmd CMD
+        YouTube download command (default: yt-dlp)
+    -conf-videos-youtube-video-download-options OPTIONS
+        Download options for video files (default: "-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac")
+    -conf-videos-download-path PATH
+        Path where videos are downloaded
+    -conf-videos-video-player CMD
+        Video player command for watching
+EXAMPLES:
+    vd

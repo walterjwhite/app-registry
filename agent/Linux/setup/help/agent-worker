@@ -1,0 +1,19 @@
+agent-worker - Agent Task Worker
+USAGE:
+    agent-worker <agent-job> [options...]
+DESCRIPTION:
+    Execute a specific agent task. Can run locally or remotely.
+    Initializes git workspace and runs the specified job.
+ARGUMENTS:
+    agent-job
+        Path to agent task file (required)
+    options...
+        Additional options passed to the job
+CONFIGURATION:
+    -conf-agent-remote-host HOST
+        Remote host for execution
+    -conf-agent-remote-user USER
+        Remote user for execution
+EXAMPLES:
+    agent-worker /path/to/job.sh
+    agent-worker task.sh --option=value

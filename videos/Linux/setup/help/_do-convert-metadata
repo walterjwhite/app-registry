@@ -1,0 +1,14 @@
+_do-convert-metadata - Convert Single Metadata
+USAGE:
+    _do-convert-metadata <metadata-file>
+DESCRIPTION:
+    Convert metadata for a single video file. Updates the metadata
+    format to the current standard. Internal tool used by
+    _convert-metadata.
+ARGUMENTS:
+    metadata-file
+        Path to the metadata file to convert
+NOTE:
+    This is an internal tool and typically not called directly.
+EXAMPLES:
+    _do-convert-metadata /path/to/metadata/file

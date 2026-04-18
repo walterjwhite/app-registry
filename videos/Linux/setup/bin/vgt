@@ -831,7 +831,9 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_youtube_audio_download_options:="-f bestaudio[ext=aac]/bestaudio -x --audio-format m4a"}
+: ${conf_videos_youtube_podcast_download_options:="f bestaudio/best --downloader ffmpeg --extract-audio --audio-format m4a --audio-quality 128K"}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080]"}
 : ${conf_videos_movie_trailer_fetch_count:=50}
 : ${conf_videos_movie_trailer_genre:=Action}
 : ${conf_videos_movie_trailer_region:=US}
@@ -846,6 +848,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_videos_yt_max_pages:=5}
 : ${conf_videos_yt_order:=date}
 : ${conf_videos_yt_type:=video}
+: ${conf_videos_youtube_podcast_age:="3 days ago"}
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3

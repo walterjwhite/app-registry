@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -1129,36 +1131,40 @@ package_update() {
 	package_${linux_package_manager}_update "$@"
 }
 package_pacman_install_do() {
-	flags="-Sqyu --noconfirm"
+	pacman_flags="-Sqyu --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_uninstall_do() {
-	flags="-Rq --noconfirm"
+	pacman_flags="-Rq --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_is_installed() {
-	flags="-Q"
+	pacman_flags="-Q"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_bootstrap() {
 	_pacman_setup_keys
 }
 package_pacman_update() {
-	flags="-Syuq --noconfirm"
+	pacman_flags="-Syuq --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 	aur_package_update
 }
 _pacman_cmd() {
 	[ "$APP_PLATFORM_ROOT" = "/" ] && {
-		pacman $flags "$@" 2>&1 >/dev/null
+		pacman $pacman_flags "$@"
 		return
 	}
 	[ "$_container_type" = "incus" ] && {
 		log_warn "detected incus container, using incus exec"
-		incus exec $_container_name -- pacman $flags "$@" 2>&1 >/dev/null
+		incus exec $_container_name -- pacman $pacman_flags "$@"
 		return
 	}
-	pacman $flags --sysroot $APP_PLATFORM_ROOT "$@" 2>&1 >/dev/null
+	pacman $pacman_flags --sysroot $APP_PLATFORM_ROOT "$@"
 }
 _pacman_setup_keys() {
 	[ -e $APP_PLATFORM_ROOT/etc/pacman.d/gnupg ] && {

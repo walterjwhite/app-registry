@@ -1,0 +1,8 @@
+find-private-functions - Find all private functions
+USAGE:
+    find-private-functions
+DESCRIPTION:
+    List all private functions (functions starting with underscore)
+    in the current project.
+EXAMPLES:
+    find-private-functions

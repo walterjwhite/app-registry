@@ -661,6 +661,7 @@ _video_read_meta() {
 _video_meta() {
 	videos_url=$(printf '%s' $video_metadata | cut -f1 -d'|')
 	video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
+	[ -z "$video_key" ] && video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
 	video_date=$(printf '%s' $video_metadata | cut -f2 -d'|')
 	video_duration=$(printf '%s' $video_metadata | cut -f3 -d'|')
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')
@@ -918,6 +919,7 @@ _action=watch
 : ${_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION:=1}
 _watch() {
   video_key=$(basename $video_media_file | $GNU_GREP -Po "\-{0,1}[0-9A-Za-z_-]{10}[048AEIMQUYcgkosw]\." | tail -1 | sed -e "s/^\-//" -e "s/\.$//" -e "s/\-/\\\-/g")
+  [ -z "$video_key" ] && video_key=$(basename $video_media_file | sed 's/\.[^.]\{2,4\}$//')
   video_file=$(grep "$video_key" downloaded -rl | head -1)
   validation_require "$video_file" "video file not found for $video_key"
   _video_read_meta

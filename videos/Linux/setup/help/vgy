@@ -1,0 +1,25 @@
+vgy - Video Get Youtube Channel
+USAGE:
+    vgy
+DESCRIPTION:
+    Fetch videos from configured YouTube channels, apply filters,
+    and queue matching videos for download. Processes all configured
+    channels according to their specific filtering rules.
+CONFIGURATION:
+    -conf-videos-youtube-channels CHANNELS
+        Space-separated list of YouTube channel IDs
+    -conf-videos-yt-days-back DAYS
+        How many days back to fetch (default: 7)
+    -conf-videos-yt-max-results NUM
+        Maximum results per page (default: 50)
+    -conf-videos-yt-max-pages NUM
+        Maximum pages to fetch (default: 5)
+    -conf-videos-yt-order ORDER
+        Order of results (default: date)
+    -conf-videos-yt-type TYPE
+        Type of results (default: video)
+    -conf-yt-api-key KEY
+        YouTube API key (required)
+EXAMPLES:
+    vgy
+    _youtube_channel_filter must be defined in your ~/.config/walterjwhite/shell/videos configuration which determines what files should be downloaded and what format

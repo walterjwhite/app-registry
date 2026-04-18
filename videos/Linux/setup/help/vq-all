@@ -1,2 +1,17 @@
-queue videos from playlist for download
-    name of file is required
+vq-all - Queue Videos from File
+USAGE:
+    vq-all <queue-file> [vq-options...]
+DESCRIPTION:
+    Queue multiple videos from a file for download. Each line in the
+    file should contain a video URL. Ignores empty lines and comments
+    (lines starting with #). All vq options are passed through.
+ARGUMENTS:
+    queue-file
+        File containing video URLs to queue (required)
+OPTIONS:
+    All vq options are supported and passed through:
+    -force, -extract-audio, -profiles=*, -v URL, etc.
+EXAMPLES:
+    vq-all playlist.txt
+    vq-all playlist.txt -extract-audio
+    vq-all playlist.txt -force -profiles=high-quality

@@ -1,0 +1,10 @@
+_convert-metadata - Convert All Metadata
+USAGE:
+    _convert-metadata
+DESCRIPTION:
+    Convert metadata for all video files in queued, watched, and
+    error directories. Internal tool for bulk metadata conversion.
+NOTE:
+    This is an internal tool and typically not called directly.
+EXAMPLES:
+    _convert-metadata

@@ -306,15 +306,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -591,6 +593,17 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+_git_has_updates() {
+	local local_repository_version=$(_git_local_repository_version)
+	local remote_repository_version=$(_git_remote_repository_version)
+	[ "$local_repository_version" != "$remote_repository_version" ]
+}
+_git_local_repository_version() {
+	git --git-dir=$REGISTRY_PATH/.git rev-parse --short HEAD
+}
+_git_remote_repository_version() {
+	git ls-remote $conf_install_app_registry_git_url HEAD | cut -c1-9
+}
 readonly APPLICATION_NAME=install
 readonly APPLICATION_START_TIME=$(date +%s)
 readonly APPLICATION_CMD=$(basename $0)
@@ -621,15 +634,9 @@ readonly APPLICATION_CONTEXT_GROUP=$RUN_PATH/$APP_CONTEXT
 readonly APPLICATION_CMD_DIR=$APPLICATION_CONTEXT_GROUP/$APPLICATION_NAME/$APPLICATION_CMD
 readonly APPLICATION_PIPE=$APPLICATION_CMD_DIR/$$
 readonly APPLICATION_PIPE_DIR=$(dirname $APPLICATION_PIPE)
-if command -v winget >/dev/null 2>&1; then
-	log_warn "found winget"
-elif command -v choco >/dev/null 2>&1; then
-	log_warn "found chocolatey"
-elif command -v scoop >/dev/null 2>&1; then
-	log_warn "found scoop"
-else
-	exit_with_error "no package manager found"
-fi
+command -v winget >/dev/null 2>&1 && readonly WINGET=1
+command -v choco >/dev/null 2>&1 && readonly CHOCOLATEY=1
+command -v scoop >/dev/null 2>&1 && readonly SCOOP=1
 : ${IO_STAT_ARGS:='-c %a'}
 : ${SOFTWARE_CENTER_EXECUTABLE:="C:/Windows/CCM/ClientUX/scclient.exe"}
 readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$BIN_PATH | tr -s /)
@@ -680,7 +687,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_network_test_targets:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
 : ${conf_log_beep_err:='500,400'}
 : ${conf_log_beep_alrt:='600,200'}
-: ${conf_log_beep_SCS:='700,100'}
+: ${conf_log_beep_scs:='700,100'}
 : ${conf_log_beep_wrn:=''}
 : ${conf_log_beep_info:=''}
 : ${conf_log_beep_detail:=''}
@@ -758,14 +765,25 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_log_beep_scs"
-_cfg_validate_required
 wait_waitee_init
 wait_waiter
+if [ -n "$WINGET" ]; then
+	log_warn "has winget"
+elif [ -n "$CHOCOLATEY" ]; then
+	log_warn "has chocolatey"
+elif [ -n "$SCOOP" ]; then
+	log_warn "has scoop"
+else
+	exit_with_error "no package manager detected"
+fi
 _app_update_update_all() {
   for _APP_NAME in "$@"; do
     app-install $_APP_NAME || log_warn "$_APP_NAME - installation failed"
   done
+}
+_git_has_updates || {
+  log_warn "no updates detected, aborting"
+  exit
 }
 if [ $# -eq 0 ]; then
   _app_update_update_all install $(find $LIBRARY_PATH -maxdepth 2 -type f -name .metadata ! -path '*/install/*' | sed -e 's/\/.metadata$//' -e 's/^.*\///' | sort -u)

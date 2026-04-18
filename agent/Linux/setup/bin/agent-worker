@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -648,6 +650,7 @@ _agent_is_remote() {
 	[ "$remote_host" != "$(hostname)" ]
 }
 agent_run_job_validation_extension() {
+	_agent_validate_documentation
 	case $agent_extension_type in
 	Dockerfile)
 		format && build
@@ -661,16 +664,18 @@ agent_run_job_validation_extension() {
 	npm)
 		format && build
 		;;
+	sh)
+		format
+		;;
 	*)
 		log_warn "unknown extension type: $agent_extension_type"
 		;;
 	esac
+	exec_call _agent_validate_prompt_output
 }
-_jacoco_coverage() {
-	local jacoco_xml_report=$(find . -type f -name jacoco.xml -print -quit)
-	local overall_line_covered=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@covered)' $jacoco_xml_report)
-	local overall_line_missed=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@missed)' $jacoco_xml_report)
-	[ $overall_line_missed -eq 0 ]
+_agent_validate_documentation() {
+	[ -z "$agent_documentation_path" ] && return 0
+	find . -type f -path "*/$agent_documentation_path/*.md" -print -quit | grep -cqm1 '.'
 }
 _worker_init_job() {
 	file_require $agent_job
@@ -839,6 +844,15 @@ _worker_select_random_available_agent() {
 	validation_require "$_selected_agent" _selected_agent
 	log_info "selected agent: $_selected_agent"
 	printf '%s\n' "$_selected_agent"
+}
+_jacoco_coverage() {
+	local jacoco_xml_report=$(find . -type f -name jacoco.xml -print -quit)
+	local overall_line_covered=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@covered)' $jacoco_xml_report)
+	local overall_line_missed=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@missed)' $jacoco_xml_report)
+	[ $overall_line_missed -eq 0 ]
+}
+unit_test_validation() {
+	:
 }
 _extension_find_default() {
 	local _name_pattern=$(set | $GNU_GREP -P "^${extension_run_type}_name_pattern=" | sed -e "s/^${extension_run_type}_name_pattern=//")

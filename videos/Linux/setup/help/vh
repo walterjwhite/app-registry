@@ -1,7 +1,19 @@
-video history
-    -categories=*
-        only include history from the specified categories, space delimeted (default: error, watched, queued, downloaded)
-    -date=*
-        only include history for the specified date
-    -relative=*
-        convert date to relative date
+vh - Video History
+USAGE:
+    vh [-categories=cat1,cat2] [-date=YYYY/MM/DD] [-relative=days]
+DESCRIPTION:
+    Display video history from different categories. Shows metadata
+    for videos in various states (downloaded, queued, watched, error).
+OPTIONS:
+    -categories=cat1,cat2
+        Only include history from specified categories
+        (default: downloaded, exit_with_error, queued, watched)
+    -date=YYYY/MM/DD
+        Only include history for specified date
+    -relative=days
+        Include history from relative number of days ago
+EXAMPLES:
+    vh
+    vh -categories=downloaded,watched
+    vh -date=2025/03/25
+    vh -relative=7

@@ -1,0 +1,11 @@
+convert-public-function-to-private - Convert public functions to private
+USAGE:
+    convert-public-function-to-private <function-name>
+DESCRIPTION:
+    Convert a public function to a private function by
+    renaming it with an underscore prefix.
+ARGUMENTS:
+    function-name
+        Name of the public function to convert (required)
+EXAMPLES:
+    convert-public-function-to-private my_function

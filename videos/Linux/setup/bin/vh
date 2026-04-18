@@ -626,6 +626,8 @@ _alert_long_running_cmd() {
 }
 _video_meta() {
 	videos_url=$(printf '%s' $video_metadata | cut -f1 -d'|')
+	video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
+	[ -z "$video_key" ] && video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
 	video_date=$(printf '%s' $video_metadata | cut -f2 -d'|')
 	video_duration=$(printf '%s' $video_metadata | cut -f3 -d'|')
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')

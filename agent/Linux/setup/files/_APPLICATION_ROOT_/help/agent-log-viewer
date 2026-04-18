@@ -1,0 +1,14 @@
+agent-log-viewer - Agent Log Viewer
+USAGE:
+    agent-log-viewer <log-file1> [log-file2]
+DESCRIPTION:
+    View agent log files in tmux session. Creates split panes for
+    viewing multiple log files simultaneously.
+ARGUMENTS:
+    log-file1
+        Primary log file to view (required)
+    log-file2
+        Secondary log file to view (optional)
+EXAMPLES:
+    agent-log-viewer /var/log/agent.log
+    agent-log-viewer /var/log/agent.log /var/log/agent-error.log

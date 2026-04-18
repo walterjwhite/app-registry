@@ -1,0 +1,21 @@
+#!/bin/sh
+app-run - Compile and run shell scripts
+USAGE:
+    app-run <file-to-run> [args...]
+DESCRIPTION:
+    Compile and run a shell script file. The script is built
+    using the app build system and executed in a temporary
+    environment.
+ARGUMENTS:
+    file-to-run
+        The shell script file to compile and run (required)
+CONFIGURATION:
+    -conf-install-step-timeout SECONDS
+        Timeout per build step (default: 300)
+    -conf-install-max-concurrent-jobs NUM
+        Maximum concurrent jobs (default: nproc)
+    -conf-install-checksum-cmd CMD
+        Checksum command (default: "sha256 -q")
+EXAMPLES:
+    app-run my-script.sh
+    app-run test.sh arg1 arg2

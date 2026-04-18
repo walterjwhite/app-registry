@@ -626,16 +626,7 @@ _alert_long_running_cmd() {
 }
 script_exec() {
 	[ $conf_log_level -gt 0 ] && exit_defer rm -f $1
-	sh $1
-}
-user_callback() {
-	validation_require "$_OPTN_REMOTE_USER_CALLBACK_CMD" _OPTN_REMOTE_USER_CALLBACK_CMD
-	validation_require "$_OPTN_REMOTE_USER_CALLBACK_TIMEOUT" _OPTN_REMOTE_USER_CALLBACK_TIMEOUT
-	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT"
-	timeout $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT $_OPTN_REMOTE_USER_CALLBACK_CMD "$@"
-	local status=$?
-	log_info "running $_OPTN_REMOTE_USER_CALLBACK_CMD ($@) with timeout: $_OPTN_REMOTE_USER_CALLBACK_TIMEOUT -> $status"
-	return $status
+	timeout $conf_remote_timeout sh $1
 }
 videos_queue() {
 	[ -n "$REMOTE_VIDEOS_DOWNLOAD_USER" ] && {
@@ -907,6 +898,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
+: ${conf_remote_timeout:=900}
 : ${conf_remote_vpn_client_table_name:=vpn_client}
 : ${conf_remote_interface_name:=wg0}
 : ${conf_remote_service_start_cmd:=wg-quick up wg0}

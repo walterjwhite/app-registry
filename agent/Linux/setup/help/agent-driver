@@ -1,0 +1,18 @@
+agent-driver - Agent Task Driver
+USAGE:
+    agent-driver [job1] [job2] ...
+DESCRIPTION:
+    Drive execution of agent tasks. Runs all available jobs or
+    specified jobs. Can run locally or remotely.
+ARGUMENTS:
+    job1, job2, ...
+        Specific jobs to run (optional, defaults to all jobs)
+CONFIGURATION:
+    -conf-agent-remote-host HOST
+        Remote host for execution
+    -conf-agent-remote-user USER
+        Remote user for execution
+EXAMPLES:
+    agent-driver
+    agent-driver job1 job2
+    agent-driver --option=value

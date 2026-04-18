@@ -1,3 +1,13 @@
-video search
-    Wrapper for search cmd, specific to ~/.data/videos
-    * passed directly to search cmd
+vs - Video Search
+USAGE:
+    vs [search-terms...]
+DESCRIPTION:
+    Search within the videos directory. Wrapper for the search
+    command that is specific to ~/.data/videos.
+ARGUMENTS:
+    search-terms
+        Terms to search for (passed directly to search command)
+EXAMPLES:
+   vs "java tutorial"
+vs "comedy"
+vs "recipe chicken"

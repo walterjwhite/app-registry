@@ -1,1 +1,2 @@
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
+: ${conf_remote_timeout:=900}

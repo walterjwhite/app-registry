@@ -1,8 +1,30 @@
-queue video for download
-    -force force queue
+vq - Video Queue
+USAGE:
+    vq [-force] [-extract-audio] [-profiles=profile1,profile2] [-v URL]
+DESCRIPTION:
+    Queue a video for download. By default, gets the video URL
+    from the clipboard. Automatically starts downloading in the
+    background if another instance isn't running.
+OPTIONS:
+    -force
+        Force queue even if video was previously queued
     -extract-audio
-    -profiles=*
-        use specified profiles, space delimeted
-    -v specify URL to download instead of relying on the clipboard
-    -* pass options directly to youtube-dl
-    *  comments
+        Extract audio only
+    -profiles=profile1,profile2
+        Use specified profiles (space-separated)
+    -v URL
+        Specify URL to download instead of clipboard
+    -*
+        Pass options directly to youtube-dl
+CONFIGURATION:
+    -conf-videos-audio-format FORMAT
+        Audio format for extraction (default: aac)
+    -conf-videos-youtube-download-cmd CMD
+        YouTube download command (default: yt-dlp)
+    -conf-videos-youtube-video-download-options OPTIONS
+        Download options for video files
+EXAMPLES:
+    vq
+    vq -v https://youtube.com/watch?v=123
+    vq -extract-audio
+    vq -force -profiles=high-quality,low-quality

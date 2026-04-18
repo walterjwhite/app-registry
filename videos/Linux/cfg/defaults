@@ -1,17 +1,1 @@
-: ${conf_videos_audio_format:=aac}
-: ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
-: ${conf_videos_movie_trailer_fetch_count:=50}
-: ${conf_videos_movie_trailer_genre:=Action}
-: ${conf_videos_movie_trailer_region:=US}
-: ${conf_videos_movie_trailer_origin_country:=US}
-: ${conf_videos_movie_trailer_language:=en-US}
-: ${conf_videos_movie_trailer_days_back:=90}
-: ${conf_videos_movie_trailer_days_ahead:=90}
-: ${conf_videos_movie_trailer_min_votes:=10}
-: ${conf_videos_movie_trailer_sort_by:=primary_release_date.desc}
-: ${conf_videos_yt_days_back:=7}
-: ${conf_videos_yt_max_results:=50}
-: ${conf_videos_yt_max_pages:=5}
-: ${conf_videos_yt_order:=date}
-: ${conf_videos_yt_type:=video}
+: ${conf_videos_youtube_podcast_age:="3 days ago"}

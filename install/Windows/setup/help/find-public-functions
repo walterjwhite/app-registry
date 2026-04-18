@@ -1,0 +1,8 @@
+find-public-functions - Find all public functions
+USAGE:
+    find-public-functions
+DESCRIPTION:
+    List all public functions (functions not starting with underscore)
+    in the current project.
+EXAMPLES:
+    find-public-functions

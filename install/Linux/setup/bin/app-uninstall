@@ -721,7 +721,10 @@ app_install() {
 	_install_filter_file_callback $1 _app_install_do
 }
 _app_install_do() {
-	[ -z "$APP_INSTALL_DEPENDENCY" ] && readonly APP_INSTALL_DEPENDENCY=1
+	[ -z "$APP_INSTALL_DEPENDENCY" ] && {
+		readonly APP_INSTALL_DEPENDENCY=1
+		export APP_INSTALL_DEPENDENCY
+	}
 	app-install $1
 }
 app_uninstall() {
@@ -1733,36 +1736,40 @@ package_update() {
 	package_${linux_package_manager}_update "$@"
 }
 package_pacman_install_do() {
-	flags="-Sqyu --noconfirm"
+	pacman_flags="-Sqyu --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_uninstall_do() {
-	flags="-Rq --noconfirm"
+	pacman_flags="-Rq --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_is_installed() {
-	flags="-Q"
+	pacman_flags="-Q"
 	_pacman_cmd "$@"
+	unset pacman_flags
 }
 package_pacman_bootstrap() {
 	_pacman_setup_keys
 }
 package_pacman_update() {
-	flags="-Syuq --noconfirm"
+	pacman_flags="-Syuq --noconfirm --noprogressbar"
 	_pacman_cmd "$@"
+	unset pacman_flags
 	aur_package_update
 }
 _pacman_cmd() {
 	[ "$APP_PLATFORM_ROOT" = "/" ] && {
-		pacman $flags "$@" 2>&1 >/dev/null
+		pacman $pacman_flags "$@"
 		return
 	}
 	[ "$_container_type" = "incus" ] && {
 		log_warn "detected incus container, using incus exec"
-		incus exec $_container_name -- pacman $flags "$@" 2>&1 >/dev/null
+		incus exec $_container_name -- pacman $pacman_flags "$@"
 		return
 	}
-	pacman $flags --sysroot $APP_PLATFORM_ROOT "$@" 2>&1 >/dev/null
+	pacman $pacman_flags --sysroot $APP_PLATFORM_ROOT "$@"
 }
 _pacman_setup_keys() {
 	[ -e $APP_PLATFORM_ROOT/etc/pacman.d/gnupg ] && {

@@ -1,5 +1,24 @@
-video watch
+vw - Video Watch
+USAGE:
+    vw <video-id> [-castnow] [-castnow=device]
+DESCRIPTION:
+    Watch a downloaded video. Searches for video by ID (can be a
+    substring), plays it, allows adding comments, and then moves
+    it to watched or retains it based on user choice.
+ARGUMENTS:
+    video-id
+        ID of video to watch (can be a substring, required)
+OPTIONS:
     -castnow
-        send video to a chromecast device
-    -castnow=*
-        send video to the specified chromecast device
+        Send video to a chromecast device
+    -castnow=device
+        Send video to specified chromecast device
+CONFIGURATION:
+    -conf-videos-video-player CMD
+        Video player command (default: system default)
+    -conf-videos-download-path PATH
+        Path where videos are stored
+EXAMPLES:
+    vw abc123
+    vw abc123 -castnow
+    vw abc123 -castnow=living-room-tv

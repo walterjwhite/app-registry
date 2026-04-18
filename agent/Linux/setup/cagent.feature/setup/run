@@ -3,7 +3,11 @@ get_installed_cagent_version() {
 	cagent version 2>/dev/null | head -1 | sed -e 's/^.*v/v/'
 }
 _github_latest_release() {
-	curl -sL https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3"
+	[ -z "$4" ] && {
+		get_latest_${1}_version
+		return
+	}
+	curl -sL https://api.github.com/repos/$2/$3/releases/latest | jq -r "$4"
 }
 _github_fetch() {
 	local download_url=$(curl -s https://api.github.com/repos/$1/$2/releases/latest | jq -r "$3")
@@ -15,7 +19,7 @@ _github_fetch() {
 }
 _github_install_latest() {
 	local function_name=$(printf '%s' $1 | tr '-' '_')
-	local latest_version=$(_github_latest_release "$2" "$3" "$4")
+	local latest_version=$(_github_latest_release "$function_name" "$2" "$3" "$4")
 	local installed_version=$(get_installed_${function_name}_version)
 	[ "$installed_version" = "$latest_version" ] && {
 		log_detail "$1 is already installed and up-to-date"

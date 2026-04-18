@@ -624,6 +624,10 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+_videos_previously_downloaded() {
+	[ -n "$force" ] && return 1
+	grep "$videos_url" queued downloaded watched -rqm1 2>/dev/null
+}
 _videos_date() {
 	date +%Y/%m/%d/%H.%M.%S
 }
@@ -644,6 +648,7 @@ _video_fetch_metadata() {
 _video_meta() {
 	videos_url=$(printf '%s' $video_metadata | cut -f1 -d'|')
 	video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
+	[ -z "$video_key" ] && video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
 	video_date=$(printf '%s' $video_metadata | cut -f2 -d'|')
 	video_duration=$(printf '%s' $video_metadata | cut -f3 -d'|')
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')
@@ -818,7 +823,9 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_youtube_audio_download_options:="-f bestaudio[ext=aac]/bestaudio -x --audio-format m4a"}
+: ${conf_videos_youtube_podcast_download_options:="f bestaudio/best --downloader ffmpeg --extract-audio --audio-format m4a --audio-quality 128K"}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080]"}
 : ${conf_videos_movie_trailer_fetch_count:=50}
 : ${conf_videos_movie_trailer_genre:=Action}
 : ${conf_videos_movie_trailer_region:=US}
@@ -833,6 +840,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_videos_yt_max_pages:=5}
 : ${conf_videos_yt_order:=date}
 : ${conf_videos_yt_type:=video}
+: ${conf_videos_youtube_podcast_age:="3 days ago"}
 : ${conf_git_system_template_path:=/usr/share/git/templates}
 : ${conf_git_clone_timeout:=30}
 : ${conf_git_compression_format:=xz}
@@ -908,8 +916,6 @@ if [ -z "$videos_url" ]; then
   _videos_clipboard_get
   [ -z "$videos_url" ] && exit_with_error "no video URL was found on the clipboard"
 fi
-if [ -z "$force" ]; then
-  grep "$videos_url" queued downloaded extracted watched -rqm1 2>/dev/null && exit_with_error "$videos_url was previously queued, to queue again, please force queue (-force)" 2
-fi
+_videos_previously_downloaded && exit_with_error "$videos_url was previously downloaded, to download again, please force download (-force)" 2
 _video_fetch_metadata
 vd

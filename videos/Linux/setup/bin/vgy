@@ -624,6 +624,10 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+_videos_previously_downloaded() {
+	[ -n "$force" ] && return 1
+	grep "$videos_url" queued downloaded watched -rqm1 2>/dev/null
+}
 _youtube_download() {
 	vq -videos-url="$YOUTUBE_BASE?v=$youtube_video_id" -videos-tags="$youtube_video_channel_title"
 }
@@ -710,7 +714,10 @@ _youtube_video_duration() {
 }
 _youtube_filter() {
 	youtube_video_id=$(printf '%s\n' "$youtube_json_data" | jq -r '.id.videoId')
+	youtube_video_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.title' | sed -e 's/ | / - /g' -e 's/|/-/g')
 	youtube_video_channel_title=$(printf '%s\n' "$youtube_json_data" | jq -r '.snippet.channelTitle')
+	youtube_video_duration=$(printf '%s\n' "$youtube_json_data" | jq -r '.duration')
+	log_debug "video id: $youtube_video_id, title: $youtube_video_title, channel: $youtube_video_channel_title, duration: $youtube_video_duration"
 	_youtube_channel_filter
 }
 yt_search() {
@@ -766,6 +773,30 @@ _utils_urlencode() {
 		_i=$((_i + 1))
 	done
 	printf '%s' "$_encoded"
+}
+_data_app_init() {
+	local _project_identifier=$APPLICATION_NAME
+	[ -n "$1" ] && _project_identifier=$1
+	git_project_path=$DATA_PATH/$_project_identifier
+	system_id=$(_system_get_id)
+	if [ -n "$system_id" ]; then
+		git_project=data/$system_id/$USER/$_project_identifier
+	else
+		git_project=data-$_project_identifier
+	fi
+	if [ ! -e $git_project_path/.git ]; then
+		log_detail "initializing git $conf_git_mirror/$git_project @ $git_project_path"
+		time_timeout $conf_git_clone_timeout _data_app_init git clone "$conf_git_mirror/$git_project" $git_project_path || {
+			[ -z "$warn_on_error" ] && exit_with_error "unable to initialize project"
+			log_warn "clone failed, initialized empty project"
+			git init $git_project_path
+		}
+	fi
+	cd $git_project_path
+	git pull
+}
+_system_get_id() {
+	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
 }
 readonly APPLICATION_NAME=videos
 readonly APPLICATION_START_TIME=$(date +%s)
@@ -848,7 +879,7 @@ readonly TMDB_BASE="https://api.themoviedb.org/3"
 readonly YOUTUBE_BASE="https://www.youtube.com/watch"
 readonly YT_SEARCH_URL="https://www.googleapis.com/youtube/v3/search"
 readonly TMDB_GENRE_MAP="28:Action 12:Adventure 16:Animation 35:Comedy 80:Crime 99:Documentary 18:Drama 10751:Family 14:Fantasy 36:History 27:Horror 10402:Music 9648:Mystery 10749:Romance 878:Science-Fiction 10770:TV-Movie 53:Thriller 10752:War 37:Western"
-_include_optional . beep context logging net paths platform videos wait
+_include_optional . beep context git logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
 : ${conf_log_beep_timeout:=5}
@@ -890,7 +921,9 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_videos_audio_format:=aac}
 : ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080] --recode-video mp4 --audio-format aac"}
+: ${conf_videos_youtube_audio_download_options:="-f bestaudio[ext=aac]/bestaudio -x --audio-format m4a"}
+: ${conf_videos_youtube_podcast_download_options:="f bestaudio/best --downloader ffmpeg --extract-audio --audio-format m4a --audio-quality 128K"}
+: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080]"}
 : ${conf_videos_movie_trailer_fetch_count:=50}
 : ${conf_videos_movie_trailer_genre:=Action}
 : ${conf_videos_movie_trailer_region:=US}
@@ -905,6 +938,16 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_videos_yt_max_pages:=5}
 : ${conf_videos_yt_order:=date}
 : ${conf_videos_yt_type:=video}
+: ${conf_videos_youtube_podcast_age:="3 days ago"}
+: ${conf_git_system_template_path:=/usr/share/git/templates}
+: ${conf_git_clone_timeout:=30}
+: ${conf_git_compression_format:=xz}
+: ${conf_git_compression_cmd:="xz -z"}
+: ${conf_git_squash_commits:=2}
+: ${conf_git_backup_date_time_format:=%Y.%m.%d-%H.%M.%S}
+: ${conf_git_delete_period_IN_DAYS:=365}
+: ${conf_git_delete_dryrun:=0}
+readonly GIT_PROJECT_BASE_PATH=$HOME/projects
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3
@@ -959,15 +1002,22 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_videos_youtube_channels conf_videos_yt_api_key"
+readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_youtube_channels conf_videos_yt_api_key"
 _cfg_validate_required
 wait_waitee_init
 wait_waiter
+: ${_OPTN_DISABLE_LONG_RUNNING_CMD_NOTIFICATION:=1}
+_data_app_init
 _youtube_fetch_channels() {
   for youtube_channel_id in $conf_videos_youtube_channels; do
     _youtube_fetch_channel | jq -c '.[]' | while read -r youtube_json_data; do
       _youtube_filter || {
         log_info "skipping"
+        _youtube_after_each
+        continue
+      }
+      _videos_previously_downloaded && {
+        log_info "$videos_url was previously downloaded, skipping"
         _youtube_after_each
         continue
       }

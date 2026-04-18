@@ -1,0 +1,8 @@
+vss - Video Statistics
+USAGE:
+    vss
+DESCRIPTION:
+    Display video watching statistics. Calculates total watch time
+    from all watched videos and displays the result in hours.
+EXAMPLES:
+    vss

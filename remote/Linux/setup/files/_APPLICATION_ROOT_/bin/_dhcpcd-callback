@@ -742,6 +742,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
 : ${conf_remote_callback_path:=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin}
+: ${conf_remote_timeout:=900}
 : ${conf_remote_vpn_client_table_name:=vpn_client}
 : ${conf_remote_interface_name:=wg0}
 : ${conf_remote_service_start_cmd:=wg-quick up wg0}
