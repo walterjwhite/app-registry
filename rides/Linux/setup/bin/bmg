@@ -300,15 +300,17 @@ log_print_newline_to_console() {
 }
 log_add_context() {
 	[ -z "$1" ] && return 1
-	case "$1" in
+	local context_to_add="$1"
+	case "$context_to_add" in
 	*:*)
-		exit_with_error "context string contains colon, which is not allowed"
+		log_debug "replacing : with |"
+		context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
 		;;
 	esac
 	if [ -z "$logging_context" ]; then
-		logging_context="$1"
+		logging_context="$context_to_add"
 	else
-		logging_context="${logging_context}:$1"
+		logging_context="${logging_context}:$context_to_add"
 	fi
 }
 log_remove_context() {
@@ -622,6 +624,18 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+_add_validate_date() {
+	case "$_date" in
+	[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9])
+		_date=$(printf '%s' $_date | sed -e "s/\///g")
+		;;
+	[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9])
+		;;
+	*)
+		exit_with_error "invalid date format: $_date. Expected format: YYYY/mm/dd or YYYYmmdd"
+		;;
+	esac
+}
 _data_app_init() {
 	local _project_identifier=$APPLICATION_NAME
 	[ -n "$1" ] && _project_identifier=$1
@@ -844,15 +858,15 @@ group_bucket="sum += \$4; n++"
 group_print="print $_aggregation\" \"units"
 [ "$bike" ] && _append 3 "==\"$bike\""
 [ "$start" ] && {
-  _start_date=${start#*=}
-  validate_date_format "$_start_date"
-  _start_filter=$(printf '%s' "$_start_date" | sed -e "s/\///g")
+  _date=${start#*=}
+  _add_validate_date
+  _start_filter=$(printf '%s' "$_date" | sed -e "s/\///g")
   _append 1 ">=$_start_filter"
 }
 [ "$end" ] && {
-  _end_date=${end#*=}
-  validate_date_format "$_end_date"
-  _end_filter=$(printf '%s' "$_end_date" | sed -e "s/\///g")
+  _date=${end#*=}
+  _add_validate_date
+  _end_filter=$(printf '%s' "$_date" | sed -e "s/\///g")
   _append 1 "<=$_end_filter"
 }
 [ "$group" ] && {

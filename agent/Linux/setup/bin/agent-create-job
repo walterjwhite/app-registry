@@ -906,7 +906,19 @@ wait_waitee_init
 wait_waiter
 sudo_ensure_not_root
 _agent_git_init_workspace
+case $agent_job in
+*.job)
+  ;;
+*)
+  agent_job="$agent_job.job"
+  ;;
+esac
 mkdir -p $agent_job
+file_require $agent_job_file
+grep -cqm1 '^agent_job_git_repository=' $agent_job_file || exit_with_error 'agent_job_git_repository is required'
+file_require $agent_prompt_file
+[ -s $agent_prompt_file ] || exit_with_error 'prompt is empty'
+[ -e $agent_job/job ] && [ -e $agent_job/prompt.md ] && [ -z "$force" ] && exit_with_error "job is already defined $agent_job"
 mv $agent_job_file $agent_job/job
 mv $agent_prompt_file $agent_job/prompt.md
 git add $agent_job

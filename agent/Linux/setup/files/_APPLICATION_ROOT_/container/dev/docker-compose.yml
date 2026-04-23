@@ -3,6 +3,7 @@
 #
 services:
   sandbox:
+    network_mode: "host"
     build:
       context: .
       dockerfile: Dockerfile.ubuntu

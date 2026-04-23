@@ -1,8 +1,25 @@
-bike mileage get
+bmg - Bike Mileage Get
+USAGE:
+    bmg [-bike=bike] [-start=YYYY/MM/DD] [-end=YYYY/MM/DD] [-group=group]
+DESCRIPTION:
+    Get and analyze bike mileage statistics. Can filter by bike,
+    date range, and group results by various criteria.
+OPTIONS:
     -bike=bike
-    -start=start
-        -s=2019/01/01
-    -end=end
-        -e=2019/12/31
-    -group=group (bike / year / month / day)
-        -g=bike
+        Filter by specific bike name
+    -start=YYYY/MM/DD
+        Start date for filtering (alias: -s)
+    -end=YYYY/MM/DD
+        End date for filtering (alias: -e)
+    -group=group
+        Group results by (alias: -g):
+        bike    - Group by bike
+        year    - Group by year
+        month   - Group by month
+        day     - Group by day
+EXAMPLES:
+    bmg
+    bmg -bike=mountain-bike
+    bmg -start=2025/01/01 -end=2025/12/31
+    bmg -group=bike
+    bmg -bike=road-bike -group=month

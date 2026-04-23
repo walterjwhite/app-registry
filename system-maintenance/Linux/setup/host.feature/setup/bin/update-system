@@ -1476,9 +1476,12 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_system_maintenance_zap_retention_period"
+_cfg_validate_required
 wait_waitee_init
 wait_waiter
 package_update
 app-update
 root_zfs_volume=$(zfs get -H name / | awk {'print$1'})
-zap snap 30d ${root_zfs_volume}
+zap snap $conf_system_maintenance_zap_retention_period ${root_zfs_volume}
+zap destroy -v

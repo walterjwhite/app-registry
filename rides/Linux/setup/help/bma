@@ -1,8 +1,22 @@
-bike mileage add
-    If the record already exists (Date, Index, Bike), the record is not inserted and an exit_with_error is returned.
-    Indexed Parameters
-    Date (2010/01/01)
-    Index (1)
-    Bike (s20)
-    Mileage (7.4)
-    Tags
+bma - Bike Mileage Add
+USAGE:
+    bma <date> <index> <bike> <distance> [tags]
+DESCRIPTION:
+    Add a bike ride record to the mileage log. Automatically converts
+    distance from miles to kilometers. If the record already exists
+    (Date, Index, Bike), an error is returned.
+ARGUMENTS:
+    date
+        Date of ride (format: YYYY/MM/DD)
+    index
+        Ride number for the day (1, 2, 3...)
+    bike
+        Name of the bike
+    distance
+        Distance in km, recorded to repository in miles to be compatible with historical data (future releases may change this)
+    tags
+        Optional tags for the ride
+EXAMPLES:
+    bma 2025/03/25 1 road-bike 15.2 "commute"
+    bma 2025/03/25 2 mountain-bike 8.7 "trail"
+    bma 2025/03/26 1 road-bike 12.1

@@ -1,3 +1,21 @@
-backup / restore configuration
-    backup          backup supported configuration from $HOME directory into $HOME/.data/configuration and push to a configured git remote
-    restore         restore supported configuration back into $HOME directory from $HOME/.data/configuration
+conf - Configuration Backup/Restore
+USAGE:
+    conf <action>
+DESCRIPTION:
+    Backup or restore supported configuration files.
+ACTIONS:
+    backup
+        Backup supported configuration from $HOME directory into
+        $HOME/.data/configuration and push to configured git remote
+    restore
+        Restore supported configuration back into $HOME directory
+        from $HOME/.data/configuration
+EXAMPLES:
+    conf backup
+        backup all configuration plugins
+    conf backup walterjwhite-conf
+        backup only walterjwhite-conf
+    conf restore
+        restore all configuration plugins
+    conf restore walterjwhite-conf
+        restore only walterjwhite-conf
