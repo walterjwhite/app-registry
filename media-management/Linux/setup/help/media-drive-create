@@ -1,0 +1,19 @@
+media-drive-create - Media Drive Creation
+USAGE:
+    media-drive-create
+DESCRIPTION:
+    Create and configure a new media drive with encryption and ZFS.
+    Prompts for drive, volume name, source host, and LUKS passphrase.
+INPUT:
+    - Media Drive (disk device)
+    - Media Volume Name (ZFS volume name)
+    - Media Source Host (for ZFS snapshot send)
+    - Media LUKS Passphrase (encryption password)
+PROCESS:
+    - Remove existing labels and create GPT
+    - Create Linux partition
+    - Setup LUKS encryption
+    - Create ZFS pool with compression
+    - Send ZFS snapshots from source host
+EXAMPLES:
+    media-drive-create

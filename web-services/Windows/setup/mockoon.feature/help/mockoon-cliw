@@ -1,0 +1,17 @@
+mockoon-cliw - Mockoon CLI Wrapper
+USAGE:
+    mockoon-cliw [--port=port] [--data=requests] [-d=requests]
+DESCRIPTION:
+    Mockoon CLI wrapper that starts mock server with monitoring
+    and notification capabilities.
+OPTIONS:
+    --port=port
+        Port to run mock server on
+    --data=requests | -d=requests
+        JSON requests file to serve
+CONFIGURATION:
+    -mockoon-requests FILE
+        Default JSON requests file
+EXAMPLES:
+    mockoon-cliw --port=3000 --data=api.json
+    mockoon-cliw -d=mock-data.json

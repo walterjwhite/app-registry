@@ -1,2 +1,13 @@
-git diff
-	@see git diff args
+gd - Git Diff
+USAGE:
+    gd [git-diff-arguments...]
+DESCRIPTION:
+    Show git diff. All arguments are passed directly to git diff.
+ARGUMENTS:
+    git-diff-arguments
+        Any valid git diff arguments
+EXAMPLES:
+    gd
+    gd HEAD~1
+    gd --cached
+    gd main feature-branch

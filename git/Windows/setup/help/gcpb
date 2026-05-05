@@ -1,4 +1,15 @@
-git cherry pick on branch
-	checks out the specified branch before cherry-picking the requested changes, pushing, and restoring the original branch
-	branch to apply the cherry-pick on
-	source branch, tag, or git commit to cherry pick
+gcpb - Git Cherry Pick on Branch
+USAGE:
+    gcpb <target-branch> <source-reference>
+DESCRIPTION:
+    Checkout the specified branch before cherry-picking the requested
+    changes, pushing, and restoring the original branch.
+ARGUMENTS:
+    target-branch
+        Branch to apply the cherry-pick on
+    source-reference
+        Source branch, tag, or git commit to cherry pick
+EXAMPLES:
+    gcpb main feature-branch
+    gcpb develop abc123
+    gcpb release v1.0.0

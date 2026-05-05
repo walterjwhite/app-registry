@@ -1,1 +1,7 @@
-git current branch
+gcb - Git Current Branch
+USAGE:
+    gcb
+DESCRIPTION:
+    Show the current git branch name.
+EXAMPLES:
+    gcb

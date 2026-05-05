@@ -634,45 +634,11 @@ _agent_git_init_workspace() {
 	cd $agent_workspace
 	gpull
 }
-agent_run_job_validation_extension() {
-	_agent_validate_documentation
-	case $agent_extension_type in
-	Dockerfile)
-		format && build
-		;;
-	go)
-		format && build
-		;;
-	maven)
-		format && build && _jacoco_coverage
-		;;
-	npm)
-		format && build
-		;;
-	sh)
-		format
-		;;
-	*)
-		log_warn "unknown extension type: $agent_extension_type"
-		;;
-	esac
-	exec_call _agent_validate_prompt_output
-}
-_agent_validate_documentation() {
-	[ -z "$agent_documentation_path" ] && return 0
-	find . -type f -path "*/$agent_documentation_path/*.md" -print -quit | grep -cqm1 '.'
-}
-_jacoco_coverage() {
-	local jacoco_xml_report=$(find . -type f -name jacoco.xml -print -quit)
-	local overall_line_covered=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@covered)' $jacoco_xml_report)
-	local overall_line_missed=$(xmllint --xpath 'string(//report/counter[@type="LINE"]/@missed)' $jacoco_xml_report)
-	[ $overall_line_missed -eq 0 ]
-}
 unit_test_validation() {
 	:
 }
 _extension_find_default() {
-	local _name_pattern=$(set | $GNU_GREP -P "^${extension_run_type}_name_pattern=" | sed -e "s/^${extension_run_type}_name_pattern=//")
+	local _name_pattern=$(set | $GNU_GREP -P "^${extension_run_type}_name_pattern=" | sed -e "s/^${extension_run_type}_name_pattern=//" -e "s/^'//" -e "s/'$//")
 	[ -z "$_name_pattern" ] && {
 		case $extension_run_type in
 		[a-z][a-z] | [a-z][a-z][a-z] | [a-z][a-z][a-z][a-z])
@@ -826,6 +792,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${agent_rate_limit_wait:=60}
 : ${conf_agent_scheduled_jobs_window_start_time:=1600}
 : ${conf_agent_scheduled_jobs_window_stop_time:=0600}
+: ${rclone_min_age:=1d}
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3

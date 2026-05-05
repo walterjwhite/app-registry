@@ -1,5 +1,21 @@
-git delete old branches
-	--delete-period (conf_git_delete_period)
-		check for branches older than this period
-	--delete-dryrun (conf_git_delete_dryrun)
-		do not actually delete, perform a dry-run
+gdob - Git Delete Old Branches
+USAGE:
+    gdob [--delete-period=period] [--delete-dryrun]
+DESCRIPTION:
+    Delete old branches based on configuration settings.
+OPTIONS:
+    --delete-period=period
+        Delete branches older than this period
+        (conf_git_delete_period)
+    --delete-dryrun
+        Perform a dry run without actually deleting
+        (conf_git_delete_dryrun)
+CONFIGURATION:
+    -conf-git-delete-period=PERIOD
+        Default period for branch deletion
+    -conf-git-delete-dryrun=0|1
+        Enable dry run mode by default
+EXAMPLES:
+    gdob
+    gdob --delete-period="3 months"
+    gdob --delete-dryrun

@@ -649,30 +649,6 @@ _agent_is_remote() {
 	[ -z "$remote_host" ] && return 1
 	[ "$remote_host" != "$(hostname)" ]
 }
-agent_run_job_validation_extension() {
-	_agent_validate_documentation
-	case $agent_extension_type in
-	Dockerfile)
-		format && build
-		;;
-	go)
-		format && build
-		;;
-	maven)
-		format && build && _jacoco_coverage
-		;;
-	npm)
-		format && build
-		;;
-	sh)
-		format
-		;;
-	*)
-		log_warn "unknown extension type: $agent_extension_type"
-		;;
-	esac
-	exec_call _agent_validate_prompt_output
-}
 _agent_validate_documentation() {
 	[ -z "$agent_documentation_path" ] && return 0
 	find . -type f -path "*/$agent_documentation_path/*.md" -print -quit | grep -cqm1 '.'
@@ -701,11 +677,20 @@ _worker_sleep() {
 	log_detail "sleeping $agent_job_iteration_delay"
 	sleep $agent_job_iteration_delay
 }
+_worker_publish_artifacts() {
+	[ -z "$rclone_remote" ] && {
+		log_warn "unable to publish: rclone_remote is undefined"
+		return 1
+	}
+	_rclone_prune_stale_files
+	publish
+}
 _worker_run_job_joblet() {
 	_worker_sandbox_init
 	_worker_sandbox_run || _worker_fix_error
 	_worker_run_job_validation
 	_worker_sandbox_patch && _worker_apply_patch
+	_worker_publish_artifacts
 }
 _worker_fix_error() {
 	log_warn "attempting to resolve error"
@@ -722,13 +707,19 @@ _worker_fix_error() {
 	worker_agent_prompt=$original_prompt
 }
 _worker_run_job_validation() {
+	[ -n "$agent_job_is_coding_task" ] && {
+		log_info "running format"
+		format >>$_worker_job_logfile 2>&1 || _worker_fix_error
+		log_info "running build"
+		build >>$_worker_job_logfile 2>&1 || _worker_fix_error
+	}
 	type _agent_job_validation >/dev/null 2>&1 && {
 		log_info "running _agent_job_validation"
 		_agent_job_validation || _worker_fix_error
 		return
 	}
 	log_info 'running job validation'
-	agent_run_job_validation_extension
+	_agent_validate_documentation
 }
 _worker_run_job() {
 	type _agent_job_batcher >/dev/null 2>&1 || {
@@ -851,7 +842,7 @@ unit_test_validation() {
 	:
 }
 _extension_find_default() {
-	local _name_pattern=$(set | $GNU_GREP -P "^${extension_run_type}_name_pattern=" | sed -e "s/^${extension_run_type}_name_pattern=//")
+	local _name_pattern=$(set | $GNU_GREP -P "^${extension_run_type}_name_pattern=" | sed -e "s/^${extension_run_type}_name_pattern=//" -e "s/^'//" -e "s/'$//")
 	[ -z "$_name_pattern" ] && {
 		case $extension_run_type in
 		[a-z][a-z] | [a-z][a-z][a-z] | [a-z][a-z][a-z][a-z])
@@ -889,6 +880,12 @@ _git_archive_filter() {
 	find $target \( -type f -or -type l \) -and \( -path '*.secret*' -or -path '*.archived*' \) -delete
 	[ -n "$file_extension_filter" ] && find $target -type f ! -name "$file_extension_filter" -delete
 	find $target -depth -type d -empty -delete
+}
+_rclone_prune_stale_files() {
+	log_warn "pruning stale files: $rclone_remote : $rclone_min_age"
+	local rclone_options
+	[ "$conf_log_level" -eq 0 ] && rclone_options="--dry-run"
+	rclone delete $rclone_remote --min-age $rclone_min_age $rclone_options
 }
 _provider_load() {
 	[ $# -lt 1 ] && exit_with_error "provider name is required, ie. firefox"
@@ -1025,6 +1022,7 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${agent_rate_limit_wait:=60}
 : ${conf_agent_scheduled_jobs_window_start_time:=1600}
 : ${conf_agent_scheduled_jobs_window_stop_time:=0600}
+: ${rclone_min_age:=1d}
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3

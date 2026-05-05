@@ -1,2 +1,12 @@
-git cherry pick
-    commit, branch, or tag
+gchp - Git Cherry Pick
+USAGE:
+    gchp <reference>
+DESCRIPTION:
+    Cherry pick a commit, branch, or tag.
+ARGUMENTS:
+    reference
+        Commit hash, branch name, or tag to cherry pick
+EXAMPLES:
+    gchp abc123
+    gchp feature-branch
+    gchp v1.0.0

@@ -624,9 +624,33 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+media_process_staging() {
+	sudo_run media-process-staging
+}
 script_exec() {
 	[ $conf_log_level -gt 0 ] && exit_defer rm -f $1
-	timeout $conf_remote_timeout sh $1
+	if [ -n "$remote_exec_profile" ]; then
+		log_warn "using profile $remote_exec_profile"
+		_include_optional $APP_CONFIG_PATH.$remote_exec_profile
+		[ -n "$profile_user" ] && {
+			log_warn "running as user $profile_user"
+			sudo_run chown -R "$profile_user:$profile_user" .
+			opwd=$PWD
+			sudo_user=$profile_user
+		}
+	fi
+	time_timeout $conf_remote_timeout "script_exec - $1" sh $1
+	local status=$?
+	[ -n "$profile_user" ] && {
+		unset sudo_user
+		cd /tmp
+		local ouser=$USER
+		sudo_run chown -R "$ouser:$ouser" $opwd
+	}
+	return $status
+}
+remote_stop() {
+	kill "$@"
 }
 videos_queue() {
 	[ -n "$REMOTE_VIDEOS_DOWNLOAD_USER" ] && {
@@ -985,7 +1009,7 @@ _remote_exec() {
   unset sudo_user
   exec_call $_FUNCTION_CALL "$@"
 }
-log_warn "setting path to: $conf_remote_callback_path"
+log_debug "setting path to: $conf_remote_callback_path"
 log_info "$_FUNCTION_CALL $*"
 _remote_exec "$@" || {
   function_exit_status=$?

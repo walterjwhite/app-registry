@@ -1,2 +1,13 @@
-git log
-    @see git log arguments
+gl - Git Log
+USAGE:
+    gl [git-log-arguments...]
+DESCRIPTION:
+    Show git log. All arguments are passed directly to git log.
+ARGUMENTS:
+    git-log-arguments
+        Any valid git log arguments
+EXAMPLES:
+    gl
+    gl --oneline
+    gl --graph --decorate
+    gl -10

@@ -1,2 +1,12 @@
--type=enum|class|interface
-    The Java type we're interested in
+java-types - Java Type Search
+USAGE:
+    java-types -type=enum|class|interface
+DESCRIPTION:
+    Search for Java types by type.
+OPTIONS:
+    -type=enum|class|interface
+        The Java type to search for (required)
+EXAMPLES:
+    java-types -type=class
+    java-types -type=interface
+    java-types -type=enum

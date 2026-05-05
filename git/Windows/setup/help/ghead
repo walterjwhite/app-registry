@@ -1,1 +1,7 @@
-prints out the current head hash
+ghead - Git Head Hash
+USAGE:
+    ghead
+DESCRIPTION:
+    Print the current HEAD commit hash.
+EXAMPLES:
+    ghead

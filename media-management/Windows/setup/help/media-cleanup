@@ -1,0 +1,16 @@
+media-cleanup - Media Organization Cleanup
+USAGE:
+    media-cleanup
+DESCRIPTION:
+    Clean up and organize media files. Ensures media is organized
+    consistently and easy to find. Processes files in /media/output.
+FUNCTIONS:
+    - Find all links in by-time and by-tag directories
+    - Identify unique filenames
+    - Map files and handle duplicates
+    - Remove underscores from filenames
+    - Convert .jpeg extensions to .jpg
+NOTE:
+    Runtime approximately 1 hour for full processing.
+EXAMPLES:
+    media-cleanup

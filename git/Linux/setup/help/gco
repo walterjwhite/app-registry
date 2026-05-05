@@ -1,2 +1,13 @@
-git checkout
-    branch, tag, git commit
+gco - Git Checkout
+USAGE:
+    gco <reference>
+DESCRIPTION:
+    Checkout a branch, tag, or git commit.
+ARGUMENTS:
+    reference
+        Branch name, tag, or commit hash to checkout
+EXAMPLES:
+    gco main
+    gco feature-branch
+    gco v1.0.0
+    gco abc123

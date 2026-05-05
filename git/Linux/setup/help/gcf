@@ -1,4 +1,16 @@
-git changed files
-    -ref=*    git reference
-    -since=*  commits after
-    -before=* commits before
+gcf - Git Changed Files
+USAGE:
+    gcf [-ref=reference] [-since=commit] [-before=commit]
+DESCRIPTION:
+    Show changed files with optional filtering by git reference and date range.
+OPTIONS:
+    -ref=reference
+        Git reference to compare against
+    -since=commit
+        Show commits after this reference
+    -before=commit
+        Show commits before this reference
+EXAMPLES:
+    gcf
+    gcf -ref=main
+    gcf -since=v1.0.0 -before=v2.0.0

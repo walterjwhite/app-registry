@@ -463,7 +463,50 @@ _syslog_syslog() {
 	:
 }
 sudo_run() {
-	runas "$@"
+	[ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
+	sudo_is_validation_required || {
+		"$@"
+		return
+	}
+	validation_require "$_SUDO_CMD" "sudo_cmd - $*"
+	[ -n "$interactive" ] && {
+		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
+	}
+	$_SUDO_CMD $sudo_options "$@"
+	local sudo_return_status=$?
+	unset sudo_options
+	return $sudo_return_status
+}
+sudo_is_validation_required() {
+	[ -n "$sudo_user" ] && {
+		[ "$sudo_user" = "$USER" ] && return 1
+		sudo_options="$sudo_options /user:$sudo_user"
+		return 0
+	}
+	_sudo_is_administrator && return 1
+	return 0
+}
+_sudo_is_administrator() {
+	net session >/dev/null 2>&1
+}
+sudo_ensure_administrator() {
+	_sudo_is_administrator && return
+	log_info "enter administrator password to run this program as administrator"
+	sudo_run "$0" "$@"
+	exit $?
+}
+sudo_ensure_not_administrator() {
+	_sudo_is_administrator || return
+	exit_with_error "$0 cannot be run as administrator"
+}
+sudo_ensure_root() {
+	sudo_ensure_administrator "$@"
+}
+sudo_ensure_not_root() {
+	sudo_ensure_not_administrator "$@"
+}
+sudo_precmd() {
+	:
 }
 time_timeout() {
 	local _timeout=$1
@@ -1372,6 +1415,48 @@ _rust_is_installed() {
 rust_is_latest() {
 	:
 }
+package_chocolatey_bootstrap() {
+	command -v choco >/dev/null 2>&1 && return 0
+	log_info "installing chocolatey"
+	if command -v powershell >/dev/null 2>&1; then
+		powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+	else
+		if command -v curl >/dev/null 2>&1; then
+			curl -L https://community.chocolatey.org/install.ps1 | powershell -Command -
+		elif command -v wget >/dev/null 2>&1; then
+			wget -qO- https://community.chocolatey.org/install.ps1 | powershell -Command -
+		else
+			exit_with_error "curl or wget required to install chocolatey"
+		fi
+	fi
+	[ -d "$APP_PLATFORM_BIN_PATH" ] && export PATH="$APP_PLATFORM_BIN_PATH:$PATH"
+}
+package_chocolatey_bootstrap_uninstall() {
+	log_info "uninstalling chocolatey"
+	if command -v choco >/dev/null 2>&1; then
+		log_warn "chocolatey must be manually uninstalled"
+		return 1
+	fi
+	log_warn "chocolatey is not installed"
+}
+package_chocolatey_install() {
+	package_chocolatey_bootstrap
+	log_info "installing package: $*"
+	choco install -y "$@"
+}
+package_chocolatey_uninstall() {
+	log_info "uninstalling package: $*"
+	choco uninstall -y "$@"
+}
+package_chocolatey_update() {
+	log_info "updating chocolatey and packages"
+	choco upgrade all -y
+}
+package_chocolatey_is_installed() {
+	local package_name=$1
+	[ -z "$package_name" ] && return 1
+	choco list --local-only --exact "$package_name" | grep -q "$package_name" 2>/dev/null
+}
 package_bootstrap() {
 	package_${windows_package_manager}_bootstrap
 }
@@ -1389,6 +1474,70 @@ package_update() {
 }
 _package_is_installed() {
 	package_${windows_package_manager}_is_installed "$@"
+}
+package_scoop_bootstrap() {
+	command -v scoop >/dev/null 2>&1 && return 0
+	log_info "installing scoop"
+	curl -L https://get.scoop.sh | sh
+	[ -f "$HOME/scoop/shims/scoop" ] && export PATH="$HOME/scoop/shims:$PATH"
+}
+package_scoop_bootstrap_uninstall() {
+	log_info "uninstalling scoop"
+	if command -v scoop >/dev/null 2>&1; then
+		scoop uninstall scoop
+		return
+	fi
+	log_warn "scoop is not installed"
+}
+package_scoop_install() {
+	package_scoop_bootstrap
+	log_info "installing package: $*"
+	scoop install "$@"
+}
+package_scoop_uninstall() {
+	log_info "uninstalling package: $*"
+	scoop uninstall "$@"
+}
+package_scoop_update() {
+	log_info "updating scoop and packages"
+	scoop update
+	scoop update *
+}
+package_scoop_is_installed() {
+	local package_name=$1
+	[ -z "$package_name" ] && return 1
+	scoop list | grep -q "^$package_name$" 2>/dev/null
+}
+package_winget_bootstrap() {
+	command -v winget >/dev/null 2>&1 && return 0
+	log_info "checking winget availability"
+	if command -v powershell >/dev/null 2>&1; then
+		powershell -Command "Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' | Update-AppxPackage" 2>/dev/null || {
+			log_warn "winget update failed, may need manual installation from Microsoft Store"
+		}
+	fi
+	[ -d "$APP_PLATFORM_BIN_PATH" ] && export PATH="$APP_PLATFORM_BIN_PATH:$PATH"
+}
+package_winget_bootstrap_uninstall() {
+	log_info "winget is built into Windows, cannot be uninstalled"
+}
+package_winget_install() {
+	package_winget_bootstrap
+	log_info "installing package: $*"
+	winget install --accept-package-agreements --accept-source-agreements "$@"
+}
+package_winget_uninstall() {
+	log_info "uninstalling package: $*"
+	winget uninstall "$@"
+}
+package_winget_update() {
+	log_info "updating winget and packages"
+	winget upgrade --all --accept-package-agreements --accept-source-agreements
+}
+package_winget_is_installed() {
+	local package_name=$1
+	[ -z "$package_name" ] && return 1
+	winget list --exact "$package_name" | grep -q "$package_name" 2>/dev/null
 }
 uninstall_app() {
 	validation_require "$target_application_name" target_application_name
@@ -1515,6 +1664,12 @@ command -v choco >/dev/null 2>&1 && readonly CHOCOLATEY=1
 command -v scoop >/dev/null 2>&1 && readonly SCOOP=1
 : ${IO_STAT_ARGS:='-c %a'}
 : ${SOFTWARE_CENTER_EXECUTABLE:="C:/Windows/CCM/ClientUX/scclient.exe"}
+readonly GNU_GREP=grep
+readonly GNU_SED=sed
+readonly APP_PLATFORM_SUB_PLATFORM=$(cmd //c systeminfo | grep -i "OS" | sed -e 's/^OS Name://g' -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g')
+readonly LIBRARY_PATH=$HOME/.local/walterjwhite
+readonly BIN_PATH=$HOME/.local/bin
+readonly PLATFORM_SYSTEM_ID_PATH=$HOME/.local/etc/walterjwhite/system
 readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$BIN_PATH | tr -s /)
 readonly APP_PLATFORM_CACHE_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$CACHE_PATH | tr -s /)
 readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$CONFIG_PATH | tr -s /)
@@ -1644,16 +1799,11 @@ log_enable_debug_mode
 wait_waitee_init
 wait_waiter
 if [ -n "$WINGET" ]; then
-	log_warn "has winget"
 	windows_package_manager=winget
 elif [ -n "$CHOCOLATEY" ]; then
-	log_warn "has chocolatey"
 	windows_package_manager=chocolatey
 elif [ -n "$SCOOP" ]; then
-	log_warn "has scoop"
 	windows_package_manager=scoop
-else
-	exit_with_error "no package manager detected"
 fi
 sudo_ensure_root "$@"
 platform_is_supported

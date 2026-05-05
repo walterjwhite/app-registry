@@ -624,6 +624,7 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
+#!/bin/sh
 _video_download() {
 	_video_read_meta
 	_video_meta $video_file >/dev/null 2>&1
@@ -755,6 +756,7 @@ _data_app_init() {
 	cd $git_project_path
 	git pull
 }
+#!/bin/sh
 _system_get_id() {
 	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
 }

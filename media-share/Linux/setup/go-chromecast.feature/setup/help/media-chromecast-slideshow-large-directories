@@ -1,0 +1,16 @@
+media-chromecast-slideshow-large-directories - Check Large Media Directories
+USAGE:
+    media-chromecast-slideshow-large-directories <media-directory>
+DESCRIPTION:
+    Check media directories for large file counts that may cause
+    performance issues with Chromecast slideshow.
+ARGUMENTS:
+    media-directory
+        Root media directory to check (required)
+CONFIGURATION:
+    -conf-media-share-max-files-per-directory NUM
+        Maximum files per directory threshold (default: 100)
+        more than 100 causes chromecast to choke
+EXAMPLES:
+    media-chromecast-slideshow-large-directories /media/photos
+    media-chromecast-slideshow-large-directories ~/Pictures

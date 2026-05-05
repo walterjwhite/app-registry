@@ -1,2 +1,8 @@
-git status
-    current project, or recursive if not immediately in a working directory
+gss - Git Status
+USAGE:
+    gss
+DESCRIPTION:
+    Show git status. Works on current project or recursively
+    if not immediately in a working directory.
+EXAMPLES:
+    gss

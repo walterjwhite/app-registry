@@ -1,0 +1,14 @@
+jira - Jira CLI
+USAGE:
+    jira <action> [options...]
+DESCRIPTION:
+    Jira command-line interface for various Jira operations.
+ARGUMENTS:
+    action
+        Jira action to perform (required)
+    options...
+        Action-specific options
+EXAMPLES:
+    jira list
+    jira create --type=Bug --summary="Issue title"
+    jira transition ISSUE-123 --to="In Progress"

@@ -1,3 +1,13 @@
-git archive path
-	moves file or directory @ path to .archived at the same path
-	path
+gapath - Git Archive Path
+USAGE:
+    gapath <path>
+DESCRIPTION:
+    Move file or directory at specified path to .archived at the same path level.
+		If the path is archived, it will be unarchived.
+ARGUMENTS:
+    path
+        File or directory path to archive
+EXAMPLES:
+    gapath old-feature
+    gapath "deprecated folder"
+    gapath /path/to/file

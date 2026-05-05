@@ -1,2 +1,13 @@
-git push
-	@see git push arguments
+gpush - Git Push
+USAGE:
+    gpush [git-push-arguments...]
+DESCRIPTION:
+    Push changes to remote repository. All arguments are passed
+    directly to git push.
+ARGUMENTS:
+    git-push-arguments
+        Any valid git push arguments
+EXAMPLES:
+    gpush
+    gpush origin main
+    gpush --force-with-lease

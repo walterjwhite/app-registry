@@ -1,0 +1,14 @@
+vizio-power - Vizio TV Power Control
+USAGE:
+    vizio-power <action>
+DESCRIPTION:
+    Control Vizio TV power state.
+ARGUMENTS:
+    action
+        Power action: on or off (required)
+CONFIGURATION:
+    -vizio-device-id ID
+        Vizio device identifier
+EXAMPLES:
+    vizio-power on
+    vizio-power off

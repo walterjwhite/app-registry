@@ -697,6 +697,7 @@ _podcast_write_metadata() {
 _time_date_past_date_epoch() {
 	date -d "$conf_videos_youtube_podcast_age" +%s
 }
+#!/bin/sh
 _video_download() {
 	_video_read_meta
 	_video_meta $video_file >/dev/null 2>&1
@@ -828,6 +829,7 @@ _data_app_init() {
 	cd $git_project_path
 	git pull
 }
+#!/bin/sh
 _system_get_id() {
 	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
 }

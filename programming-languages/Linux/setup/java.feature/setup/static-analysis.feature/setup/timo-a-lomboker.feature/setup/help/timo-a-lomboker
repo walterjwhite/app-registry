@@ -1,0 +1,24 @@
+timo-a-lomboker - Timo A Lomboker
+USAGE:
+    timo-a-lomboker <java-file>
+DESCRIPTION:
+    Analyze Java file using Timo A Lomboker tool to reduce
+    boilerplate code and generate summary statistics.
+ARGUMENTS:
+    java-file
+        Java file to analyze (required)
+ANALYSIS PERFORMED:
+    - Reduce getter methods
+    - Reduce setter methods  
+    - Reduce equalsAndHashCode
+    - Reduce toString
+    - Reduce no-args-constructor
+    - Generate summary
+CONFIGURATION:
+    -conf-dev-java-timo-a-lomboker-jdk JDK
+        JDK to use for analysis
+    -conf-dev-java-timo-a-lomboker-jar PATH
+        Path to Timo A Lomboker JAR
+EXAMPLES:
+    timo-a-lomboker MyClass.java
+    timo-a-lomboker src/main/java/com/example/Model.java

@@ -1,37 +1,70 @@
-search a git repository
-    -a search all projects AND branches
-    -r search all the projects in the current directory
-    -l list matched files
-    -x=CMD execute CMD for each found file
-    -C search project contents only (no filenames or logs)
-    -F search project filenames only (no logs or contents)
-    -L search project logs only (no filenames or contents)
-    -A search activity only /activity/
-    -s=start date (only applicable for searching logs)
-        -s=2021/01/01
-    -e=end date   (only applicable for searching logs)
-        -e=2021/01/01
+search - Git Repository Search
+USAGE:
+    search [options] <search-term>
+DESCRIPTION:
+    Search within git repositories. Can search contents, filenames,
+    logs, branches, and tags across projects and branches.
+OPTIONS:
+    -a
+        Search all projects AND branches
+    -r
+        Search all projects in current directory
+    -l
+        List matched files only
+    -x=CMD
+        Execute CMD for each found file
+    -C
+        Search project contents only (no filenames or logs)
+    -F
+        Search project filenames only (no logs or contents)
+    -L
+        Search project logs only (no filenames or contents)
+    -A
+        Search activity only (/activity/)
+    -s=YYYY/MM/DD
+        Start date for log searches
+    -e=YYYY/MM/DD
+        End date for log searches
     -contents (default)
-        -xedit      use $conf_search_xeditor
-        -edit       use $conf_search_editor
-        -files      use $conf_search_file_manager
-        -commits=current    search only contents from current working tree (default)
-        -commits=any        search across all commits in current branch
-        -commits=all        search across current HEAD of each branch
+        Search content with options:
+        -xedit      Use $conf_search_xeditor
+        -edit       Use $conf_search_editor
+        -files      Use $conf_search_file_manager
+        -commits=current    Search current working tree (default)
+        -commits=any        Search across all commits in current branch
+        -commits=all        Search across current HEAD of each branch
     -changes
-        -branches       search in specified branch for a given change
-        -all-branches   search in all branches for a given change
-        -i             case insensitive
+        Search changes with options:
+        -branches       Search in specified branch
+        -all-branches   Search in all branches
+        -i             Case insensitive
     -logs
-        -branches       search in specified branch for a given log message
-        -all-branches   search in all branches for a given log message
-        -i             case insensitive
+        Search logs with options:
+        -branches       Search in specified branch
+        -all-branches   Search in all branches
+        -i             Case insensitive
     -branches
-        search branch names
+        Search branch names
     -tags
-        search tag names
+        Search tag names
     -type=git/branches
     -type=git/changes
     -type=git/logs
     -type=system
     -type=git/tags
+ARGUMENTS:
+    search-term
+        Term to search for (required)
+CONFIGURATION:
+    -conf-search-xeditor CMD
+        External editor for search results
+    -conf-search-editor CMD
+        Editor for search results
+    -conf-search-file-manager CMD
+        File manager for search results
+EXAMPLES:
+    search "function name"
+    search -l "import java"
+    search -a -r "TODO"
+    search -logs -branches=main "fix bug"
+    search -type=git/branches "feature"

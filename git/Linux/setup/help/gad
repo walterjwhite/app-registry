@@ -1,2 +1,11 @@
-git amend date
-	DATE	Wed Dec 19 00:00:00 2018 -0500
+gad - Git Amend Date
+USAGE:
+    gad [date]
+DESCRIPTION:
+    Amend the date of the last commit.
+ARGUMENTS:
+    date
+        New date in format: "Wed Dec 19 00:00:00 2018 -0500"
+EXAMPLES:
+    gad "Wed Dec 19 00:00:00 2018 -0500"
+    gad "2025-03-25 00:00:00 -0400"

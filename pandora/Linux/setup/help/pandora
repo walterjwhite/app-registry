@@ -1,0 +1,12 @@
+pandora - Pandora Music Service
+USAGE:
+    pandora
+DESCRIPTION:
+    Launch Pandora music service using expect script for authentication.
+CONFIGURATION:
+    -pandora-email-address-key KEY
+        Email address key for authentication
+    -pandora-password-key KEY
+        Password key for authentication
+EXAMPLES:
+    pandora

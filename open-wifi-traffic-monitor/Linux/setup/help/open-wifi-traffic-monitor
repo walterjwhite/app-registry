@@ -1,0 +1,19 @@
+open-wifi-traffic-monitor - WiFi Traffic Monitor
+USAGE:
+    open-wifi-traffic-monitor <SSID>
+DESCRIPTION:
+    Capture HTTP traffic from open wireless networks. Connects to the
+    specified SSID and monitors HTTP traffic (port 80) using tcpdump.
+ARGUMENTS:
+    SSID
+        The SSID to connect and monitor traffic (required)
+CONFIGURATION:
+    -conf-open-wifi-traffic-monitor-interface INTERFACE
+        Network interface to use for capture
+    -conf-open-wifi-traffic-monitor-capture-file FILE
+        File to write captured traffic to
+NOTE:
+    Requires root privileges. Press Ctrl+C to stop capture.
+EXAMPLES:
+    open-wifi-traffic-monitor "FreeWiFi"
+    open-wifi-traffic-monitor "CoffeeShop"

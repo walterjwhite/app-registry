@@ -1,11 +1,32 @@
-launch a web browser
-    -conf-browser       whether to use firefox or chromium
-        conf_web_browser_browser
-    -remote-log_debug       enable remote control through chromedp protocol
-        web_browser_remote_debug
-    -new-private-window create private window
-        _WEB_BROWSER_NEW_PRIVATE_WINDOW
-    -http-proxy         address of http proxy server to use
-        web_browser_http_proxy
-    -socks-proxy        address of socks proxy server to use
-        _WEB_BROWSER_SOCKS_PROXY
+web-browser - Web Browser Launcher
+USAGE:
+    web-browser [-new-private-window] [-http-proxy=proxy] [-socks-proxy=proxy] [URL]
+DESCRIPTION:
+    Launch a web browser with specified URL and options.
+ARGUMENTS:
+    URL
+        URL to open (optional)
+        must be specified last due to how arguments are processed
+OPTIONS:
+    -new-private-window
+        Create private window
+    -http-proxy=proxy
+        Address of HTTP proxy server
+    -socks-proxy=proxy
+        Address of SOCKS proxy server
+    -remote-debug
+        Enable remote control through Chrome DevTools Protocol
+CONFIGURATION:
+    -conf-web-browser-browser BROWSER
+        Browser to use (firefox/chromium)
+    -web-browser-remote-debug 0|1
+        Enable remote debugging
+    -web-browser-http-proxy URL
+        Default HTTP proxy
+    -web-browser-socks-proxy URL
+        Default SOCKS proxy
+EXAMPLES:
+    web-browser
+    web-browser https://example.com
+    web-browser -new-private-window
+    web-browser -http-proxy=localhost:8080

@@ -1,1 +1,13 @@
-git reset
+greset - Git Reset
+USAGE:
+    greset [git-reset-arguments...]
+DESCRIPTION:
+    Reset current HEAD to specified state. All arguments are passed
+    directly to git reset.
+ARGUMENTS:
+    git-reset-arguments
+        Any valid git reset arguments
+EXAMPLES:
+    greset --soft HEAD~1
+    greset --hard
+    greset --mixed HEAD

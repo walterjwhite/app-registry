@@ -1,0 +1,108 @@
+#!/bin/sh
+_extract_extract() {
+	if [ $# -lt 2 ]; then
+		log_warn "expecting 2 arguments, source file, and target to extract to"
+		return 1
+	fi
+	log_info "extracting $1"
+	[ -n "$clean" ] && {
+		rm -rf $2
+		mkdir -p $2
+	}
+	case $1 in
+	*.tar.gz | *.tgz | *.tar.bz2 | *.tbz2 | *.tar.xz)
+		tar xf $1 -C $2
+		;;
+	*.zip)
+		unzip -q $1 -d $2
+		;;
+	*)
+		log_warn "extension unsupported - $1"
+		return 2
+		;;
+	esac
+}
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename $1 | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e $download_file ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o $download_file -s -L "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp $download_file $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+case $APP_PLATFORM_PLATFORM in
+Apple)
+  cursor_platform=darwin
+  ;;
+Linux)
+  cursor_platform=linux
+  ;;
+*)
+  log_warn "unsupported platform: $APP_PLATFORM_PLATFORM"
+  ;;
+esac
+case $APP_PLATFORM_ARCHITECTURE in
+x86_64)
+  cursor_architecture=x64
+  ;;
+arm_64)
+  cursor_architecture=arm64
+  ;;
+*)
+  log_warn "unsupported architecture"
+  ;;
+esac
+readonly CURSOR_VERSION="2026.03.25-933d5a6"
+readonly CURSOR_DOWNLOAD_URL="https://downloads.cursor.com/lab/${CURSOR_VERSION}/${cursor_platform}/${cursor_architecture}/agent-cli-package.tar.gz"
+readonly CURSOR_INSTALL_PATH=/opt/cursor
+_cursor_is_installed() {
+  command -v cursor >/dev/null 2>&1
+}
+_cursor_get_installed_version() {
+  cursor --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+_cursor_get_latest_version() {
+  :
+}
+_cursor_install() {
+  [ -z "$cursor_platform" ] && return 1
+  [ -z "$cursor_architecture" ] && return 1
+  _download_fetch "$CURSOR_DOWNLOAD_URL"
+  clean=1 _extract_extract $download_file $CURSOR_INSTALL_PATH
+  mv $CURSOR_INSTALL_PATH/dist-package/* $CURSOR_INSTALL_PATH/
+  rm -rf $CURSOR_INSTALL_PATH/dist-package
+  ln -sf $CURSOR_INSTALL_PATH/cursor-agent $APP_PLATFORM_BIN_PATH/cursor-agent
+  ln -sf $CURSOR_INSTALL_PATH/cursor-askpass $APP_PLATFORM_BIN_PATH/cursor-askpass
+  ln -sf $CURSOR_INSTALL_PATH/cursor-sandbox $APP_PLATFORM_BIN_PATH/cursor-sandbox
+}
+_cursor_is_installed || _cursor_install
