@@ -1,1 +1,7 @@
-list activity
+al - Activity List
+USAGE:
+    al
+DESCRIPTION:
+    List all activity records.
+EXAMPLES:
+    al

@@ -612,6 +612,12 @@ platform_is_supported() {
     ;;
   esac
 }
+_platform_sub_platform() {
+  [ -n "$APP_PLATFORM_SUB_PLATFORM" ] && return $APP_PLATFORM_SUB_PLATFORM
+
+  APP_PLATFORM_SUB_PLATFORM=$(cmd //c systeminfo | grep -i "OS" | sed -e 's/^OS Name://g' -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g')
+  return $APP_PLATFORM_SUB_PLATFORM
+}
 processes_restrict_to_single_process() {
   _processes_has_other_instances && {
     exit_with_error "$APPLICATION_CMD is restricted to a single instance and another instance is running"

@@ -46,6 +46,7 @@ if [ -z "$APP_PLATFORM_ROOT" ]; then
 else
 	APP_PLATFORM_ROOT=$(_file_readlink $APP_PLATFORM_ROOT)
 fi
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 readonly CACHE_PATH=$HOME/.cache
 readonly CONFIG_PATH=$HOME/.config/walterjwhite/shell
 readonly DATA_PATH=$HOME/.data
@@ -103,7 +104,6 @@ readonly APP_PLATFORM_LIBRARY_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$LIBRARY_PAT
 readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
-[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 : ${conf_console_audit_color:=34}
 : ${conf_console_script_timeout:=5}
 : ${conf_console_context_timeout:=300}

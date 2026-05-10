@@ -1,1 +1,11 @@
-get activity matching the <activity id>
+ag - Activity Get
+USAGE:
+    ag <activity-id>
+DESCRIPTION:
+    Get activity matching the specified activity ID.
+ARGUMENTS:
+    activity-id
+        ID of the activity to retrieve
+EXAMPLES:
+    ag 12345
+    ag abc123

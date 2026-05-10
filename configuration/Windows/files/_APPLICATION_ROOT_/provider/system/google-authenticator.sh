@@ -1,7 +1,0 @@
-#!/bin/sh
-case $_PLATFORM in
-Linux | FreeBSD)
-  _PLUGIN_CONFIGURATION_PATH=~/.google_authenticator
-  _PLUGIN_NO_ROOT_USER=1
-  ;;
-esac

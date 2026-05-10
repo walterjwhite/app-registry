@@ -660,14 +660,22 @@ _video_read_meta() {
 }
 _video_meta() {
 	videos_url=$(printf '%s' $video_metadata | cut -f1 -d'|')
-	video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
-	[ -z "$video_key" ] && video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
+	case $video_key in
+	*awsEpisodeId=*)
+		video_key=$(printf '%s' $video_key | grep -Po 'awEpisodeId=[A-Za-z0-9\-]+' | cut -f2 -d=)
+		;;
+	*)
+		video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
+		;;
+	esac
+	[ -z "$video_key" ] && {
+		video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
+	}
 	video_date=$(printf '%s' $video_metadata | cut -f2 -d'|')
 	video_duration=$(printf '%s' $video_metadata | cut -f3 -d'|')
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')
 	video_uploader_id=$(printf '%s' $video_metadata | cut -f5 -d'|')
 	video_uploader_name=$(printf '%s' $video_metadata | cut -f6 -d'|')
-	log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
 }
 _videos_git() {
 	_data_app_save "$_action - $video_key" "$@"
@@ -730,6 +738,7 @@ if [ -z "$APP_PLATFORM_ROOT" ]; then
 else
 	APP_PLATFORM_ROOT=$(_file_readlink $APP_PLATFORM_ROOT)
 fi
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 readonly CACHE_PATH=$HOME/.cache
 readonly CONFIG_PATH=$HOME/.config/walterjwhite/shell
 readonly DATA_PATH=$HOME/.data
@@ -785,7 +794,6 @@ readonly APP_PLATFORM_LIBRARY_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$LIBRARY_PAT
 readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
-[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 readonly REQUIRED_ARGUMENTS="video_id:ID of video (can be a substring)"
 _include_optional beep context git logging net paths platform videos wait
 _metadata_load
@@ -871,11 +879,14 @@ for _ARG in "$@"; do
 			}
 		}
 		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
-		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
-			_configuration_value=1
-		else
+		case "$_ARG" in
+		*-*)
 			_configuration_value=${_ARG#*=}
-		fi
+			;;
+		*)
+			_configuration_value=1
+			;;
+		esac
 		eval "${_configuration_name}=\"$_configuration_value\""
 		unset _configuration_name _configuration_value
 		shift
@@ -924,6 +935,7 @@ _watch() {
   validation_require "$video_file" "video file not found for $video_key"
   _video_read_meta
   _video_meta
+  log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
   _play
   _comments
   _move_watched_video

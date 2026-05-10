@@ -1,5 +1,3 @@
-: ${conf_web_browser_chromium_cmd:=chromium}
-o 9222
 case $APP_PLATFORM_PLATFORM in
 Linux | FreeBSD)
   _CONFIGURATION_DIRECTORY=~/.config/chromium

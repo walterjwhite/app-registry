@@ -1,0 +1,11 @@
+#!/bin/sh
+for _CONSOLE in $(find /usr/local/walterjwhite/console/shell -mindepth 1 -maxdepth 1 -type d | sort -u); do
+  log_detail "configuring micro as the EDITOR: $_CONSOLE"
+  printf 'export EDITOR="micro"\n' > $_CONSOLE/micro-text-editor
+done
+for _USER in $(grep users /etc/group | cut -f4 -d:); do
+  log_detail "configuring micro as the EDITOR for user: $_USER"
+  mkdir -p /home/$_USER/.config/fish/conf.d
+  printf 'export EDITOR="micro"\n' > /home/$_USER/.config/fish/conf.d/micro-text-editor
+  chown -R $_USER:$_USER /home/$_USER/.config/fish/conf.d
+done

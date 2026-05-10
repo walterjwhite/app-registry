@@ -1,3 +1,4 @@
-: ${_CONF_CONSOLE_AUDIT_COLOR:=34}
-: ${_CONF_CONSOLE_SCRIPT_TIMEOUT:=5}
-: ${_CONF_CONSOLE_CONTEXT_TIMEOUT:=300}
+: ${conf_console_audit_color:=34}
+: ${conf_console_script_timeout:=5}
+: ${conf_console_context_timeout:=300}
+: ${conf_log_date_format:="%Y/%m/%d|%H:%M:%S"}

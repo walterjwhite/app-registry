@@ -2,7 +2,7 @@ vg - Video Get
 USAGE:
     vg
 DESCRIPTION:
-    Display metadata for all downloaded videos. Shows information
-    about each video including title, duration, uploader, and date.
+    Display metadata for all downloaded videos, excluding audio-only files.
+    Shows information about each video including title, duration, uploader, and date.
 EXAMPLES:
     vg

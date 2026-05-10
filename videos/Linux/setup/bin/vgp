@@ -491,10 +491,6 @@ sudo_ensure_not_root() {
 	[ $(id -u) -ne 0 ] && return
 	exit_with_error "$0 cannot be run as root"
 }
-_time_seconds_to_human_readable() {
-	local _human_readable_time
-	_human_readable_time=$(printf '%02d:%02d:%02d' $(($1 / 3600)) $(($1 % 3600 / 60)) $(($1 % 60)))
-}
 time_timeout() {
 	local _timeout=$1
 	shift
@@ -628,152 +624,6 @@ _alert_long_running_cmd() {
 	fi
 	_alert_alert "$_subject" "$_message"
 }
-_fetch_rss_feeds() {
-	for rss_feed_url in $conf_videos_podcast_feeds; do
-		local feed_context=$(printf '%s' "$rss_feed_url" | sed 's|.*://||')
-		log_add_context "$feed_context"
-		_fetch_rss_feed
-		_filter_rss_feed
-		log_remove_context
-	done
-}
-_fetch_rss_feed() {
-	log_info "fetching rss feed"
-	feed_xml=$(_mktemp_mktemp)
-	exit_defer rm -f "$feed_xml"
-	curl -sSL --fail "$rss_feed_url" -o "$feed_xml" || exit_with_error "failed to fetch $rss_feed_url"
-}
-_filter_rss_feed() {
-	log_info "filtering rss feed"
-	extract_audio=1
-	podcast_channel_title=$(xmlstarlet sel -t -v '//channel/title' "$feed_xml")
-	unset podcast_url podcast_title podcast_guid podcast_publish_date podcast_duration
-	xmlstarlet sel -t -m '//item' \
-		-v 'normalize-space(enclosure[1]/@url)' -o $'\t' \
-		-v 'normalize-space(title[1])' -o $'\t' \
-		-v 'normalize-space(guid[1])' -o $'\t' \
-		-v 'normalize-space(pubDate[1])' -o $'\t' \
-		-v 'normalize-space(itunes:duration[1])' -n "$feed_xml" |
-		while IFS=$'\t' read -r podcast_url podcast_title podcast_guid podcast_publish_date podcast_duration; do
-			[ -z "$podcast_url" ] && {
-				log_warn "podcast_url is empty"
-				continue
-			}
-			[ -z "$podcast_duration" ] && {
-				log_warn "podcast duration is empty"
-				continue
-			}
-			case $podcast_duration in
-			*[0-9]:[0-9]*:[0-9]*)
-				podcast_duration=$(echo "$podcast_duration" | awk -F: '{print ($1 * 3600) + ($2 * 60) + $3}')
-				;;
-			esac
-			podcast_publish_date_epoch="$(date_to_epoch "$podcast_publish_date")"
-			[ "$podcast_publish_date_epoch" -eq 0 ] && {
-				log_warn "podcast_publish_date_epoch is 0"
-				continue
-			}
-			_podcast_filter || {
-				log_debug "podcast_filter returned non-zero"
-				continue
-			}
-			log_warn "downloading podcast: $podcast_title -> $podcast_url"
-			_podcast_write_metadata
-			_video_download
-		done
-}
-date_to_epoch() {
-	epoch="$(date -d "$1" +%s 2>/dev/null || true)"
-	[ -z "$epoch" ] && printf '0\n' || printf '%s\n' "$epoch"
-}
-_podcast_write_metadata() {
-	video_file=queued/$(_videos_date)
-	mkdir -p "$(dirname "$video_file")"
-	_time_seconds_to_human_readable $podcast_duration
-	printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$podcast_url" "$(date +%Y/%m/%d)" "$_human_readable_time" "$podcast_title" \
-		"$podcast_channel_title" "" "" "1" "" >"$video_file"
-	_videos_git $video_file
-}
-_time_date_past_date_epoch() {
-	date -d "$conf_videos_youtube_podcast_age" +%s
-}
-#!/bin/sh
-_video_download() {
-	_video_read_meta
-	_video_meta $video_file >/dev/null 2>&1
-	is_playlist=$(printf '%s' "$videos_url" | grep -c list=)
-	_options=""
-	[ -z "$interactive" ] && _options="--no-color -q"
-	if [ -n "$extract_audio" ] && [ "$extract_audio" -eq 1 ]; then
-		log_warn "configuring audio extraction"
-		_options="$_options $conf_videos_youtube_audio_download_options"
-	else
-		_options="$_options $conf_videos_youtube_video_download_options"
-	fi
-	if [ $is_playlist -eq 1 ]; then
-		log_warn "is playlist"
-		_options="$_options --restrict-filenames -o $conf_videos_download_path/downloaded/%(playlist)s/%(playlist_index)s-%(title)s-$video_key.%(ext)s"
-	else
-		_options="$_options --restrict-filenames -o $conf_videos_download_path/downloaded/%(title)s-$video_key.%(ext)s"
-	fi
-	_videos_download_setup_proxy
-	log_info "downloading $videos_url - $video_title @ $video_duration"
-	log_debug "video metadata: $video_date:$video_uploader_id:$video_uploader_name"
-	$conf_videos_youtube_download_cmd $_options "$videos_url" || _video_download_error
-	if [ -n "$extract_audio" ]; then
-		log_warn "extracting audio"
-		_video_download_extract_audio
-		return
-	fi
-	_video_download_success
-	_video_download_convert
-}
-_videos_download_setup_proxy() {
-	[ -n "$http_proxy" ] && {
-		_options="$_options --proxy $http_proxy"
-		return
-	}
-	[ -n "$_VIDEOS_PROXY" ] && {
-		_options="$_options --proxy $_VIDEOS_PROXY"
-		return
-	}
-	return 1
-}
-_video_download_error() {
-	_video_download_git error "download error"
-	exit_with_error "error downloading video - $video_key" $_status
-}
-_video_download_extract_audio() {
-	_video_download_git downloaded "download / extract audio"
-}
-_video_download_success() {
-	_video_download_git downloaded "download"
-	log_info "successfully downloaded $videos_url - $video_title @ $video_duration"
-}
-_video_download_git() {
-	local _video_target=$1/$(_videos_date)
-	mkdir -p $(dirname $_video_target)
-	git mv $video_file $_video_target || {
-		git add $video_file && git mv $video_file $_video_target || exit_with_error "error moving $video_file -> $_video_target"
-	}
-	_videos_git $video_file $_video_target
-	unset _video_target _DOWNLOAD_ARGS
-}
-_video_download_convert() {
-	[ -z "$video_profiles" ] && return 1
-	video_media_file=$(find $conf_videos_download_path -type f ! -name '.part' -name "*$video_key*")
-	validation_require "$video_media_file" video_media_file
-	for video_profile in $video_profiles; do
-		log_info "converting video with $video_profile"
-		local video_profile_name=$(printf $video_profile | tr '[:lower:]' '[:upper:]')
-		local profile_video_format=$(set | grep "^conf_videos_profile_${video_profile_name}_VIDEO_FORMAT=.*" | sed -e 's/^.*\=//')
-		local profile_options=$(set | grep "^conf_videos_profile_${video_profile_name}_options=.*" | sed -e 's/^.*\=//')
-		ffmpeg -i "$video_media_file" $profile_options ${video_media_file}-$video_profile.$profile_video_format
-	done
-}
-_videos_date() {
-	date +%Y/%m/%d/%H.%M.%S
-}
 _video_read_meta() {
 	[ ! -e $video_file ] && return 1
 	log_debug "reading video metadata from: $video_file"
@@ -781,32 +631,23 @@ _video_read_meta() {
 }
 _video_meta() {
 	videos_url=$(printf '%s' $video_metadata | cut -f1 -d'|')
-	video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
-	[ -z "$video_key" ] && video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
+	case $video_key in
+	*awsEpisodeId=*)
+		video_key=$(printf '%s' $video_key | grep -Po 'awEpisodeId=[A-Za-z0-9\-]+' | cut -f2 -d=)
+		;;
+	*)
+		video_key=$(printf '%s' $videos_url | sed -e "s/^.*\=//")
+		;;
+	esac
+	[ -z "$video_key" ] && {
+		video_key=$(printf '%s' $videos_url | sed 's/\.[^.]\{2,4\}$//')
+	}
 	video_date=$(printf '%s' $video_metadata | cut -f2 -d'|')
 	video_duration=$(printf '%s' $video_metadata | cut -f3 -d'|')
 	video_title=$(printf '%s' $video_metadata | cut -f4 -d'|')
 	video_uploader_id=$(printf '%s' $video_metadata | cut -f5 -d'|')
 	video_uploader_name=$(printf '%s' $video_metadata | cut -f6 -d'|')
 	extract_audio=$(printf '%s' $video_metadata | cut -f8 -d'|')
-	video_profiles=$(printf '%s' $video_metadata | cut -f9 -d'|')
-	log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
-}
-_videos_git() {
-	_data_app_save "$_action - $video_key" "$@"
-}
-_data_app_save() {
-	local _message="$1"
-	shift
-	if [ -n "$git_project_path" ]; then
-		cd $git_project_path
-	fi
-	git add $@ 2>/dev/null
-	git commit $@ -m "$_message"
-	local _has_remotes=$(git remote | wc -l)
-	if [ "$_has_remotes" -gt "0" ]; then
-		git push
-	fi
 }
 _data_app_init() {
 	local _project_identifier=$APPLICATION_NAME
@@ -829,7 +670,6 @@ _data_app_init() {
 	cd $git_project_path
 	git pull
 }
-#!/bin/sh
 _system_get_id() {
 	head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
 }
@@ -854,6 +694,7 @@ if [ -z "$APP_PLATFORM_ROOT" ]; then
 else
 	APP_PLATFORM_ROOT=$(_file_readlink $APP_PLATFORM_ROOT)
 fi
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
 readonly CACHE_PATH=$HOME/.cache
 readonly CONFIG_PATH=$HOME/.config/walterjwhite/shell
 readonly DATA_PATH=$HOME/.data
@@ -909,12 +750,7 @@ readonly APP_PLATFORM_LIBRARY_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$LIBRARY_PAT
 readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
 readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
 readonly APP_LIBRARY_PATH=$APP_PLATFORM_LIBRARY_PATH/$APPLICATION_NAME
-[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
-readonly TMDB_BASE="https://api.themoviedb.org/3"
-readonly YOUTUBE_BASE="https://www.youtube.com/watch"
-readonly YT_SEARCH_URL="https://www.googleapis.com/youtube/v3/search"
-readonly TMDB_GENRE_MAP="28:Action 12:Adventure 16:Animation 35:Comedy 80:Crime 99:Documentary 18:Drama 10751:Family 14:Fantasy 36:History 27:Horror 10402:Music 9648:Mystery 10749:Romance 878:Science-Fiction 10770:TV-Movie 53:Thriller 10752:War 37:Western"
-_include_optional . beep context git logging net paths platform videos wait
+_include_optional beep context git logging net paths platform videos wait
 _metadata_load
 : ${beep_enabled:=0}
 : ${conf_log_beep_timeout:=5}
@@ -954,26 +790,6 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${pacman_refresh_period:=3600}
 : ${pacman_bootstrap_install:=}
 : ${conf_wait_interval:=30}
-: ${conf_videos_audio_format:=aac}
-: ${conf_videos_youtube_download_cmd:=yt-dlp}
-: ${conf_videos_youtube_audio_download_options:="-f bestaudio[ext=aac]/bestaudio -x --audio-format m4a"}
-: ${conf_videos_youtube_podcast_download_options:="f bestaudio/best --downloader ffmpeg --extract-audio --audio-format m4a --audio-quality 128K"}
-: ${conf_videos_youtube_video_download_options:="-f bestvideo[height<=1080]+bestaudio/best[height<=1080]"}
-: ${conf_videos_movie_trailer_fetch_count:=50}
-: ${conf_videos_movie_trailer_genre:=Action}
-: ${conf_videos_movie_trailer_region:=US}
-: ${conf_videos_movie_trailer_origin_country:=US}
-: ${conf_videos_movie_trailer_language:=en-US}
-: ${conf_videos_movie_trailer_days_back:=90}
-: ${conf_videos_movie_trailer_days_ahead:=90}
-: ${conf_videos_movie_trailer_min_votes:=10}
-: ${conf_videos_movie_trailer_sort_by:=primary_release_date.desc}
-: ${conf_videos_yt_days_back:=7}
-: ${conf_videos_yt_max_results:=50}
-: ${conf_videos_yt_max_pages:=5}
-: ${conf_videos_yt_order:=date}
-: ${conf_videos_yt_type:=video}
-: ${conf_videos_youtube_podcast_age:="3 days ago"}
 : ${conf_git_system_template_path:=/usr/share/git/templates}
 : ${conf_git_clone_timeout:=30}
 : ${conf_git_compression_format:=xz}
@@ -1018,11 +834,14 @@ for _ARG in "$@"; do
 			}
 		}
 		_configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
-		if [ $(printf '%s' "$_ARG" | grep -c '=') -eq 0 ]; then
-			_configuration_value=1
-		else
+		case "$_ARG" in
+		*-*)
 			_configuration_value=${_ARG#*=}
-		fi
+			;;
+		*)
+			_configuration_value=1
+			;;
+		esac
 		eval "${_configuration_name}=\"$_configuration_value\""
 		unset _configuration_name _configuration_value
 		shift
@@ -1037,13 +856,19 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_git_mirror conf_videos_download_path conf_videos_podcast_feeds"
+readonly REQUIRED_APP_CONF="conf_git_mirror"
 _cfg_validate_required
 wait_waitee_init
 wait_waiter
 sudo_ensure_not_root
-processes_restrict_to_single_process
-podcast_cutoff_epoch="$(_time_date_past_date_epoch)"
-_action=queue
 _data_app_init
-_fetch_rss_feeds
+for video_file in $(find downloaded -type f); do
+  _video_read_meta
+  _video_meta
+  [ -z "$extract_audio" ] && {
+    unset videos_url video_key video_date video_duration video_title video_uploader_id video_uploader_name extract_audio video_profiles
+    continue
+  }
+  log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
+  unset videos_url video_key video_date video_duration video_title video_uploader_id video_uploader_name extract_audio video_profiles
+done
