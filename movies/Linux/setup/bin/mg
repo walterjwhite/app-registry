@@ -830,5 +830,6 @@ _data_app_init
 for _VIDEO_FILE in $(find queued -type f); do
   _video_read_meta
   _video_meta
+  log_info "$videos_url - $video_title @ $video_duration ($video_date:$video_uploader_id:$video_uploader_name)"
   unset _VIDEO_URL _VIDEO_KEY _VIDEO_DATE _VIDEO_DURATION _VIDEO_TITLE _VIDEO_UPLOADER_ID _VIDEO_UPLOADER_NAME
 done

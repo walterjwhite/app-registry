@@ -788,6 +788,15 @@ configuration_restore() {
 		log_debug "no configuration found"
 		return 255
 	}
+	if [ -n "$dry_run" ]; then
+		if [ -z "$CONFIG_DRY_RUN_TEMP_DIR" ]; then
+			export CONFIG_DRY_RUN_TEMP_DIR=$(mktemp -d -t config-restore-XXXXXX)
+			log_info "dry run: restoring all configurations to temporary directory: $CONFIG_DRY_RUN_TEMP_DIR"
+		fi
+		provider_path="$CONFIG_DRY_RUN_TEMP_DIR/$provider_name"
+		provider_path_is_dir=1
+		provider_path_is_skip_prepare=1
+	fi
 	[ -n "$provider_path_is_dir" ] && {
 		[ -z "$provider_path_is_skip_prepare" ] && mkdir -p "$provider_path"
 		return 0

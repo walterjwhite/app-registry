@@ -687,7 +687,7 @@ _app_setup_project() {
 	[ ! -e $APP_PLATFORM_PLATFORM ] && exit_with_error "no artifacts exist for $APP_PLATFORM_PLATFORM"
 	_settings_application
 	_settings_application_defaults $APP_PLATFORM_PLATFORM
-	[ $_OPTN_INSTALL_BYPASS_UNINSTALL ] || _INSTALL=1 uninstall_app
+	[ $_OPTN_INSTALL_BYPASS_UNINSTALL ] || uninstall_app
 	_install_prepare_target
 	_metadata_write_app
 	_setup_main $REGISTRY_PATH/$target_application_name/$APP_PLATFORM_PLATFORM/setup
@@ -742,7 +742,10 @@ _git_app_dir_setup() {
 			log_warn "app name: $target_application_name"
 			pwd
 			git log -1 | cat -
-			exit_with_error "error parsing version from git log"
+			log_warn "error parsing version from git log"
+			[ ! -e .app ] && exit_with_error "unable to determine application version for $target_application_name, .app not found"
+			target_application_version=$(grep _APPLICATION_VERSION= .app 2>/dev/null | cut -f2 -d= | tr -d '"')
+			target_application_build_date=$(grep _APPLICATION_BUILD_DATE= .app 2>/dev/null | cut -f2 -d= | tr -d '"')
 		}
 	else
 		log_warn "installed from zip, needs implemented"
@@ -801,7 +804,7 @@ _install_uninstall_filter_file_callback() {
 		log_debug "no ${setup_type_name}(s) to uninstall"
 		return
 	fi
-	[ -n "$_INSTALL" ] && {
+	[ -n "$_APP_INSTALLATION" ] && {
 		local packages_to_install=$(_install_exclude_contents_from_file)
 		uninstall_packages=$(printf '%s' "$uninstall_packages" | $GNU_GREP -Pv "($packages_to_install)")
 		[ -z "$uninstall_packages" ] && {
@@ -2297,6 +2300,7 @@ wait_waitee_init
 wait_waiter
 sudo_ensure_root "$@"
 platform_is_supported
+_APP_INSTALLATION=1
 [ -z "$APP_INSTALL_DEPENDENCY" ] && processes_restrict_to_single_process
 _settings_init
 _bootstrap_install

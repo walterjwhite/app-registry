@@ -1,2 +1,2 @@
 #!/bin/sh
-pass grep "$1"
+. /usr/local/walterjwhite/secrets/provider/$conf_secrets_provider/init.sh

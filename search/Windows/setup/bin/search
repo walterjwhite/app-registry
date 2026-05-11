@@ -458,50 +458,28 @@ _syslog_syslog() {
 	:
 }
 sudo_run() {
-	[ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
-	sudo_is_validation_required || {
-		"$@"
-		return
-	}
-	validation_require "$_SUDO_CMD" "sudo_cmd - $*"
-	[ -n "$interactive" ] && {
-		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
-	}
-	$_SUDO_CMD $sudo_options "$@"
-	local sudo_return_status=$?
-	unset sudo_options
-	return $sudo_return_status
+	log_warn "no op: $*"
 }
 sudo_is_validation_required() {
-	[ -n "$sudo_user" ] && {
-		[ "$sudo_user" = "$USER" ] && return 1
-		sudo_options="$sudo_options /user:$sudo_user"
-		return 0
-	}
-	_sudo_is_administrator && return 1
-	return 0
+	log_warn "no op: $*"
 }
 _sudo_is_administrator() {
 	net session >/dev/null 2>&1
 }
 sudo_ensure_administrator() {
-	_sudo_is_administrator && return
-	log_info "enter administrator password to run this program as administrator"
-	sudo_run "$0" "$@"
-	exit $?
+	log_warn "no op: $*"
 }
 sudo_ensure_not_administrator() {
-	_sudo_is_administrator || return
-	exit_with_error "$0 cannot be run as administrator"
+	log_warn "no op: $*"
 }
 sudo_ensure_root() {
-	sudo_ensure_administrator "$@"
+	log_warn "no op: $*"
 }
 sudo_ensure_not_root() {
-	sudo_ensure_not_administrator "$@"
+	log_warn "no op: $*"
 }
 sudo_precmd() {
-	:
+	log_warn "no op: $*"
 }
 time_timeout() {
 	local _timeout=$1
@@ -1016,6 +994,10 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_search_editor:=$EDITOR}
 : ${conf_search_exclude_path:='*/.*/*'}
 : ${conf_search_exclude_git_grep:='^\.'}
+conf_search_file_manager=explorer
+conf_search_locate_database=grep
+conf_search_locate_updatedb_cmd=printf
+conf_search_xeditor=code
 : ${conf_git_system_template_path:=/usr/share/git/templates}
 : ${conf_git_clone_timeout:=30}
 : ${conf_git_compression_format:=xz}
@@ -1082,14 +1064,8 @@ for _ARG in "$@"; do
 	esac
 done
 log_enable_debug_mode
-readonly REQUIRED_APP_CONF="conf_search_file_manager conf_search_locate_database conf_search_locate_updatedb_cmd conf_search_xeditor"
-_cfg_validate_required
 wait_waitee_init
 wait_waiter
-if [ -n "$WINGET" ]; then
-elif [ -n "$CHOCOLATEY" ]; then
-elif [ -n "$SCOOP" ]; then
-fi
 [ $# -eq 0 ] && exit_with_error "expecting at least 1 argument, search term"
 [ -z "$types" ] && {
   _search_do "$@"

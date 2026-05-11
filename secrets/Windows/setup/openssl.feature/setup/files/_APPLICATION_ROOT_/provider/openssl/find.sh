@@ -1,2 +1,3 @@
 #!/bin/sh
-secrets_find_file ~/.openssl-store enc "$@"
+. /usr/local/walterjwhite/secrets/provider/$conf_secrets_provider/init.sh
+secrets_find_file . enc "$@"
