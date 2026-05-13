@@ -1,7 +1,0 @@
-build-tex - LaTeX Build
-USAGE:
-    build-tex
-DESCRIPTION:
-    Build LaTeX documents in the current directory.
-EXAMPLES:
-    build-tex

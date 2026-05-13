@@ -723,17 +723,20 @@ _find_files_in() {
 	unset include_path
 }
 _app_build_determine_build_platforms() {
-	[ -n "$build_platforms" ] && return
-	if [ -z "$build_all_platforms" ]; then
-		build_platforms=$platforms
-		return
-	fi
+	supported_build_platforms=$APP_PLATFORM_SUPPORTED_PLATFORMS
 	[ -e supported-platforms ] && {
-		build_platforms=$(cat supported-platforms)
+		supported_build_platforms=$(cat supported-platforms)
+	}
+	[ -n "$build_platforms" ] && {
+		local supported_build_platforms_grep=$(printf '%s\n' "$supported_build_platforms" | tr '\n' '|' | sed -e 's/|$//')
+		build_platforms=$(printf '%s\n' $build_platforms | $GNU_GREP -Po "($supported_build_platforms_grep)")
 		return
 	}
-	build_platforms=$APP_PLATFORM_SUPPORTED_PLATFORMS
-	[ -z "$build_platforms" ] && build_platforms=$platforms
+	if [ -z "$build_all_platforms" ]; then
+		build_platforms=$APP_PLATFORM_PLATFORM
+		return
+	fi
+	build_platforms="$supported_build_platforms"
 }
 _app_build_platforms() {
 	for target_platform in $build_platforms; do
@@ -1660,7 +1663,6 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 [ "$conf_install_no_pager" = "1" ] && PAGER=cat
 : ${conf_install_checksum_cmd:="sha256 -q"}
 : ${conf_install_remove_unused_functions:=1}
-: ${platforms:=$APP_PLATFORM_PLATFORM}
 which shfmt >/dev/null 2>&1 || _optn_install_disable_shfmt=1
 : ${conf_install_max_concurrent_jobs:=$(nproc)}
 : ${conf_install_app_registry_timeout:=5}

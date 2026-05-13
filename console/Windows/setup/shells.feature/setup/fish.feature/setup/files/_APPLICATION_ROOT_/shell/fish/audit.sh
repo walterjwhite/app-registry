@@ -110,6 +110,9 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_log_beep_detail:=''}
 : ${conf_log_beep_debug:=''}
 : ${conf_log_beep_stdin:='700,200'}
+chocolatey_disabled=1
+scoop_disabled=1
+winget_disabled=1
 set -g HISTSIZE $conf_console_zsh_session_history_size
 set -g SAVEHIST $conf_console_zsh_disk_history_size
 function _console_fish_hook_after --on-event fish_prompt

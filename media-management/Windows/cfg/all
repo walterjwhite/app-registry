@@ -1,7 +1,0 @@
-: ${conf_media_management_tags:=selected|print|by-tag}
-: ${conf_media_management_zfs_pool_status_interval:=60}
-: ${conf_media_management_usb_device:=da0}
-: ${conf_media_management_resilver_wait:=60}
-: ${conf_media_management_max_slideshow_images:=100}
-: ${conf_media_management_video_codec:=libx265}
-: ${conf_media_management_video_codec_TAG:=hvc1}

@@ -4,11 +4,16 @@ _trivy_scan() {
 	trivy -q "$@" >"$report_path.new"
 	if [ -e "$report_path" ]; then
 		log_detail "comparing with existing scan"
-		diff "$report_path.new" "$report_path" >/dev/null && {
+		diff "$report_path.new" "$report_path" |
+			$GNU_GREP -P '(>|<)' |
+			$GNU_GREP -Pv '"(ReportID|CreatedAt|ArtifactID|Commit)":' |
+			grep -cqm1 '.' || {
 			log_info "no changes detected"
 			rm -f "$report_path.new"
 			return
 		}
+		diff "$report_path.new" "$report_path" |
+			$GNU_GREP -Pv '"(ReportID|CreatedAt|ArtifactID|Commit)":'
 	else
 		log_warn "no existing scan found"
 		[ $(wc -l <"$report_path.new") -eq 0 ] && {
