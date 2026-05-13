@@ -626,10 +626,10 @@ _alert_long_running_cmd() {
 }
 _extension_main() {
 	extension_action=$APPLICATION_CMD
-	required_message="$extension_action is not yet implemented by any extensions" file_require "/usr/local/walterjwhite/install/extensions/extension/$extension_action"
+	required_message="$extension_action is not yet implemented by any extensions" file_require "$LIBRARY_PATH/install/extensions/extension/$extension_action"
 	extension_opwd=$PWD
 	local _error_count=0
-	for extension_run_type_path in $(find /usr/local/walterjwhite/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
+	for extension_run_type_path in $(find $LIBRARY_PATH/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
 		extension_run_type=$(basename $extension_run_type_path | sed 's/^[[:digit:]]\{2\}\.//')
 		extension_run_type="${extension_run_type#*.}"
 		log_add_context $extension_run_type
@@ -706,8 +706,8 @@ extension_find_dirs_containing() {
 	_extension_find_default -exec dirname {} \; | sort -uV
 }
 _extension_load_type() {
-	[ -e /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh ] && {
-		. /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh
+	[ -e $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh ] && {
+		. $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh
 		cd $extension_opwd
 	}
 }
@@ -776,7 +776,7 @@ agent_extension_batch() {
 	_extension_load_type
 	agent_invocation_wd=$PWD
 	_agent_git_init_workspace
-	for agent_persona_job in $(find /usr/local/walterjwhite/agent/personas/$agent_persona -maxdepth 1 -mindepth 1 -type d | sort -V); do
+	for agent_persona_job in $(find $LIBRARY_PATH/$APPLICATION_NAME/personas/$agent_persona -maxdepth 1 -mindepth 1 -type d | sort -V); do
 		agent_job_name=$(basename $agent_persona_job)
 		_agent_get_job_name_key
 		log_add_context $agent_job_name_key

@@ -34,7 +34,7 @@ _java_debug() {
 }
 _runner_init() {
   [ -n "$java_framework" ] && {
-    . /usr/local/walterjwhite/install/extensions/extension/$extension_action/$extension_run_type/framework/${java_framework}.sh
+    . $LIBRARY_PATH/install/extensions/extension/$extension_action/$extension_run_type/framework/${java_framework}.sh
   }
   _run_java_locate_application
   [ -z "$application" ] && exit_with_error "application is not defined, unable to run application"

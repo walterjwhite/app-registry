@@ -733,9 +733,9 @@ _git_app_dir_setup() {
 			pwd
 			git log -1 | cat -
 			log_warn "error parsing version from git log"
-			[ ! -e .app ] && exit_with_error "unable to determine application version for $target_application_name, .app not found"
-			target_application_version=$(grep _APPLICATION_VERSION= .app 2>/dev/null | cut -f2 -d= | tr -d '"')
-			target_application_build_date=$(grep _APPLICATION_BUILD_DATE= .app 2>/dev/null | cut -f2 -d= | tr -d '"')
+			[ ! -e $APP_PLATFORM_PLATFORM/.app ] && exit_with_error "unable to determine application version for $target_application_name, .app not found"
+			target_application_version=$(head -1 $APP_PLATFORM_PLATFORM/.app 2>/dev/null)
+			target_application_build_date=$(head -2 $APP_PLATFORM_PLATFORM/.app 2>/dev/null | tail -1)
 		}
 	else
 		log_warn "installed from zip, needs implemented"
@@ -1463,22 +1463,33 @@ package_chocolatey_is_installed() {
 	choco list --local-only --exact "$package_name" | grep -q "$package_name" 2>/dev/null
 }
 package_bootstrap() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_bootstrap
 }
 _package_install_do() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_install "$@"
 }
 _package_uninstall_do() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_uninstall "$@"
 }
 package_bootstrap_uninstall() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_bootstrap_uninstall
 }
 package_update() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_update "$@"
 }
 _package_is_installed() {
+	_package_manager_is_set || return 1
 	package_${windows_package_manager}_is_installed "$@"
+}
+_package_manager_is_set() {
+	[ -n "$windows_package_manager" ] && return
+	log_warn "windows_package_manager is not set"
+	return 1
 }
 package_scoop_bootstrap() {
 	[ -n "$scoop_disabled" ] && {

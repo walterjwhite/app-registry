@@ -765,7 +765,7 @@ _worker_sandbox_run() {
 	exit_defer _worker_cleanup_sandbox
 	printf '### sandbox logs\n' >>$log_logfile
 	export INPUT_DIR=$agent_job_work_path
-	podman-compose -f /usr/local/walterjwhite/agent/container/dev/docker-compose.yml run --rm sandbox bash -c "$_AGENT_CMD < /input/PROMPT.md" 2>&1 | log_sanitize_input >>$log_logfile
+	podman-compose -f $LIBRARY_PATH/$APPLICATION_NAME/container/dev/docker-compose.yml run --rm sandbox bash -c "$_AGENT_CMD < /input/PROMPT.md" 2>&1 | log_sanitize_input >>$log_logfile
 	printf '### sandbox logs - END\n' >>$log_logfile
 }
 _worker_sandbox_patch() {

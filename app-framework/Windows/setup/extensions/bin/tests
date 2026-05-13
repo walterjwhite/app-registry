@@ -458,50 +458,28 @@ _syslog_syslog() {
 	:
 }
 sudo_run() {
-	[ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
-	sudo_is_validation_required || {
-		"$@"
-		return
-	}
-	validation_require "$_SUDO_CMD" "sudo_cmd - $*"
-	[ -n "$interactive" ] && {
-		$_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
-	}
-	$_SUDO_CMD $sudo_options "$@"
-	local sudo_return_status=$?
-	unset sudo_options
-	return $sudo_return_status
+	log_warn "no op: $*"
 }
 sudo_is_validation_required() {
-	[ -n "$sudo_user" ] && {
-		[ "$sudo_user" = "$USER" ] && return 1
-		sudo_options="$sudo_options /user:$sudo_user"
-		return 0
-	}
-	_sudo_is_administrator && return 1
-	return 0
+	log_warn "no op: $*"
 }
 _sudo_is_administrator() {
 	net session >/dev/null 2>&1
 }
 sudo_ensure_administrator() {
-	_sudo_is_administrator && return
-	log_info "enter administrator password to run this program as administrator"
-	sudo_run "$0" "$@"
-	exit $?
+	log_warn "no op: $*"
 }
 sudo_ensure_not_administrator() {
-	_sudo_is_administrator || return
-	exit_with_error "$0 cannot be run as administrator"
+	log_warn "no op: $*"
 }
 sudo_ensure_root() {
-	sudo_ensure_administrator "$@"
+	log_warn "no op: $*"
 }
 sudo_ensure_not_root() {
-	sudo_ensure_not_administrator "$@"
+	log_warn "no op: $*"
 }
 sudo_precmd() {
-	:
+	log_warn "no op: $*"
 }
 time_timeout() {
 	local _timeout=$1
@@ -638,10 +616,10 @@ _alert_long_running_cmd() {
 }
 _extension_main() {
 	extension_action=$APPLICATION_CMD
-	required_message="$extension_action is not yet implemented by any extensions" file_require "/usr/local/walterjwhite/install/extensions/extension/$extension_action"
+	required_message="$extension_action is not yet implemented by any extensions" file_require "$LIBRARY_PATH/install/extensions/extension/$extension_action"
 	extension_opwd=$PWD
 	local _error_count=0
-	for extension_run_type_path in $(find /usr/local/walterjwhite/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
+	for extension_run_type_path in $(find $LIBRARY_PATH/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
 		extension_run_type=$(basename $extension_run_type_path | sed 's/^[[:digit:]]\{2\}\.//')
 		extension_run_type="${extension_run_type#*.}"
 		log_add_context $extension_run_type
@@ -718,8 +696,8 @@ extension_find_dirs_containing() {
 	_extension_find_default -exec dirname {} \; | sort -uV
 }
 _extension_load_type() {
-	[ -e /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh ] && {
-		. /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh
+	[ -e $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh ] && {
+		. $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh
 		cd $extension_opwd
 	}
 }
@@ -896,8 +874,4 @@ done
 log_enable_debug_mode
 wait_waitee_init
 wait_waiter
-if [ -n "$WINGET" ]; then
-elif [ -n "$CHOCOLATEY" ]; then
-elif [ -n "$SCOOP" ]; then
-fi
 _extension_main "$@"

@@ -1,5 +1,5 @@
 #!/bin/sh
-. /usr/local/walterjwhite/secrets/provider/$conf_secrets_provider/init.sh
+. $LIBRARY_PATH/$APPLICATION_NAME/provider/$conf_secrets_provider/init.sh
 find . -type f ! -path '*/.git/*' -name '*.enc' |
   sort -u |
   sed -e "s/^.*\///" -e 's/\.enc$//' |

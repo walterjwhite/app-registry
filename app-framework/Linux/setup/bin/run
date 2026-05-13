@@ -660,7 +660,7 @@ _env_display() {
 }
 _run_application_runner() {
 	extension_action=run
-	extension_run_type_path="/usr/local/walterjwhite/install/extensions/extension/$extension_action/$extension_run_type"
+	extension_run_type_path="$LIBRARY_PATH/install/extensions/extension/$extension_action/$extension_run_type"
 	extension_feature_name=${extension_action}_${extension_run_type}
 	extension_feature_name=$(printf '%s' $extension_feature_name)
 	. $extension_run_type_path/run.sh
@@ -765,8 +765,8 @@ extension_find_dirs_containing() {
 	_extension_find_default -exec dirname {} \; | sort -uV
 }
 _extension_load_type() {
-	[ -e /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh ] && {
-		. /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh
+	[ -e $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh ] && {
+		. $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh
 		cd $extension_opwd
 	}
 }

@@ -288,7 +288,7 @@ time_timeout() {
 		exit_with_error "$timeout_error_msg"
 	}
 }
-: ${conf_dev_detect_secrets_venv:=/usr/local/walterjwhite/git/python/env/detect_secrets}
+: ${conf_dev_detect_secrets_venv:=$LIBRARY_PATH/$APPLICATION_NAME/python/env/detect_secrets}
 : ${conf_dev_detect_secrets_python_artifact=detect-secrets}
 : ${conf_dev_detect_secrets_exclude_files:="--exclude-files '.*\.secret/.*' --exclude-files '.*.archived.*' --exclude-files '.*\.secrets$'"}
 _scan_new() {

@@ -67,7 +67,7 @@ _install_randoop() {
     exit_defer _cleanup_randoop
     _extract_extract $download_file $randoop_contents
     download_file=$randoop_contents/randoop-${randoop_version}/randoop-all-${randoop_version}.jar
-    _download_install_file /usr/local/walterjwhite/programming-languages/tools/randoop-all.jar
+    _download_install_file $LIBRARY_PATH/$APPLICATION_NAME/tools/randoop-all.jar
 }
 _cleanup_randoop() {
     rm -rf $randoop_contents

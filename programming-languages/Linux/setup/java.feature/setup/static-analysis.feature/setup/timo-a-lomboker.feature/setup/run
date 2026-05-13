@@ -76,14 +76,14 @@ _download_verify() {
 : ${conf_dev_java_timo_a_lomboker_jdk:=java}
 : ${conf_dev_java_timo_a_lomboker_version:=0.0.0}
 : ${conf_dev_java_timo_a_lomboker_jar_NAME:=lomboker-$conf_dev_java_timo_a_lomboker_version.jar}
-: ${conf_dev_java_timo_a_lomboker_jar:=/usr/local/walterjwhite/programming-languages/tools/$conf_dev_java_timo_a_lomboker_jar_NAME}
+: ${conf_dev_java_timo_a_lomboker_jar:=$LIBRARY_PATH/$APPLICATION_NAME/tools/$conf_dev_java_timo_a_lomboker_jar_NAME}
 get_installed_timo_a_lomboker_version() {
-  [ ! -e /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar ] && return
+  [ ! -e $LIBRARY_PATH/$APPLICATION_NAME/timo-a-lomboker.jar ] && return
   printf 'v'
-  java -jar /usr/local/walterjwhite/programming-languages/timo-a-lomboker.jar version | cut -d' ' -f2
+  java -jar $LIBRARY_PATH/$APPLICATION_NAME/timo-a-lomboker.jar version | cut -d' ' -f2
 }
 install_timo_a_lomboker() {
-  _download_install_file /usr/local/walterjwhite/programming-languages/tools/timo-a-lomboker.jar
+  _download_install_file $LIBRARY_PATH/$APPLICATION_NAME/tools/timo-a-lomboker.jar
 }
 _github_install_latest timo-a-lomboker timo-a lomboker '.tag_name' \
     ".assets[] | select(.name | test(\"lomboker-.*.jar\")) | .browser_download_url" \

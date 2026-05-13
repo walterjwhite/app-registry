@@ -68,6 +68,6 @@ _cleanup_spring() {
 }
 _extract_extract $download_file $spring_cli_contents
 exit_defer _cleanup_spring
-mkdir -p /usr/local/walterjwhite/programming-languages/tools/$feature_name
+mkdir -p $LIBRARY_PATH/$APPLICATION_NAME/tools/$feature_name
 mv $spring_cli_contents/spring-${spring_cli_version}/lib/spring-boot-cli-${spring_cli_version}.jar \
-	/usr/local/walterjwhite/programming-languages/tools/$feature_name/spring-boot-cli.jar
+	$LIBRARY_PATH/$APPLICATION_NAME/tools/$feature_name/spring-boot-cli.jar

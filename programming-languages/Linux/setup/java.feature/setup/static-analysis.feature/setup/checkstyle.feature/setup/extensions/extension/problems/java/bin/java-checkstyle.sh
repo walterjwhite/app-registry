@@ -626,10 +626,10 @@ _alert_long_running_cmd() {
 }
 _extension_main() {
 	extension_action=$APPLICATION_CMD
-	required_message="$extension_action is not yet implemented by any extensions" file_require "/usr/local/walterjwhite/install/extensions/extension/$extension_action"
+	required_message="$extension_action is not yet implemented by any extensions" file_require "$LIBRARY_PATH/install/extensions/extension/$extension_action"
 	extension_opwd=$PWD
 	local _error_count=0
-	for extension_run_type_path in $(find /usr/local/walterjwhite/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
+	for extension_run_type_path in $(find $LIBRARY_PATH/install/extensions/extension/$extension_action -mindepth 1 -maxdepth 1 -type d | sort -V); do
 		extension_run_type=$(basename $extension_run_type_path | sed 's/^[[:digit:]]\{2\}\.//')
 		extension_run_type="${extension_run_type#*.}"
 		log_add_context $extension_run_type
@@ -706,8 +706,8 @@ extension_find_dirs_containing() {
 	_extension_find_default -exec dirname {} \; | sort -uV
 }
 _extension_load_type() {
-	[ -e /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh ] && {
-		. /usr/local/walterjwhite/install/extensions/type/$extension_run_type.sh
+	[ -e $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh ] && {
+		. $LIBRARY_PATH/install/extensions/type/$extension_run_type.sh
 		cd $extension_opwd
 	}
 }
@@ -859,8 +859,8 @@ which mail >/dev/null 2>&1 || conf_log_mail_disabled=1
 : ${conf_wait_interval:=30}
 : ${conf_dev_checkstyle_version:=12.2.0}
 : ${conf_dev_checkstyle_version_STYLE:=google}
-: ${conf_dev_checkstyle_jar:=/usr/local/walterjwhite/programming-languages/tools/checkstyle/checkstyle.jar}
-: ${conf_dev_checkstyle_config:=/usr/local/walterjwhite/programming-languages/tools/checkstyle/checks/$conf_dev_checkstyle_version_STYLE_checks.xml}
+: ${conf_dev_checkstyle_jar:=$LIBRARY_PATH/$APPLICATION_NAME/tools/checkstyle/checkstyle.jar}
+: ${conf_dev_checkstyle_config:=$LIBRARY_PATH/$APPLICATION_NAME/tools/checkstyle/checks/$conf_dev_checkstyle_version_STYLE_checks.xml}
 trap '_exit_on_hup $LINENO' 1
 trap '_exit_on_int $LINENO' 2
 trap '_exit_on_quit $LINENO' 3

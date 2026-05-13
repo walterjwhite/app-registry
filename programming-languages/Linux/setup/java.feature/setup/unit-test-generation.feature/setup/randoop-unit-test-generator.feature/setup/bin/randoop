@@ -837,12 +837,12 @@ gen)
   lib_jars=$(find target/lib -type f -name '*.jar' 2>/dev/null | tr '\n' ':' | sed -e 's/\:$//')
   file_require $test_jar test_jar
   java $conf_dev_randoop_heap \
-    -classpath $test_jar:$lib_jars:/usr/local/walterjwhite/programming-languages/tools/randoop-all.jar \
+    -classpath $test_jar:$lib_jars:$LIBRARY_PATH/$APPLICATION_NAME/tools/randoop-all.jar \
     randoop.main.Main gentests --testclass $test_class_name $conf_dev_randoop_options $@
   ;;
 help)
   java $conf_dev_randoop_heap \
-    -classpath /usr/local/walterjwhite/programming-languages/tools/randoop-all.jar \
+    -classpath $LIBRARY_PATH/$APPLICATION_NAME/tools/randoop-all.jar \
     randoop.main.Main $_RANDOOP_CMD
   ;;
 *)

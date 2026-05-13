@@ -806,7 +806,7 @@ if [ $# -gt 0 ]; then
   fi
 fi
 feature_name=SPRING
-java -cp /usr/local/walterjwhite/programming-languages/tools/feature/$feature_name/spring-boot-cli.jar org.springframework.boot.loader.JarLauncher "$@" "$spring_cli_args" || exit_with_error "see above exit_with_error message"
+java -cp $LIBRARY_PATH/$APPLICATION_NAME/tools/feature/$feature_name/spring-boot-cli.jar org.springframework.boot.loader.JarLauncher "$@" "$spring_cli_args" || exit_with_error "see above exit_with_error message"
 git init
 git add .
 gcommit -am 'spring init'

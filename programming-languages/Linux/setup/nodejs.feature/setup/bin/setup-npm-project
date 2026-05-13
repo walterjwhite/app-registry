@@ -801,10 +801,10 @@ log_enable_debug_mode
 wait_waitee_init
 wait_waiter
 git init .
-cat /usr/local/walterjwhite/programming-languages/tools_/nodejs/.gitignore >>.gitignore
-cp /usr/local/walterjwhite/programming-languages/tools_/nodejs/.npmignore .
-cp /usr/local/walterjwhite/programming-languages/tools_/nodejs/package.json .
+cat $LIBRARY_PATH/$APPLICATION_NAME/tools_/nodejs/.gitignore >>.gitignore
+cp $LIBRARY_PATH/$APPLICATION_NAME/tools_/nodejs/.npmignore .
+cp $LIBRARY_PATH/$APPLICATION_NAME/tools_/nodejs/package.json .
 log_warn "please update package.json"
 log_warn "setting up .babelrc.js"
 npm install @babel/cli @babel/core @babel/preset-env --save-dev
-cp /usr/local/walterjwhite/programming-languages/tools_/nodejs/.babelrc.js .
+cp $LIBRARY_PATH/$APPLICATION_NAME/tools_/nodejs/.babelrc.js .

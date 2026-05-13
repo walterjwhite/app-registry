@@ -5,5 +5,5 @@ _load_plugins() {
 		. $shell_script_plugin
 	done
 }
-_load_plugins /usr/local/walterjwhite/console/shell
+_load_plugins $LIBRARY_PATH/$APPLICATION_NAME/shell
 _load_plugins ~/.config/walterjwhite/shell

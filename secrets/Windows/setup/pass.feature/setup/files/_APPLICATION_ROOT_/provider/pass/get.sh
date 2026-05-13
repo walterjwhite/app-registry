@@ -1,7 +1,7 @@
 #!/bin/sh
 secrets_get_find() {
   [ $# -eq 0 ] && return 1
-  local matched=$(. /usr/local/walterjwhite/secrets/provider/$conf_secrets_provider/find.sh)
+  local matched=$(. $LIBRARY_PATH/$APPLICATION_NAME/provider/$conf_secrets_provider/find.sh)
   local matches=$(printf '%s\n' $matched | wc -l)
   [ -z "$matched" ] && exit_with_error "no secrets found matching: $*"
   case $conf_secrets_output_function in
