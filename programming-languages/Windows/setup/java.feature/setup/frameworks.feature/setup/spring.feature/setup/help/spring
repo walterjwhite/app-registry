@@ -1,0 +1,15 @@
+spring - Spring Boot CLI
+USAGE:
+    spring [init] [spring-cli-args...]
+DESCRIPTION:
+    Spring Boot CLI wrapper for Spring project management.
+    Automatically initializes git repository and commits changes.
+ARGUMENTS:
+    init
+        Initialize new Spring project with extraction
+    spring-cli-args
+        Arguments passed to Spring Boot CLI
+EXAMPLES:
+    spring init
+    spring init --package=com.example --dependencies=web,data-jpa
+    spring run app.groovy

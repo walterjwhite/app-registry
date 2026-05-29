@@ -1,0 +1,106 @@
+#!/bin/sh
+_extract_extract() {
+	if [ $# -lt 2 ]; then
+		log_warn "expecting 2 arguments, source file, and target to extract to"
+		return 1
+	fi
+	log_info "extracting $1"
+	[ -n "$clean" ] && {
+		rm -rf $2
+		mkdir -p $2
+	}
+	case $1 in
+	*.tar.gz | *.tgz | *.tar.bz2 | *.tbz2 | *.tar.xz)
+		tar xf $1 -C $2
+		;;
+	*.zip)
+		unzip -q $1 -d $2
+		;;
+	*)
+		log_warn "extension unsupported - $1"
+		return 2
+		;;
+	esac
+}
+_download_fetch() {
+	mkdir -p $APP_PLATFORM_CACHE_PATH
+	local _cached_filename
+	if [ $# -gt 1 ]; then
+		_cached_filename="$2"
+	else
+		_cached_filename=$(basename "$1" | sed -e 's/?.*$//')
+	fi
+	download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+	[ -z "$no_cache" ] && {
+		[ -e "$download_file" ] && {
+			log_detail "$1 already downloaded to: $download_file"
+			return
+		}
+	}
+	if [ -z "$download_disabled" ]; then
+		log_info "downloading $1 -> $download_file"
+		curl $curl_options -o "$download_file" -sL "$1"
+	else
+		_stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+	fi
+}
+_download_install_file() {
+	warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+	warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+	: ${_install_file_chmod:=444}
+	log_info "installing $download_file -> $1"
+	mkdir -p $(dirname $1)
+	cp "$download_file" $1
+	chmod $_install_file_chmod $1
+	unset download_file
+	[ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_download_verify() {
+	local _hash_algorithm
+	_hash_algorithm=512
+	shasum -a $_hash_algorithm -c $1 >/dev/null 2>&1
+}
+readonly KIRO_BASE_URL="https://desktop-release.q.us-east-1.amazonaws.com"
+_get_latest_kiro_version_info() {
+    _get_kiro_manifest
+    latest_kiro_version=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .download | split("/")[0]' $kiro_manifest)
+    latest_kiro_download_path=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .download' $kiro_manifest)
+    latest_kiro_checksum=$(jq -r --arg arch "$APP_PLATFORM_ARCHITECTURE" --arg filetype "zip" \
+        '.packages[] | select(.architecture == $arch and .fileType == $filetype and (.targetTriple | endswith("-gnu"))) | .sha256' $kiro_manifest)
+}
+_get_kiro_manifest() {
+    no_cache=1 _download_fetch "${KIRO_BASE_URL}/latest/manifest.json"
+    kiro_manifest=$download_file
+}
+_get_installed_kiro_version() {
+    if [ -e $APP_PLATFORM_BIN_PATH/kiro-cli ]; then
+        $APP_PLATFORM_BIN_PATH/kiro-cli --version | cut -d' ' -f2
+    fi
+}
+_kiro_install() {
+    kiro_url="${KIRO_BASE_URL}/$latest_kiro_download_path"
+    versioned_filename="kirocli-$latest_kiro_version-$APP_PLATFORM_ARCHITECTURE.zip"
+    _download_fetch $kiro_url "$versioned_filename"
+    log_detail "verifying checksum: $latest_kiro_checksum"
+    printf '%s  %s' "$latest_kiro_checksum" "$download_file" | sha256sum -c - || {
+        log_warn "checksum verification failed for $versioned_filename"
+        return 1
+    }
+    log_detail "checksum verification passed"
+    cd /tmp
+    versioned_extract_dir="kirocli-$latest_kiro_version"
+    _extract_extract $download_file "/tmp/$versioned_extract_dir"
+    exit_defer rm -rf "/tmp/$versioned_extract_dir"
+    mv /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli-chat /tmp/$versioned_extract_dir/kirocli/bin/kiro-cli-term \
+        $APP_PLATFORM_BIN_PATH/
+}
+_kiro_is_latest_version() {
+    local installed_kiro_version=$(_get_installed_kiro_version)
+    [ "$installed_kiro_version" = "$latest_kiro_version" ]
+}
+_get_latest_kiro_version_info
+if ! _kiro_is_latest_version; then
+    _kiro_install
+fi

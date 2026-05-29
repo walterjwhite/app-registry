@@ -1,0 +1,17 @@
+setup-npm-project - NPM Project Setup
+USAGE:
+    setup-npm-project
+DESCRIPTION:
+    Initialize a new NPM project with standard configuration.
+    Sets up git repository, copies template files, and installs
+    Babel dependencies.
+PROCESS:
+    1. Initialize git repository
+    2. Copy .gitignore and .npmignore templates
+    3. Copy package.json template
+    4. Install Babel CLI, core, and preset-env
+    5. Copy .babelrc.js template
+NOTE:
+    User should update package.json after setup.
+EXAMPLES:
+    setup-npm-project

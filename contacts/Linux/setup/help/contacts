@@ -1,0 +1,19 @@
+contacts - Contact Management
+USAGE:
+    contacts <action>
+DESCRIPTION:
+    Manage contacts database. Supports various contact operations.
+ACTIONS:
+    put
+        Add or update a contact
+    delete
+        Delete a contact
+    move
+        Move a contact
+    get
+        Get a contact
+EXAMPLES:
+    contacts put
+    contacts get
+    contacts delete
+    contacts move

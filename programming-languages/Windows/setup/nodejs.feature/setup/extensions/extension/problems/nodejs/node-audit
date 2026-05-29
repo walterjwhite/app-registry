@@ -1,0 +1,2 @@
+#!/bin/sh
+exec_dir_cmd="npm audit signatures ."

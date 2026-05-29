@@ -1,0 +1,8 @@
+format - Code Formatter
+USAGE:
+    format
+DESCRIPTION:
+    Format source code according to project standards.
+    Automatically detects the language and uses the appropriate formatter.
+EXAMPLES:
+    format

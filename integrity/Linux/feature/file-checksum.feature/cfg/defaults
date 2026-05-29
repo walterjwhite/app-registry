@@ -1,0 +1,1 @@
+: ${_CONF_INTEGRITY_CHECKSUM_CMD:=sha256sum}

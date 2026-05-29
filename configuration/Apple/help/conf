@@ -1,0 +1,3 @@
+backup / restore configuration
+    backup          backup supported configuration from $HOME directory into $HOME/.data/configuration and push to a configured git remote
+    restore         restore supported configuration back into $HOME directory from $HOME/.data/configuration

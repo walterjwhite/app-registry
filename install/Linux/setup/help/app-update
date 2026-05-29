@@ -1,0 +1,16 @@
+app-update - Update installed applications
+USAGE:
+    app-update [app-name...]
+DESCRIPTION:
+    Update one or more installed applications. If no app names
+    are specified, updates all installed applications and the
+    install system itself.
+CONFIGURATION:
+    -conf-install-step-timeout SECONDS
+        Timeout per update step (default: 300)
+    -conf-install-max-concurrent-jobs NUM
+        Maximum concurrent jobs (default: nproc)
+EXAMPLES:
+    app-update
+    app-update my-app
+    app-update app1 app2 app3

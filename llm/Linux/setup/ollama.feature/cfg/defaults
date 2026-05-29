@@ -1,0 +1,4 @@
+: ${conf_llama_ollama_models:="llama2 mistral codellama"}
+lspci | grep -cqm1 'Neural Processing Unit' || {
+	feature_ollama_disabled=1
+}

@@ -1,0 +1,5 @@
+: ${conf_dev_azure_login_timeout:=30}
+: ${conf_dev_azure_upgrade_timeout:=30}
+: ${conf_dev_azure_output_format:=table}
+: ${conf_dev_azure_venv:=$APP_LIBRARY_PATH/python/env/azure}
+: ${conf_dev_azure_python_artifact=azure-cli}

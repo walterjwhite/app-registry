@@ -1,0 +1,5 @@
+if command -v keychain >/dev/null 2>&1
+    if test -e ~/.ssh/id_ed25519
+        eval (keychain --eval id_ed25519)
+    end
+end

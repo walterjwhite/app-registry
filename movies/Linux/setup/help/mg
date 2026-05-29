@@ -1,0 +1,7 @@
+mg - Movies Get
+USAGE:
+    mg
+DESCRIPTION:
+    Display metadata for all queued movies.
+EXAMPLES:
+    mg

@@ -1,0 +1,2 @@
+: ${_CONF_DEV_RANDOOP_HEAP:=-Xmx3000m}
+: ${_CONF_DEV_RANDOOP_OPTIONS:=--progressdisplay=false}

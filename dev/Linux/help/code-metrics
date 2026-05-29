@@ -1,0 +1,4 @@
+print out various code metrics
+	line count
+		aggregates line count per file type
+	Java annotation used

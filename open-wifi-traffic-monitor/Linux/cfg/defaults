@@ -1,0 +1,3 @@
+: ${conf_open_wifi_traffic_monitor_interface:=wlan1}
+: ${conf_open_wifi_traffic_monitor_network_connect_timeout:=30}
+: ${conf_open_wifi_traffic_monitor_capture_file:=/var/log/walterjwhite/wifi-traffic-monitor/$(date +%Y%m%d-%H%M%S).pcap}

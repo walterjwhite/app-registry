@@ -1,0 +1,7 @@
+video history
+    -categories=*
+        only include history from the specified categories, space delimeted (default: error, watched, queued, downloaded)
+    -date=*
+        only include history for the specified date
+    -relative=*
+        convert date to relative date

@@ -1,0 +1,4 @@
+git commits since - lists all the SHA hashes of the commits since the provided SHA1 hash
+    <SHA1 hash>
+    date
+    date expression

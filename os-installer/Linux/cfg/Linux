@@ -1,0 +1,35 @@
+  linux_package_manager=pacman
+  distribution_function_name=arch
+os_installer_disk_dev_encrypted_partition_id=2
+: ${os_installer_stage3_type:="hardened-systemd"}
+: ${os_installer_kernel:=gentoo-kernel}
+: ${os_installer_init:=dracut}
+: ${os_installer_boot_loader:=efibootmgr}
+: ${os_installer_boot_method:=uefi}
+: ${os_installer_boot_fs:=zpool}
+: ${os_installer_boot_loader:=efibootmgr}
+: ${os_installer_cron:=systemd}
+: ${os_installer_syslog:=sysklogd}
+: ${os_installer_syslog_use:=logrotate}
+: ${os_installer_indexing:=plocate}
+: ${os_installer_l10n:="en en-US"}
+: ${os_installer_luks_cipher:=aes-xts-plain}
+: ${os_installer_luks_key_size:=512}
+: ${os_installer_luks_hash:=sha512}
+: ${os_installer_software_license:="@FREE @BINARY-REDISTRIBUTABLE"}
+: ${os_installer_time_synchronization:=timedatectl}
+: ${os_installer_kernel:=gentoo-kernel}
+: ${os_installer_kernel_cmdline_args:="consoleblank=300 quiet"}
+: ${os_installer_system_locale_eselect:=en_US.utf8}
+: ${os_installer_system_locale_gen:=en_US ISO-8859-1|en_US.UTF-8 UTF-8}
+: ${os_installer_portage_niceness=19}
+: ${os_installer_portage_scheduling_policy=batch}
+: ${conf_os_installer_cups_conf_dir:=/etc/cups}
+: ${conf_os_installer_package_install_once:=1}
+_ZPOOL_OPTIONS="-o ashift=12 -o autotrim=on -O acltype=posixacl -O xattr=sa -O relatime=on -O compression=zstd -m none"
+os_installer_umount_options="l"
+: ${conf_os_installer_init:="systemd"}
+: ${_OS_CONTAINER_MOUNTPOINT:=/containers}
+: ${os_installer_cache_fses:=var/cache/distfiles}
+: ${os_installer_sshfs_type:=fuse.sshfs}
+: ${os_installer_sshfs_options:="-o allow_other"}

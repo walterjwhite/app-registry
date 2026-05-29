@@ -1,0 +1,7 @@
+gucf - Git Unchanged Files
+USAGE:
+    gucf
+DESCRIPTION:
+    Show unchanged files in the repository.
+EXAMPLES:
+    gucf

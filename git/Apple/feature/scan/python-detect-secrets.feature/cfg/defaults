@@ -1,0 +1,3 @@
+: ${_CONF_DEV_DETECT_SECRETS_VENV:=$_CONF_APPLICATION_LIBRARY_PATH/python/env/detect_secrets}
+: ${_CONF_DEV_DETECT_SECRETS_PYTHON_ARTIFACT=detect-secrets}
+: ${_CONF_DEV_DETECT_SECRETS_EXCLUDE_FILES:="--exclude-files '.*\.secret/.*' --exclude-files '.*.archived.*' --exclude-files '.*\.secrets$'"}

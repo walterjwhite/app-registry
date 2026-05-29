@@ -1,0 +1,2 @@
+#!/bin/sh
+_LOGFILE=/var/log/walterjwhite/app-update.log app-update

@@ -1,0 +1,21 @@
+gf - Git Fixup
+USAGE:
+    gf [count] [-m=message]
+DESCRIPTION:
+    Create fixup commits to squash. Uses APP_CONTEXT environment
+    variable to inject contextual information into commit message.
+ARGUMENTS:
+    count
+        Number of commits to squash
+OPTIONS:
+    -m=message
+        Commit message to use (uses parent commit message if null)
+CONFIGURATION:
+    -conf-install-context=CONTEXT
+        Context information to inject into commit message
+NOTE:
+    Makes use of APP_CONTEXT environment variable for contextual information.
+EXAMPLES:
+    gf 3
+    gf 2 -m="Fix typo"
+    gf 5 -m="Update documentation"

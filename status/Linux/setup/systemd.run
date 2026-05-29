@@ -1,0 +1,2 @@
+#!/bin/sh
+sudo_run systemctl enable --now status.timer

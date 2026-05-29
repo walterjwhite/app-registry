@@ -1,0 +1,1 @@
+: ${_CONF_CONSOLE_SOURCE_HIGHTLIGHT:=/opt/homebrew/bin/src-hilite-lesspipe.sh}

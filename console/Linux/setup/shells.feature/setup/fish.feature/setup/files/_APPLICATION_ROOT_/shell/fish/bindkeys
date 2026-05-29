@@ -1,0 +1,12 @@
+bind \e[3~ delete-char
+bind \e[3;5~ delete-char
+bind \e[1~ beginning-of-line  # Linux console
+bind \e[H beginning-of-line  # xterm
+bind \eOH beginning-of-line  # gnome-terminal
+bind \e[4~ end-of-line        # Linux console
+bind \e[F end-of-line        # xterm
+bind \eOF end-of-line        # gnome-terminal
+bind \e[1;5C forward-word
+bind \e[1;5D backward-word
+bind \e[5~ history-search-backward
+bind \e[6~ history-search-forward

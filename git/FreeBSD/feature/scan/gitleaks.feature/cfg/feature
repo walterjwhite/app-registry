@@ -1,0 +1,8 @@
+pkg info xorg-server > /dev/null 2>&1
+_HAS_XORG=$?
+pkg info wayland > /dev/null 2>&1
+_HAS_WAYLAND=$?
+if [ $_HAS_XORG -ne 0 ] && [ $_HAS_WAYLAND -ne 0 ]; then
+    _WARN "disabling gitleaks as no graphical environment was detected"
+    _FEATURE_GITLEAKS_DISABLED=1
+fi

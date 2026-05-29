@@ -1,0 +1,9 @@
+npm-cleanup - NPM Cleanup
+USAGE:
+    npm-cleanup
+DESCRIPTION:
+    Clean up Node.js project artifacts. Removes all node_modules
+    directories and package-lock.json files from current directory
+    and subdirectories.
+EXAMPLES:
+    npm-cleanup

@@ -1,0 +1,12 @@
+#!/bin/sh
+_ollama_install_models() {
+    ollama serve > /dev/null 2>&1 &
+    local server_pid=$!
+    for _LLAMA_IMAGE in $conf_llama_ollama_models; do
+        ollama pull $_LLAMA_IMAGE > /dev/null 2>&1 || {
+            log_warn "failed to pull $_LLAMA_IMAGE"
+        }
+    done
+    kill $server_pid
+}
+which ollama > /dev/null 2>&1 && _ollama_install_models
