@@ -1,0 +1,13 @@
+gpull - Git Pull
+USAGE:
+    gpull [git-pull-arguments...]
+DESCRIPTION:
+    Pull changes from remote repository. All arguments are passed
+    directly to git pull.
+ARGUMENTS:
+    git-pull-arguments
+        Any valid git pull arguments
+EXAMPLES:
+    gpull
+    gpull origin main
+    gpull --rebase

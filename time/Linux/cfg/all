@@ -1,0 +1,8 @@
+conf_time_when_exit_status=254
+: ${conf_time_format:="%Y/%m/%d %H:%M:%S"}
+: ${conf_time_seconds_format:="%Y/%m/%d %H:%M:%S"}
+: ${conf_time_datetime_format:="%Y/%m/%d %H:%M"}
+: ${conf_date_time_fileormat:="%Y/%m/%d %H:%M"}
+conf_time_datetime_format="%Y/%m/%d %H:%M:%S"
+conf_time_time_format="%H:%M"
+conf_time_time_with_seconds_format="%H:%M:%S"

@@ -1,0 +1,27 @@
+: ${conf_os_installer_cups_conf_dir:=/usr/local/etc/cups}
+: ${conf_os_installer_package_install_once:=0}
+freebsd_pkg_options="-y"
+_ZPOOL_OPTIONS="-o ashift=12 -O compress=zstd -O atime=off -m none"
+: ${FREEBSD_VDEV_TYPE:=stripe}
+: ${ZFSBOOT_BOOT_TYPE:=UEFI}
+: ${ZFSBOOT_PARTITION_SCHEME:=GPT}
+: ${ZFSBOOT_SWAP_SIZE:=0}
+: ${os_installer_mirror_site:=http://ftp.freebsd.org}
+: ${os_installer_version:=15.0-RELEASE}
+: ${os_installer_distributions:=base kernel}
+: ${os_installer_minimum_installation_memory:=8589934592}
+: ${FREEBSD_SWAP_SIZE:=4G}
+: ${conf_os_installer_container_host_ip:=10.0.0.254}
+: ${conf_os_installer_container_guest_ip:=10.0.0.1}
+: ${conf_os_installer_container_access_network:=10.0.0.0/8}
+: ${conf_os_installer_container_subnet:=255.255.255.0}
+: ${conf_os_installer_container_host_port:=2222}
+: ${conf_os_installer_container_proxy_port:=8888}
+: ${conf_os_installer_container_bastion_hosts:="git freebsd-package-cache freebsd-installer"}
+: ${os_installer_drive:=da0}
+: ${os_installer_drive_device_path:=s2a}
+: ${_OS_CONTAINER_MOUNTPOINT:=/jails}
+: ${os_installer_indexing:=plocate}
+: ${os_installer_cache_fses:=var/cache/pkg}
+: ${os_installer_sshfs_type:=fusefs.sshfs}
+: ${os_installer_jail_prefix:=install-jail}

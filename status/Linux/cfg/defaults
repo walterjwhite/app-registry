@@ -1,0 +1,2 @@
+: ${conf_status_elasticsearch_retention_period:=10d}
+: ${conf_status_ntp_provider:=disabled}

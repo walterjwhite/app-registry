@@ -1,0 +1,2 @@
+#!/bin/sh
+git branch --no-color --show-current

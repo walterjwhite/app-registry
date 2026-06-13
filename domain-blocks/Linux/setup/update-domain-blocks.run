@@ -1,0 +1,5 @@
+#!/bin/sh
+timeout -k 15 60 update-domain-allow
+timeout -k 15 60 update-domain-blocks
+timeout -k 15 15 update-aggregate-domain-blocks
+timeout -k 5 15 dnsmasq-update-domain-blocks

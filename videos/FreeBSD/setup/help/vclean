@@ -1,0 +1,9 @@
+vclean - Video Cleaner
+USAGE:
+    vclean
+DESCRIPTION:
+    Find and remove duplicate videos. Identifies videos with the same
+    URL and moves older duplicates to the error directory, keeping
+    only the newest version.
+EXAMPLES:
+    vclean

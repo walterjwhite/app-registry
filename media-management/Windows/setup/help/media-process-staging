@@ -1,0 +1,27 @@
+media-process-staging - Media Staging Processor
+USAGE:
+    media-process-staging
+DESCRIPTION:
+    Process media files from staging area and move to organized
+    directory structure. Handles permissions, git annex operations,
+    and creates ZFS snapshots.
+PROCESS:
+    1. Remove spaces from filenames
+    2. Move files to output/raw by-time directories
+    3. Set correct ownership
+    4. Git annex add and commit
+    5. Create ZFS snapshot
+    6. Cleanup empty staging directories
+CONFIGURATION:
+    -conf-media-mountpoint PATH
+        Media mountpoint directory
+    -conf-media-user USER
+        Media file owner
+    -conf-media-volume VOLUME
+        ZFS volume name
+    -conf-media-retention PERIOD
+        Snapshot retention period
+NOTE:
+    Requires root privileges.
+EXAMPLES:
+    media-process-staging

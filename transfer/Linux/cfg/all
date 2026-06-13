@@ -1,0 +1,4 @@
+: ${conf_transfer_file_size:=1k}
+: ${conf_transfer_max_data_size:=10240}
+: ${conf_transfer_file_lines:=25}
+: ${conf_transfer_split_function:=_split_file_data}

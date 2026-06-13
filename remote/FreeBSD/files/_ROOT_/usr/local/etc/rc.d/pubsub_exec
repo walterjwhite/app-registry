@@ -1,0 +1,53 @@
+#!/bin/sh
+. /etc/rc.subr
+name="pubsub_exec"
+rcvar="pubsub_exec_enable"
+logfile="/var/log/pubsub-exec/log"
+pidfile="/var/run/pubsub-exec.pid"
+load_rc_config $name
+: ${pubsub_exec_enable:="NO"}
+HOME=/root
+command="/usr/local/bin/pubsub-exec"
+command_args="-cmd=/usr/local/bin/_remote-callback -log-target $logfile -log-level debug"
+stop_postcmd="rm -f \${pidfile}"
+case $logfile in
+    SYSLOG)
+        ;;
+    *)
+        mkdir -p $(dirname $logfile)
+        ;;
+esac
+case "$1" in
+    start|onestart)
+        echo "Starting ${name}..."
+        ${command} ${command_args} &
+        echo $! > ${pidfile}
+        echo "${name} started with PID $(cat ${pidfile})"
+        ;;
+    stop|onestop)
+        echo "Stopping ${name}..."
+        if [ -f ${pidfile} ]; then
+            kill `cat ${pidfile}`
+            rm -f ${pidfile}
+            echo "${name} stopped."
+        else
+            echo "${name} is not running."
+        fi
+        ;;
+    restart|onerestart)
+        $0 stop
+        $0 start
+        ;;
+    status)
+        if [ -f ${pidfile} ]; then
+            echo "${name} is running with PID $(cat ${pidfile})"
+        else
+            echo "${name} is not running."
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|onestart|stop|onestop|restart|onerestart|status}"
+        exit 1
+        ;;
+esac
+exit 0

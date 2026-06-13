@@ -1,0 +1,21 @@
+#!/bin/sh
+_is_ports_setup() {
+	[ ! -e /usr/ports ] && return 1
+	[ $(ls -1 /usr/ports | wc -l) -lt 50 ] && return 1
+	return 0
+}
+_setup_ports() {
+	mkdir -p /usr/ports
+	cd /usr/ports && sudo_run rm -rf * .*
+	git clone --depth 1 https://git.freebsd.org/ports.git /usr/ports || exit_with_error "error setting up Ports"
+}
+_is_widevine_installed() {
+	pkg info linux-widevine-cdm > /dev/null 2>&1
+}
+_install_widevine() {
+	_is_ports_setup || _setup_ports
+	cd /usr/ports/www/linux-widevine-cdm
+	$GNU_SED -i 's/^LICENSE/#LICENSE/' Makefile
+	make clean && make install
+}
+_is_widevine_installed || _install_widevine

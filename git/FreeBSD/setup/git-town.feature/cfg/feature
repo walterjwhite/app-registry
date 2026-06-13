@@ -1,0 +1,4 @@
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$DISPLAY" ]; then
+    log_warn "disabling git-town as no graphical environment was detected"
+    feature_git_town_disabled=1
+fi

@@ -1,0 +1,1 @@
+: ${conf_dev_intellij_ide:=/usr/local/share/intellij/bin/idea.sh}

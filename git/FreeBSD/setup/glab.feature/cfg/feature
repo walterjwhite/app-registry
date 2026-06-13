@@ -1,0 +1,4 @@
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$DISPLAY" ]; then
+    log_warn "disabling glab as no graphical environment was detected"
+    feature_glab_disabled=1
+fi

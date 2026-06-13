@@ -1,0 +1,6 @@
+: ${conf_vpn_wireguard_interface:=wg0}
+: ${conf_vpn_wireguard_ip_cidr:=192.168.1.0/24}
+: ${conf_vpn_wireguard_listen_port:=51820}
+: ${conf_vpn_wireguard_server_address:=192.168.1.1/24}
+: ${conf_vpn_wireguard_persistent_keep_alive:=25}
+: ${conf_vpn_wireguard_client_check_interval:=60}

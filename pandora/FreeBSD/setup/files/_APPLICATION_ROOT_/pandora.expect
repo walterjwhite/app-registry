@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+set EMAIL_ADDRESS_KEY [lindex $argv 0]
+set PASSWORD_KEY [lindex $argv 1]
+set timeout 10
+if {[catch {
+    set _email [exec secrets -out=stdout -disable-formatting get $EMAIL_ADDRESS_KEY 2>/dev/null]
+    set _password [exec secrets -out=stdout -disable-formatting get $PASSWORD_KEY 2>/dev/null]
+} err]} {
+    puts stderr "Error getting credentials: $err"
+    exit 1
+}
+if {[string trim $_email] eq "" || [string trim $_password] eq ""} {
+    puts stderr "Error: Email or password is empty"
+    exit 1
+}
+spawn -noecho pianobar
+expect {
+    timeout {
+        puts stderr "Timed out waiting for email prompt"
+        exit 1
+    }
+    "* Email:" {
+        send -- "$_email\r"
+        exp_continue
+    }
+    "* Password:" {
+        send -- "$_password\r"
+    }
+}
+interact

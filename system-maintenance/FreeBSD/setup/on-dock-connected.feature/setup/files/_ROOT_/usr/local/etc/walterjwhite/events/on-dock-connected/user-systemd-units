@@ -1,0 +1,10 @@
+#!/bin/sh
+for _uid in $(find /run/user -maxdepth 1 -mindepth 1 -type d); do
+  _uid=$(basename $_uid)
+  _user=$(getent passwd $_uid | cut -d: -f1)
+  _user_home=$(getent passwd $_uid | cut -d: -f6)
+  for _USER_SYSTEMD_UNIT in $(find $_user_home/.config/systemd/user/on-dock-connected -type l 2>/dev/null); do
+    log_detail "executing $_USER_SYSTEMD_UNIT as $_user"
+    sudo_user=$_user XDG_RUNTIME_DIR=/run/user/$_uid sudo_options="--preserve-env=XDG_RUNTIME_DIR" sudo_run systemctl --user start $(basename $_USER_SYSTEMD_UNIT)
+  done
+done

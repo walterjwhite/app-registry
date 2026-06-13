@@ -1,0 +1,8 @@
+hello-world - Create a hello world application
+USAGE:
+    hello-world
+DESCRIPTION:
+    Create a simple hello world application template
+    in the current directory.
+EXAMPLES:
+    hello-world

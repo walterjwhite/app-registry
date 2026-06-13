@@ -1,0 +1,12 @@
+ms - Movies Search
+USAGE:
+    ms <search-pattern>
+DESCRIPTION:
+    Search for movies by title pattern.
+ARGUMENTS:
+    search-pattern
+        Pattern to search for in movie titles (required)
+EXAMPLES:
+    ms "star wars"
+    ms "action"
+    ms "2023"

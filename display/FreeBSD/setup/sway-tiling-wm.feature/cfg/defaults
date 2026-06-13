@@ -1,0 +1,2 @@
+: ${_DISPLAY_SWAY_TILING_WM_LOCK_CMD:="vlock -as"}
+: ${_DISPLAY_SWAY_TILING_WM_LAUNCH_SWAY_CMD:="seatd-launch sway"}

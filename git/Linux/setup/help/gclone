@@ -1,0 +1,11 @@
+gclone - Git Clone
+USAGE:
+    gclone <project-url>
+DESCRIPTION:
+    Clone a project in a standard location.
+ARGUMENTS:
+    project-url
+        URL of the git repository to clone
+EXAMPLES:
+    gclone https://github.com/user/repo.git
+    gclone git@github.com:user/repo.git

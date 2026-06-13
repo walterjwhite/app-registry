@@ -1,0 +1,22 @@
+when-success - Conditional Command Execution
+USAGE:
+    when-success -at=TIME [-every=duration] [-file=script] [-execute=command] [-success=script] [-cleanup]
+DESCRIPTION:
+    Execute a command at specified time and run success handler upon
+    successful completion. Supports recurring execution.
+OPTIONS:
+    -at=TIME
+        Time to execute (same formats as when-at)
+    -every=duration
+        Recurring execution interval (e.g., 5s, 1m, 1h)
+    -file=script
+        Script file to execute
+    -execute=command
+        Command with arguments to execute
+    -success=script
+        Script to run on successful execution
+    -cleanup
+        Cleanup file on successful execution
+EXAMPLES:
+    when-success -success=/tmp/success.sh -every=5s -file=/tmp/test.sh
+    when-success -at=12:00 -success=/tmp/done.sh -execute="backup.sh"

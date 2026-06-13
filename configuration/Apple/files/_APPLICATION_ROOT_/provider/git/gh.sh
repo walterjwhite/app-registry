@@ -1,0 +1,4 @@
+#!/bin/sh
+_PLUGIN_CONFIGURATION_PATH=~/.config/gh
+_PLUGIN_CONFIGURATION_PATH_IS_DIR=1
+_PLUGIN_INCLUDE="config.yml hosts.yml"

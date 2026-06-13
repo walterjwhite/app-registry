@@ -1,0 +1,18 @@
+keys - GPG Key Distribution
+USAGE:
+    keys <developer-key>
+DESCRIPTION:
+    Upload GPG key to multiple key servers for distribution.
+    Used for code signing and Maven deployment.
+ARGUMENTS:
+    developer-key
+        GPG key ID to distribute (required)
+KEY SERVERS:
+    - mit.edu
+    - pool.sks-keyservers.net
+    - gnupg.net
+    - keys.pgp.net
+    - surfnet.nl
+EXAMPLES:
+    keys ABC1234567890ABCDEF1234567890ABCDEF123456
+    keys 0xABC1234567890ABCDEF

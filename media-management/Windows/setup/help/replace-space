@@ -1,0 +1,12 @@
+replace-space - Replace Spaces in Filename
+USAGE:
+    replace-space <file>
+DESCRIPTION:
+    Replace spaces with hyphens and colons with dots in filenames
+    to ensure ease of use with shell scripts.
+ARGUMENTS:
+    file
+        File to process (required)
+EXAMPLES:
+    replace-space "my file.jpg"
+    replace-space "photo:1.jpg"

@@ -1,0 +1,16 @@
+java-rename-package - Java Package Renamer
+USAGE:
+    java-rename-package <from-package> <to-package>
+DESCRIPTION:
+    Rename Java package throughout project. Updates package declarations
+    in files and renames corresponding directories.
+ARGUMENTS:
+    from-package
+        Current package name (e.g., com.example.old)
+    to-package
+        New package name (e.g., com.example.new)
+NOTE:
+    Excludes .git and target directories.
+EXAMPLES:
+    java-rename-package com.example.old com.example.new
+    java-rename-package foo.bar foo.baz

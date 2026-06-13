@@ -1,0 +1,2 @@
+: ${conf_console_fish_session_history_size:=1000}
+: ${conf_console_fish_disk_history_size:=1000}

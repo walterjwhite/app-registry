@@ -1,0 +1,6 @@
+which keychain >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+    if [ -e ~/.ssh/id_ed25519 ]; then
+		eval $(keychain --eval id_ed25519)
+	fi
+fi

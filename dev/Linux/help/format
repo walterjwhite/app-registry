@@ -1,0 +1,7 @@
+formats files recursively by type (shell script, go, Java, json, xml, yaml)
+	-changed
+		formats changed files only
+		_DEV_CHANGED
+	-all
+		formats code on all branches
+		_DEV_ALL

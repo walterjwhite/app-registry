@@ -1,0 +1,16 @@
+package-lookup - Look up package information
+USAGE:
+    package-lookup <package-name>
+DESCRIPTION:
+    Look up information about a package including
+    installation status and available versions.
+ARGUMENTS:
+    package-name
+        Name of the package to look up (required)
+CONFIGURATION:
+    -conf-install-app-registry-git-url URL
+        Git URL for app registry (default: https://github.com/walterjwhite/app.registry.git)
+    -conf-install-app-registry-timeout SECONDS
+        App registry timeout (default: 5)
+EXAMPLES:
+    package-lookup my-package

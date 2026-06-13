@@ -1,0 +1,9 @@
+ide wrapper (intellij / vscode)
+	--ide=intellij
+		use intellij
+	--ide=vscode
+		use vscode
+	clean
+		remove any IDE-specific configuration files
+	open
+		open IDE

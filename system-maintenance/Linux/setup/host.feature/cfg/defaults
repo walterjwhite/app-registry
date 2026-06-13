@@ -1,0 +1,2 @@
+: ${conf_system_maintenance_zap_retention_period:=30d}
+: ${conf_system_maintenance_reboot_packages:="linux-cachyos|linux-firmware"}

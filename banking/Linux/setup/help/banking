@@ -1,0 +1,14 @@
+banking - CSV-backed banking data app
+USAGE:
+    banking transact <account-id> <amount> <description> [transaction-date]
+    banking balance <account-id>
+    banking activity <account-id>
+    banking interest
+DESCRIPTION:
+    Stores banking data in $HOME/.data/banking using four CSV files:
+    accounts.csv, account_balances.csv, transactions.csv, and interest_rate.csv.
+    The interest command computes interest for the previous calendar month
+    using the time-weighted average balance for each account.
+    interest_rate.csv uses year_month,interest_rate rows. If the previous
+    month has no explicit entry, the most recent earlier rate is reused and
+    added to the file for that month.

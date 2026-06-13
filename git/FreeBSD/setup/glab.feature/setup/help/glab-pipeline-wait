@@ -1,0 +1,15 @@
+glab-pipeline-wait - GitLab Pipeline Wait
+USAGE:
+    glab-pipeline-wait [--stage=stage-name]
+DESCRIPTION:
+    Wait for GitLab pipeline to complete. Monitors pipeline status
+    and waits until terminal state is reached.
+OPTIONS:
+    --stage=stage-name
+        Specific stage to wait for (required)
+CONFIGURATION:
+    -conf-dev-gitlab-pipeline-pipeline-name NAME
+        Pipeline name to monitor
+EXAMPLES:
+    glab-pipeline-wait --stage=build
+    glab-pipeline-wait --stage=test

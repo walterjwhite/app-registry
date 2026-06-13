@@ -1,0 +1,2 @@
+: ${conf_remote_vpn_client_table_name:=vpn_client}
+: ${conf_remote_interface_name:=wg0}

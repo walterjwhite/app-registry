@@ -1,0 +1,12 @@
+media-remove-metadata - Remove EXIF Metadata
+USAGE:
+    media-remove-metadata <file1> [file2] [file3] ...
+DESCRIPTION:
+    Remove all EXIF metadata from photo files using exiftool.
+ARGUMENTS:
+    file1, file2, file3...
+        Photo files to process (at least one required)
+EXAMPLES:
+    media-remove-metadata photo.jpg
+    media-remove-metadata *.jpg
+    media-remove-metadata image1.jpg image2.jpg

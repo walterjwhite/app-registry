@@ -1,0 +1,4 @@
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$DISPLAY" ]; then
+    log_warn "disabling scan as no graphical environment was detected"
+    feature_scan_disabled=1
+fi

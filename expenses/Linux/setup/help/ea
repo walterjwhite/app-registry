@@ -1,0 +1,18 @@
+ea - Expense Add
+USAGE:
+    ea [-category=category]
+DESCRIPTION:
+    Add an expense record. Prompts for expense details including
+    description, category, and costs. Automatically calculates totals.
+OPTIONS:
+    -category=category
+        Set expense category
+CONFIGURATION:
+    -conf-expenses-text-fields FIELDS
+        Text fields for expense records
+    -conf-expenses-numerical-fields FIELDS
+        Numerical fields for expense records
+EXAMPLES:
+    ea
+    ea -category=groceries
+    ea -category=entertainment

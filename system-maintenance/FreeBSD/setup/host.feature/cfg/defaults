@@ -1,0 +1,12 @@
+: ${_FEATURE_HOST_DISABLED:=$(sysctl -n security.jail.jailed)}
+: ${conf_system_maintenance_be_expiration_period:=31536000}
+: ${conf_system_maintenance_jail_SNAPSHOT_EXPIRATION_PERIOD:=31536000}
+: ${conf_system_maintenance_max_be_to_keep:=5}
+: ${conf_system_maintenance_max_jail_snapshot_to_keep:=5}
+: ${conf_system_maintenance_reboot:=0}
+: ${conf_system_maintenance_max_patches:=100}
+: ${conf_system_maintenance_patch_types:="FREEBSD_UPGRADE USERLAND KERNEL FREEBSD"}
+: ${conf_system_maintenance_apply_patch_timeout:=3600}
+: ${_SYSTEM_MAINTENANCE_NOOP_RUNTIME:=15}
+: ${log_logfile:=/var/log/walterjwhite/$APPLICATION_NAME/$APPLICATION_CMD.log}
+: ${conf_system_maintenance_zap_retention_period:=30d}

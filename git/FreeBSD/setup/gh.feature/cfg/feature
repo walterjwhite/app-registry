@@ -1,0 +1,4 @@
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$DISPLAY" ]; then
+    log_warn "disabling github as no graphical environment was detected"
+    feature_gh_disabled=1
+fi

@@ -1,0 +1,3 @@
+pkg info xorg > /dev/null 2>&1 && {
+	_FEATURE_TSHARK_DISABLED=1
+}

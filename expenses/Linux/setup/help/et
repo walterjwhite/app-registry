@@ -1,0 +1,31 @@
+et - Expense Totals
+USAGE:
+    et [tax|tip|fees] [-a] [-c=category] [-g=group]
+DESCRIPTION:
+    Calculate expense totals and statistics. Can filter by category
+    and group results by various criteria.
+OPTIONS:
+    tax
+        Show tax totals only
+    tip
+        Show tip totals only
+    fees
+        Show fees totals only
+    -a
+        Search all expense files
+    -c=category
+        Filter by specific category
+    -g=group
+        Group results by:
+        category     - Group by category
+        description  - Group by description
+        name         - Group by name
+        year         - Group by year
+        month        - Group by month
+        day          - Group by day
+EXAMPLES:
+    et
+    et tax
+    et -c=groceries
+    et -g=category
+    et -a -g=month

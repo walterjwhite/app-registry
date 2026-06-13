@@ -1,0 +1,1 @@
+: ${_optn_dev_shfmt_options:="-i 2"}

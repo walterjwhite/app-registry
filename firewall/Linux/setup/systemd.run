@@ -1,0 +1,2 @@
+#!/bin/sh
+which systemctl > /dev/null 2>&1 && systemctl enable firewall-update-country-blocks.timer

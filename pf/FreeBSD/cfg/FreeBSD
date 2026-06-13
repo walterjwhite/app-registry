@@ -1,0 +1,3 @@
+: ${_CONF_PF_TABLES_PATH:=/usr/local/etc/walterjwhite/firewall/dynamic}
+: ${_CONF_PF_PARALLEL_WORKERS:=8}
+: ${_CONF_PF_DNS_TIMEOUT:=1}

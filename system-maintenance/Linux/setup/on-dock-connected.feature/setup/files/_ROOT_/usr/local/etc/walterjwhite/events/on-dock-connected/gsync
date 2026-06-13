@@ -1,0 +1,4 @@
+#!/bin/sh
+for _user in $(grep video /etc/group | cut -d: -f4 | tr ',' '\n' | grep -v root); do
+  _sudo_user=$USER sudo_run gsync
+done
