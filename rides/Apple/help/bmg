@@ -1,0 +1,8 @@
+bike mileage get
+    -bike=bike
+    -start=start
+        -s=2019/01/01
+    -end=end
+        -e=2019/12/31
+    -group=group (bike / year / month / day)
+        -g=bike

@@ -1,0 +1,2 @@
+: ${conf_search_locate_updatedb_cmd:=/usr/libexec/locate.updatdb}
+: ${conf_search_locate_database:=/var/db/locate.database}

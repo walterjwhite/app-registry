@@ -1,0 +1,41 @@
+Refactor the code to improve:
+- Readability
+- Maintainability
+- Code reuse
+- Performance (where applicable)
+- **Preserve Public API**: Do not modify method/function signatures
+- **Backward Compatibility**: Ensure existing functionality remains unchanged
+- **Idiomatic Code**: Follow language best practices and style guides
+1. **Code Organization**:
+   - Group related functionality
+   - Break down large functions/methods
+   - Remove code duplication
+2. **Readability**:
+   - Use meaningful variable/function names
+   - Add/improve documentation
+   - Simplify complex conditions
+3. **Maintainability**:
+   - Improve exit_with_error handling
+   - Add input validation
+   - Make the code more testable
+4. **Reusability**:
+   - Extract common functionality
+   - Identify opportunities for utility functions
+   - Consider design patterns where appropriate
+- Show before/after examples of key changes
+- Explain the reasoning behind major refactoring decisions
+- Highlight any potential risks or trade-offs
+- Include relevant test cases
+- All existing tests must pass
+- No new linting/static analysis warnings
+- Document any assumptions made
+- Ensure thread-safety if applicable
+1. Analyze the current code structure
+2. Identify areas for improvement
+3. Make incremental, testable changes
+4. Verify functionality after each change
+5. Document the changes made
+- Focus on high-impact, low-risk changes first
+- Maintain consistent coding style
+- Consider performance implications
+- Keep related changes together in logical commits

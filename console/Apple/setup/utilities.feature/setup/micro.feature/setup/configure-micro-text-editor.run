@@ -1,0 +1,16 @@
+#!/bin/sh
+for _CONSOLE in $(find $TARGET_APP_PATH/shell -mindepth 1 -maxdepth 1 -type d | sort -u); do
+  log_detail "configuring micro as the EDITOR: $_CONSOLE"
+  local _dest="$_CONSOLE/micro-text-editor"
+  printf 'export EDITOR="micro"\n' > "$_dest"
+  _install_record_path "$_dest"
+done
+for _USER in $(grep users /etc/group | cut -f4 -d:); do
+  log_detail "configuring micro as the EDITOR for user: $_USER"
+  local _dir="/home/$_USER/.config/fish/conf.d"
+  mkdir -p "$_dir"
+  local _dest="$_dir/micro-text-editor"
+  printf 'export EDITOR="micro"\n' > "$_dest"
+  chown -R $_USER:$_USER "$_dir"
+  _install_record_path "$_dest"
+done

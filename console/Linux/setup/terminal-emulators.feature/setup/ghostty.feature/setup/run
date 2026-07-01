@@ -1,0 +1,6 @@
+#!/bin/sh
+inxi -G -y 1 --no-host 2>/dev/null | grep -cqm1 'compat-v: 4.2' && {
+  log_warn "legacy opengl detected, setting LIBGL_ALWAYS_SOFTWARE=1 for ghostty"
+  grep -q "^LIBGL_ALWAYS_SOFTWARE=" /etc/environment || printf "LIBGL_ALWAYS_SOFTWARE=1\n" >> /etc/environment
+}
+true

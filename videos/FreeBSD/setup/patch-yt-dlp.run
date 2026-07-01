@@ -1,0 +1,54 @@
+#!/bin/sh
+_download_fetch() {
+  mkdir -p "$TARGET_APP_PLATFORM_CACHE_PATH"
+  local _cached_filename
+  if [ $# -gt 1 ]; then
+    _cached_filename="$2"
+  else
+    _cached_filename=$(basename "$1" | sed -e 's/?.*$//')
+  fi
+  download_file="$TARGET_APP_PLATFORM_CACHE_PATH/$_cached_filename"
+  [ -z "$no_cache" ] && {
+    [ -e "$download_file" ] && {
+      log_detail "$1 already downloaded to: $download_file"
+      return
+    }
+  }
+  if [ -z "$download_disabled" ]; then
+    log_info "downloading $1 -> $download_file"
+    curl $curl_flags -o "$download_file" -sL "$1"
+  else
+    _stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+  fi
+}
+_download_install_file() {
+  warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+  warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+  : ${_install_file_chmod:=444}
+  log_info "installing $download_file -> $1"
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run mkdir -p $(dirname $1)
+    sudo_run cp "$download_file" $1
+    sudo_run chmod $_install_file_chmod $1
+  else
+    mkdir -p $(dirname $1)
+    cp "$download_file" $1
+    chmod $_install_file_chmod $1
+  fi
+  unset download_file
+  [ -e $1 ] || {
+    log_warn "failed to install file to: $1"
+    return 1
+  }
+  _install_record_path "$1"
+}
+_download_verify() {
+  shasum -a 512 -c $1 >/dev/null 2>&1
+}
+_YT_DLP_VERSION=$(curl $curl_flags -qs https://api.github.com/repos/yt-dlp/yt-dlp/tags | grep name | head -1 | cut -f2 -d: | tr -d '"' | tr -d ',' | tr -d ' ')
+validation_require "$_YT_DLP_VERSION" _YT_DLP_VERSION
+_YT_DLP_TARGET_FILENAME=/usr/local/bin/yt-dlp
+log_warn "patching FreeBSD yt-dlp ($_YT_DLP_VERSION)"
+_download_fetch "https://github.com/yt-dlp/yt-dlp/releases/download/$_YT_DLP_VERSION/yt-dlp"
+_download_install_file $_YT_DLP_TARGET_FILENAME
+sudo_run chmod +x $_YT_DLP_TARGET_FILENAME

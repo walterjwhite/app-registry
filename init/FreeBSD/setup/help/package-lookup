@@ -1,0 +1,11 @@
+package-lookup - Look up package information
+USAGE:
+    package-lookup <package-name>
+DESCRIPTION:
+    Look up information about a package including
+    installation status and available versions.
+ARGUMENTS:
+    package-name
+        Name of the package to look up (required)
+EXAMPLES:
+    package-lookup my-package

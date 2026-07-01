@@ -1,0 +1,3 @@
+#!/usr/bin/env expect
+spawn cf push -f $::env(_CF_MANIFEST)
+interact

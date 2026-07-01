@@ -1,0 +1,8 @@
+#!/bin/sh
+: ${conf_console_source_highlight:=/opt/homebrew/bin/src-hilite-lesspipe.sh}
+for _CONSOLE in $(find $TARGET_APP_PATH/shell -mindepth 1 -maxdepth 1 -type d); do
+  local _dest="$_CONSOLE/source-highlight-less"
+  printf 'export LESSOPEN="| %s %s"\n' "$conf_console_source_highlight" '%s' > "$_dest"
+  printf 'export LESS=" -R "\n' >> "$_dest"
+  _install_record_path "$_dest"
+done

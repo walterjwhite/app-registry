@@ -1,0 +1,42 @@
+gua - Git User Activity
+USAGE:
+    gua [OPTIONS] [BRANCH]
+DESCRIPTION:
+    Displays user activity statistics for a git repository, including name, email,
+    earliest commit activity, and latest commit activity.
+ARGUMENTS:
+    BRANCH
+        Optional branch name to analyze. If not specified, uses the current branch.
+OPTIONS:
+    -s COLUMN
+        Sort by column number:
+        1 = User name (default)
+        2 = Email address  
+        3 = Earliest activity
+        4 = Latest activity
+    -o ORDER
+        Sort order: "ascending" (default) or "descending"
+    -h
+        Show help message
+EXAMPLES:
+    gua
+        Show activity for current branch, sorted by user name
+    gua main
+        Show activity for the main branch, sorted by user name
+    gua -s 3
+        Show activity for current branch, sorted by earliest activity
+    gua -s 4 -o descending
+        Show activity for current branch, sorted by latest activity in descending order
+    gua feature-branch -s 2 -o descending
+        Show activity for feature-branch, sorted by email in descending order
+OUTPUT:
+    The command displays a formatted table with the following columns:
+    - Name: User's name as configured in git
+    - Email: User's email address as configured in git
+    - Earliest Activity: Date of the user's first commit on the branch
+    - Latest Activity: Date of the user's most recent commit on the branch
+ERRORS:
+    The command will exit with an error if:
+    - Not run within a git repository
+    - Specified branch does not exist
+    - Invalid sort column or order is specified

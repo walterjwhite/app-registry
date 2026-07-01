@@ -1,0 +1,6 @@
+#!/bin/sh
+for _LOMBOK_FILE in $(_extension_find_default -exec grep 'private static final Logger LOGGER = LoggerFactory.getLogger' -l {} +); do
+	$GNU_SED -i "s/^.*private static final Logger LOGGER = LoggerFactory.getLogger.*$//" $_LOMBOK_FILE
+	$GNU_SED -i '/public class/i @Slf4j' $_LOMBOK_FILE
+	$GNU_SED -i '/package/a import lombok.extern.slf4j.Slf4j;' $_LOMBOK_FILE
+done

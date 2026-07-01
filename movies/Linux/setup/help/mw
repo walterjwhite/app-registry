@@ -1,0 +1,7 @@
+mw - Movies Watch
+USAGE:
+    mw
+DESCRIPTION:
+    Display metadata for all queued movies.
+EXAMPLES:
+    mw

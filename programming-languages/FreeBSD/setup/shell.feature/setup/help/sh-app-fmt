@@ -1,0 +1,18 @@
+sh-app-fmt - Shell Application Formatter
+USAGE:
+    sh-app-fmt <shell-file>
+DESCRIPTION:
+    Format shell application files according to standard structure:
+    - Header (#!/bin/sh)
+    - REQUIRED_ARGUMENTS
+    - lib statements (sorted)
+    - constant statements (sorted)
+    - cfg statements (sorted)
+    - init statements (sorted)
+    - Remaining content
+ARGUMENTS:
+    shell-file
+        Shell file to format (required)
+EXAMPLES:
+    sh-app-fmt script.sh
+    sh-app-fmt $HOME/project/bin/tool

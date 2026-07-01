@@ -1,0 +1,13 @@
+gcs - Git Commits Since
+USAGE:
+    gcs <sha1-hash|date|date-expression>
+DESCRIPTION:
+    List all SHA hashes of commits since the provided reference.
+ARGUMENTS:
+    sha1-hash|date|date-expression
+        Reference point (SHA1 hash, date, or date expression)
+EXAMPLES:
+    gcs abc123
+    gcs "2025/01/01"
+    gcs "1 week ago"
+    gcs "yesterday"

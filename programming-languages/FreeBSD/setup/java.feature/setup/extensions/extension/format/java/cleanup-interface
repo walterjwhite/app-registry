@@ -1,0 +1,6 @@
+#!/bin/sh
+for _JAVA_INTERFACE in $(_extension_find_default -exec grep -l '^public interface ' {} +); do
+	$GNU_SED -i 's/public //' $_JAVA_INTERFACE
+	java_interface_name=$(basename $_JAVA_INTERFACE | sed -e "s/\.java$//")
+	$GNU_SED -i "s/interface $java_interface_name/public interface $java_interface_name/" $_JAVA_INTERFACE
+done

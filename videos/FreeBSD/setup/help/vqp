@@ -1,0 +1,19 @@
+vgp - Video Get Podcast
+USAGE:
+    vgp
+DESCRIPTION:
+    Fetch podcasts from configured podcast feeds, apply date filters,
+    and queue matching podcasts for download. Processes all configured
+    podcast feeds and filters content based on publication date (and other user-based criteria).
+CONFIGURATION:
+    -conf-videos-podcast-feeds FEEDS
+        Space-separated list of RSS podcast feed URLs
+    -conf-videos-podcast-days-back DAYS
+        How many days back to fetch (default: 7)
+        NOTE: this is meant to run nightly, so really, 1 would be ideal to minimize IO
+EXAMPLES:
+    vgp
+NOTES:
+    The script uses the current date as a cutoff point and only processes
+    podcast episodes published after the configured days-back period.
+    Requires proper RSS feed configuration to function correctly.

@@ -1,0 +1,9 @@
+: ${conf_dev_checkstyle_version:=12.2.0}
+: ${conf_dev_checkstyle_version_STYLE:=google}
+if [ -n "$TARGET_APP_PATH" ]; then
+  : ${conf_dev_checkstyle_jar:=$TARGET_APP_PATH/tools/checkstyle/checkstyle.jar}
+  : ${conf_dev_checkstyle_config:=$TARGET_APP_PATH/tools/checkstyle/checks/${conf_dev_checkstyle_version_STYLE}_checks.xml}
+else
+  : ${conf_dev_checkstyle_jar:=$APP_PATH/tools/checkstyle/checkstyle.jar}
+  : ${conf_dev_checkstyle_config:=$APP_PATH/tools/checkstyle/checks/${conf_dev_checkstyle_version_STYLE}_checks.xml}
+fi

@@ -1,0 +1,1202 @@
+#!/bin/sh
+_beep_beep() {
+  [ -n "$NON_INTERACTIVE" ] && {
+    log_warn "non-interactive"
+    return 2
+  }
+  [ -n "$SSH_CLIENT" ] && {
+    log_warn "remote connection detected, not beeping"
+    return 1
+  }
+  say $optn_install_apple_say_options $conf_install_apple_beep_message
+}
+sudo_precmd() {
+  [ -n "$NON_INTERACTIVE" ] && {
+    log_warn "non-interactive"
+    return 2
+  }
+  [ -n "$SSH_CLIENT" ] && {
+    log_warn "remote connection detected, not beeping"
+    return 1
+  }
+  say $optn_install_apple_say_options $conf_install_apple_sudo_precmd_message
+}
+_cfg_validate_required() {
+  [ -n "$REQUIRED_APP_CONF" ] && {
+    for required_app_conf_element in $REQUIRED_APP_CONF; do
+      _environment_variable_is_set $required_app_conf_element || {
+        log_warn "required configuration unset: $required_app_conf_element"
+        missing_required_conf=1
+      }
+    done
+    if [ -n "$missing_required_conf" ]; then
+      exit_with_error "required configuration is missing, please refer to above error(s)"
+    fi
+  }
+}
+_environment_variable_is_set() {
+  set | grep -cqm1 "^$1=.*$"
+}
+_environment_dump() {
+  [ "$conf_log_level" -gt 0 ] && return
+  set | sort
+}
+exec_call() {
+  local _function_name=$1
+  shift
+  type $_function_name >/dev/null 2>&1 || {
+    log_debug "${_function_name} does not exist"
+    return 255
+  }
+  $_function_name "$@"
+}
+exec_wrap() {
+  if [ -n "$exec_attempts" ]; then
+    local _attempt=1
+    while [ $_attempt -le $exec_attempts ]; do
+      [ $_attempt -gt 1 ] && [ -n "$exec_delay" ] && sleep $exec_delay
+      warn_on_error=1 _exec_do_exec "$@" && return
+      _attempt=$(($_attempt + 1))
+    done
+    exit_with_error "failed after $_attempt attempts: $*"
+  fi
+  _exec_do_exec "$@"
+}
+_exec_do_exec() {
+  local _successful_exit_status=0
+  if [ -n "$successful_exit_status" ]; then
+    _successful_exit_status=$successful_exit_status
+    unset successful_exit_status
+  fi
+  log_info "$*"
+  local _exit_status
+  if [ -z "$dry_run" ]; then
+    if [ -z "$log_logfile" ]; then
+      "$@"
+      _exit_status=$?
+    else
+      "$@" 2>&1 | sed -u 's/^/    /' | tee -a "$log_logfile"
+      _exit_status=$?
+    fi
+  else
+    log_warn "using dry run status: $dry_run"
+    _exit_status=$dry_run
+  fi
+  if [ $_exit_status -ne $_successful_exit_status ]; then
+    if [ -n "$on_failure" ]; then
+      $on_failure
+      return
+    fi
+    if [ -z "$warn_on_error" ]; then
+      exit_with_error "previous cmd failed: $* - $_exit_status"
+    else
+      unset warn_on_error
+      log_warn "previous cmd failed: $* - $_exit_status"
+      environment_file=$(_mktemp_mktemp error) _environment_dump
+      return $_exit_status
+    fi
+  fi
+}
+exit_with_error() {
+  [ -n "$exit_status" ] && return
+  if [ $# -ge 2 ]; then
+    exit_status=$2
+  else
+    exit_status=1
+  fi
+  [ -n "$3" ] && {
+    _exit_print_line $3
+  }
+  exit_log_level=4
+  exit_status_code="ERR"
+  exit_color_code="$conf_log_c_err"
+  exit_message="$1 ($exit_status)"
+  exit_beep="$conf_log_beep_err"
+  exit_defer _exit_log_app_exit
+  exit_defer _environment_dump
+  _exit_run_defers
+  exit $exit_status
+}
+exit_with_success() {
+  [ -n "$exit_status" ] && return
+  exit_status=0
+  exit_log_level=1
+  exit_status_code="SCS"
+  exit_color_code="$conf_log_c_scs"
+  exit_message="$1"
+  [ -z "$exit_message" ] && exit_message="success"
+  exit_beep="$conf_log_beep_scs"
+  exit_defer _alert_long_running_cmd
+  exit_defer _exit_log_app_exit
+  _exit_run_defers
+  exit $exit_status
+}
+_exit_on_hup() {
+  log_info "hup received"
+}
+_exit_on_int() {
+  exit_with_error "interrupted" $? $1
+}
+_exit_on_quit() {
+  exit_with_error "quit" $? $1
+}
+_exit_on_illegal() {
+  exit_with_error "illegal instruction" $? $1
+}
+_exit_on_abort() {
+  exit_with_error "abort" $? $1
+}
+_exit_on_alarm() {
+  exit_with_error "alarm" $? $1
+}
+_exit_on_term() {
+  exit_with_error "term" $? $1
+}
+_exit_print_line() {
+  log_warn "unhandled error"
+  local _exception_line
+  _exception_line=$($GNU_SED -n "${1}p" $0)
+  printf '  %s @ %s:%s\n' "$_exception_line" $0 $1
+}
+exit_defer() {
+  log_debug "deferring: $*"
+  if [ $# -gt 1 ]; then
+    local _defer_with_args
+    _defer_with_args=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+    exit_defers="$_defer_with_args $exit_defers"
+  else
+    exit_defers="$1 $exit_defers"
+  fi
+}
+exit_undefer() {
+  log_debug "undeferring: $*"
+  local _undefer_target
+  if [ $# -gt 1 ]; then
+    _undefer_target=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+  else
+    _undefer_target="$1"
+  fi
+  local _new_defers=""
+  local _defer
+  for _defer in $exit_defers; do
+    if [ "$_defer" != "$_undefer_target" ]; then
+      _new_defers="$_defer $_new_defers"
+    fi
+  done
+  exit_defers=""
+  for _defer in $_new_defers; do
+    exit_defers="$_defer $exit_defers"
+  done
+}
+_exit_run_defers() {
+  [ -z "$exit_defers" ] && return 1
+  for exit_defer in $exit_defers; do
+    case "$exit_defer" in
+    *:*)
+      local _func_name=$(printf '%s' "$exit_defer" | cut -d':' -f1)
+      local _args=$(printf '%s' "$exit_defer" | cut -d':' -f2 | tr ',' ' ')
+      exec_call $_func_name $_args
+      ;;
+    *)
+      exec_call $exit_defer
+      ;;
+    esac
+  done
+  unset exit_defers
+}
+_exit_log_app_exit() {
+  [ "$exit_message" ] && {
+    _exit_disable_beep
+    log_print_log $exit_log_level "$exit_status_code" "$exit_color_code" "$exit_beep" "$exit_message"
+  }
+  log_app exit
+  [ -n "$log_logfile" ] && [ -n "$optn_log_exit_cmd" ] && {
+    $optn_log_exit_cmd -file $log_logfile
+  }
+}
+_exit_disable_beep() {
+  [ -z "$APPLICATION_START_TIME" ] && {
+    unset exit_beep
+    return
+  }
+  local _current_time=$(date +%s)
+  local _timeout=$(($APPLICATION_START_TIME + $conf_log_beep_timeout))
+  [ $_current_time -ge $_timeout ] && return
+  unset exit_beep
+}
+_help_print() {
+  if [ -e $2 ]; then
+    log_info "$1:"
+    cat $2
+    printf '\n'
+  fi
+}
+_help_print_and_exit() {
+  _help_print 'system-wide options' $APP_PLATFORM_PATH/install/help/default
+  if [ "$APPLICATION_NAME" != "install" ]; then
+    _help_print $APPLICATION_NAME $APP_PLATFORM_PATH/$APPLICATION_NAME/help/default
+    _help_print "$APPLICATION_NAME/$APPLICATION_CMD" $APP_PLATFORM_PATH/$APPLICATION_NAME/help/$APPLICATION_CMD
+  fi
+  exit 0
+}
+file_require() {
+  local _filename=$1
+  local _message=$2
+  validation_require "$_filename" "filename file_require"
+  [ -e "$_filename" ] && return
+  [ -z "$warn_on_error" ] && exit_with_error "file: $_filename does not exist | $_message"
+  log_warn "file: $_filename does not exist | $_message"
+  return 1
+}
+_include_optional() {
+  inc_err=0
+  for inc_file in "$@"; do
+    case "$inc_file" in
+    */*)
+      ;;
+    *)
+      inc_file="${APP_PLATFORM_CONFIG_PATH}/$inc_file"
+      ;;
+    esac
+    if [ -f "$inc_file" ] && . "$inc_file"; then
+      :
+    else
+      inc_err=$(($inc_err + 1))
+    fi
+  done
+  unset inc_file inc_dir _found
+  [ "$inc_err" -eq 0 ]
+}
+log_to_console() {
+  local _color=$1 _event_date_time=$2 _message=$3
+  [ -n "$NON_INTERACTIVE" ] && [ -n "$NO_LOG_FILE" ] && {
+    if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+      printf '%s - %s\n' "$_event_date_time" "$_message" >&2
+    else
+      printf '%s\n' "$_message" >&$console_log_fd
+    fi
+    return
+  }
+  if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+    printf '\033[%sm%s - %s\033[0m\n' "$_color" "$_event_date_time" "$_message" >&2
+  else
+    printf '\033[%sm%s\033[0m\n' "$_color" "$_message" >&$console_log_fd
+  fi
+}
+log_add_context() {
+  [ -z "$1" ] && return 1
+  local context_to_add="$1"
+  case "$context_to_add" in
+  *:*)
+    log_debug "replacing : with |"
+    context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
+    ;;
+  esac
+  if [ -z "$logging_context" ]; then
+    logging_context="$context_to_add"
+  else
+    logging_context="${logging_context}:$context_to_add"
+  fi
+}
+log_remove_context() {
+  [ -z "$logging_context" ] && return 1
+  case $logging_context in
+  *:*)
+    logging_context=$(printf '%s' "$logging_context" | sed -e 's/\:[a-zA-Z0-9/@\. _-]*$//')
+    ;;
+  *)
+    unset logging_context
+    ;;
+  esac
+}
+log_to_file() {
+  [ -z "$log_logfile" ] && return 0
+  [ -n "$NO_LOG_FILE" ] && return 1
+  printf '%s %s %s\n' "$1" "$2" "$3" >>$log_logfile
+}
+_log_set_logfile() {
+  [ -z "$1" ] && return
+  [ -n "$NO_LOG_FILE" ] && return 1
+  log_logfile="$(realpath -m $(dirname $1))/$(basename $1)"
+  mkdir -p $(dirname $log_logfile)
+  log_to_console "${conf_log_c_wrn}" "$(date '+%Y/%m/%d %H:%M:%S')" "writing logs to ${log_logfile}${log_msg}"
+  if [ -z "${_log_saved_fds}" ]; then
+    if [ "$console_log_fd" -le 2 ]; then
+      exec 3>&1 4>&2
+      console_log_fd=4
+    fi
+    _log_saved_fds=1
+  fi
+  exec >>"$log_logfile" 2>&1
+}
+log_warn() {
+  log_print_log 3 WRN "${conf_log_c_wrn}" "${conf_log_beep_wrn}" "$1"
+}
+log_info() {
+  log_print_log 2 INF "${conf_log_c_info}" "${conf_log_beep_info}" "$1"
+}
+log_detail() {
+  log_print_log 2 DTL "${conf_log_c_detail}" "${conf_log_beep_detail}" "$1"
+}
+log_debug() {
+  log_print_log 1 DBG "${conf_log_c_debug}" "${conf_log_beep_debug}" "($$) $1"
+}
+log_init() {
+  [ -n "$log_logfile" ] && _log_set_logfile "$log_logfile"
+  log_add_context "$APPLICATION_NAME"
+  log_add_context "$APPLICATION_CMD"
+  if [ -n "$add_log_context" ]; then
+    log_add_context "$add_log_context"
+    unset add_log_context
+  fi
+  log_enable_debug_mode
+}
+log_enable_debug_mode() {
+  [ "$conf_log_level" -gt 0 ] && {
+    set +x
+    return
+  }
+  [ -z "$log_logfile" ] && {
+    log_msg=" - DEBUG"
+    _log_set_logfile "$(_mktemp_mktemp debug)" || return 1
+  }
+  set -x
+}
+log_print_log() {
+  local _level=$1 _level_str=$2 _color=$3 _tone=$4 _message="$5"
+  [ $_level -lt $conf_log_level ] && return 0
+  [ -n "$logging_context" ] &&
+    _message="${logging_context} - ${_message}"
+  [ -n "$_tone" ] && [ $beep_enabled -eq 1 ] && _beep_beep "$_tone"
+  local log_event_date_time="$(date '+%Y/%m/%d %H:%M:%S')"
+  log_to_file "$_level_str" "$log_event_date_time" "$_message"
+  log_to_console "$_color" "$log_event_date_time" "$_message"
+  log_user_log "$_level_str" "$log_event_date_time" "$_message"
+  [ -n "$log_syslog" ] && _syslog_syslog "$_message"
+  return 0
+}
+log_app() {
+  log_debug "$APPLICATION_NAME:$APPLICATION_CMD - $1 ($$)"
+}
+log_user_log() { :; }
+_metadata_load() {
+  [ -f $APP_PATH/.metadata ] && . $APP_PATH/.metadata && return 0
+  [ -n "$HOME" ] && [ -f "$HOME/.local/walterjwhite/apps/$APPLICATION_NAME/.metadata" ] && . "$HOME/.local/walterjwhite/apps/$APPLICATION_NAME/.metadata"
+}
+_mktemp_mktemp() {
+  local _suffix=$1
+  [ -n "$_suffix" ] && _suffix=".$_suffix"
+  mktemp -${_mktemp_options}t ${APPLICATION_NAME}.${APPLICATION_CMD}${_suffix}
+}
+platform_is_supported() {
+  local _supported_platforms="$1"
+  local _platform
+  [ -z "$_supported_platforms" ] && return 0
+  for _platform in $_supported_platforms; do
+    [ "$APP_PLATFORM_PLATFORM" = "$_platform" ] && return 0
+  done
+  exit_with_error "platform '$APP_PLATFORM_PLATFORM' is not supported; supported: $_supported_platforms"
+}
+processes_restrict_to_single_process() {
+  _processes_has_other_instances && {
+    exit_with_error "$APPLICATION_CMD is restricted to a single instance and another instance is running"
+  }
+  processes_setup_app_pipe
+}
+_processes_has_other_instances() {
+  find $APPLICATION_CMD_DIR -maxdepth 1 -type p ! -name $$ 2>/dev/null | grep -qm1 '.'
+}
+processes_setup_app_pipe() {
+  mkdir -p $APPLICATION_PIPE_DIR
+  mkfifo $APPLICATION_PIPE
+  exit_defer processes_cleanup_app_pipe
+}
+processes_cleanup_app_pipe() {
+  rm -rf $APPLICATION_PIPE_DIR
+}
+_processes_is_backgrounded() {
+  [ -n "$no_ps" ] && return 1
+  case $(ps -o stat= -p $$) in
+  *+*)
+    return 1
+    ;;
+  esac
+  return 0
+}
+_syslog_syslog() {
+  logger -i -t "$APPLICATION_NAME.$APPLICATION_CMD" "$1"
+}
+sudo_run() {
+  [ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
+  sudo_is_validation_required || {
+    "$@"
+    return
+  }
+  validation_require "$_SUDO_CMD" "sudo_cmd - $*"
+  [ -z "$NON_INTERACTIVE" ] && {
+    $_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
+  }
+  $_SUDO_CMD $sudo_options "$@"
+  unset sudo_options
+}
+sudo_is_validation_required() {
+  [ -n "$sudo_user" ] && {
+    [ "$sudo_user" = "$USER" ] && return 1
+    sudo_options="$sudo_options -u $sudo_user"
+    return 0
+  }
+  [ "$USER" = "root" ] && return 1
+  return 0
+}
+sudo_ensure_root() {
+  [ "$EUID" -eq 0 ] && return
+  log_info "enter sudo password to run this program as root"
+  sudo_run $0 "$@"
+  exit $?
+}
+sudo_ensure_not_root() {
+  [ "$EUID" -ne 0 ] && return
+  exit_with_error "$0 cannot be run as root"
+}
+sudo_ensure_non_root_user() {
+  [ "$EUID" -ne 0 ] && return
+  [ -z "$SUDO_USER" ] && exit_with_error "unable to determine non-root user"
+  sudo_user=$SUDO_USER
+  sudo_run "$0" "$@"
+  exit $?
+}
+_time_current_time_unix_epoch() {
+  date +%s
+}
+time_timeout() {
+  local _timeout=$1
+  shift
+  local _message=$1
+  shift
+  local _timeout_units='s'
+  if [ $(printf '%s' "$_timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+    unset _timeout_units
+  fi
+  local _sudo
+  [ -n "$sudo_required" ] || [ -n "$sudo_user" ] && _sudo=sudo_run
+  $_sudo timeout $options $_timeout "$@" || {
+    local _error_status=$?
+    local _error_message="Other error"
+    if [ $_error_status -eq 124 ]; then
+      _error_message="Timed Out"
+    fi
+    [ $timeout_err_function ] && $timeout_err_function
+    local timeout_error_msg="time_timeout: $_error_message: ${_timeout}${_timeout_units} - $_message ($_error_status): $_sudo timeout $options $_timeout $* ($USER)"
+    [ $warn_on_error ] && {
+      log_warn "$timeout_error_msg"
+      return $_error_status
+    }
+    exit_with_error "$timeout_error_msg"
+  }
+}
+wait_waitee_init() {
+  [ -z "$WAIT_WAITEE" ] && return
+  processes_setup_app_pipe
+  log_warn "please use -w=$$ ($APPLICATION_CMD)"
+  exit_defer wait_waitee_done
+}
+wait_waitee_done() {
+  [ -z "$WAIT_WAITEE" ] && return
+  [ -e $application_pipe ] || return
+  log_info "$0 process completed, notifying ($exit_status)"
+  printf '%s\n' "$exit_status" >$application_pipe
+  log_info "$0 downstream process picked up"
+}
+wait_waiter() {
+  local _upstream_application_pipe
+  local _upstream_application_status
+  local _upstream_status
+  [ -z "$wait_waiter_pid" ] && return
+  _upstream_application_pipe=$(find $APPLICATION_CONTEXT_GROUP -type p -name $wait_waiter_pid 2>/dev/null | head -1)
+  [ -z "$_upstream_application_pipe" ] && exit_with_error "$wait_waiter_pid not found"
+  [ ! -e $_upstream_application_pipe ] && {
+    log_warn "$_upstream_application_pipe does not exist, did upstream start?"
+    return
+  }
+  log_info "waiting for upstream to complete: $wait_waiter_pid"
+  while :; do
+    if [ ! -e $_upstream_application_pipe ]; then
+      exit_with_error "upstream pipe no longer exists"
+    fi
+    _upstream_application_status=$(time_timeout $conf_wait_interval "wait_waiter:upstream" cat $_upstream_application_pipe 2>/dev/null)
+    _upstream_status=$?
+    if [ $_upstream_status -eq 0 ]; then
+      if [ -z "$_upstream_application_status" ] || [ $_upstream_application_status -gt 0 ]; then
+        exit_with_error "upstream exited with exit_with_error ($_upstream_application_status)"
+      fi
+      log_warn "upstream finished: $_upstream_application_pipe ($_upstream_status)"
+      break
+    fi
+    log_detail "upstream is still running: $_upstream_application_pipe ($_upstream_status)"
+    sleep 1
+  done
+}
+validation_require() {
+  [ -n "$1" ] && return
+  [ -n "$warn_on_error" ] && {
+    log_warn "$2 required $required_message" $3
+    return 1
+  }
+  exit_with_error "$2 required $required_message" $3
+}
+_mail_send() {
+  [ -n "$conf_log_mail_disabled" ] && {
+    log_warn "mail is disabled"
+    return 1
+  }
+  if [ $# -lt 3 ]; then
+    log_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+    return 2
+  fi
+  local _recipients
+  _recipients=$(printf '%s' "$1" | tr '|' ' ')
+  shift
+  local _subject
+  _subject="$1"
+  shift
+  local _message
+  _message="$1"
+  shift
+  printf '%s\n' "$_message" | mail -s "$_subject" $_recipients
+}
+_alert_alert() {
+  local _recipients
+  local _subject
+  local _log_color
+  case $exit_status in
+  0)
+    _log_color=$conf_log_c_scs
+    ;;
+  *)
+    _log_color=$conf_log_c_err
+    ;;
+  esac
+  log_print_log 5 ALRT "$_log_color" "$conf_log_beep_alrt" "$1"
+  _recipients="$optn_log_alert_recipients"
+  _subject="alert: $0 - $1"
+  if [ -z "$_recipients" ]; then
+    log_debug "recipients is empty, aborting"
+    return 1
+  fi
+  _mail_send "$_recipients" "$_subject" "$2"
+}
+_alert_long_running_cmd() {
+  [ -n "$optn_disable_long_running_cmd_notification" ] && return
+  local _application_end_time=$(date +%s)
+  local _application_runtime=$(($_application_end_time - $APPLICATION_START_TIME))
+  [ $_application_runtime -lt $conf_log_long_running_cmd ] && return
+  local _subject="$logging_context - $exit_message - ($exit_status)"
+  local _message=""
+  if [ -n "$log_logfile" ]; then
+    _message=$(tail -$conf_log_long_running_cmd_lines $log_logfile)
+  fi
+  _alert_alert "$_subject" "$_message"
+}
+_agent_run_remotely() {
+  _agent_is_remote || return 1
+  log_warn "remote host defined, running $APPLICATION_CMD on remote host: $remote_host"
+  ssh $remote_host "add_log_context=$remote_host-remote $APPLICATION_CMD $*"
+  remote_exit_status=$?
+  return 0
+}
+_agent_is_remote() {
+  [ -z "$remote_host" ] && return 1
+  [ "$remote_host" != "$(hostname)" ]
+}
+_worker_init_job() {
+  cd $agent_workspace
+  file_require $agent_job
+  cd $agent_job
+  worker_agent_job_path=$PWD
+  file_require ./job
+  . ./job
+  validation_require "$agent_job_git_repository" agent_job_git_repository
+  [ -z "$agent_worker" ] && {
+    agent_worker=$(_worker_select_random_available_agent)
+  }
+  validation_require "$agent_worker" agent_worker
+  _provider_load $agent_worker
+  file_require ./prompt.md
+  worker_agent_prompt=$(realpath -m ./prompt.md)
+  validation_require "$worker_agent_prompt" worker_agent_prompt
+  _log_set_logfile $worker_agent_job_path/log/$(date +%Y.%m.%d.%H.%M.%S)
+  exit_defer _worker_cleanup
+  log_detail 'job initialized'
+}
+_worker_sleep_between_batch_iterations() {
+  [ $worker_agent_job_work_iteration -le 0 ] && return
+  log_detail "sleeping $agent_job_iteration_delay"
+  sleep $agent_job_iteration_delay
+}
+_worker_run_joblet() {
+  _worker_sandbox_init
+  job_tries_remaining=$worker_agent_job_iterations
+  if ! _worker_sandbox_run; then
+    _worker_retry_failed_sandbox_run || {
+      log_warn "sandbox run failed after retries — aborting joblet without committing"
+      return 1
+    }
+  fi
+  _worker_validate_job_output || {
+    log_warn "job output validation failed — aborting joblet without committing"
+    return 1
+  }
+  worker_sandbox_commit_${conf_agent_worker_environment}
+  _worker_publish_artifacts
+}
+_worker_publish_artifacts() {
+  #
+  if [ -n "$rclone_remote" ]; then
+    _rclone_prune_stale_files
+  else
+    log_detail "rclone_remote not configured — skipping rclone-specific pruning"
+  fi
+  publish
+}
+_worker_retry_failed_sandbox_run() {
+  log_warn "attempting to resolve error"
+  local original_prompt=$worker_agent_prompt
+  local _retry_succeeded=0
+  while [ $job_tries_remaining -gt 0 ]; do
+    job_tries_remaining=$(($job_tries_remaining - 1))
+    _worker_prepare_sandbox_retry
+    if _worker_sandbox_run; then
+      _retry_succeeded=1
+      break
+    fi
+  done
+  [ "$_retry_succeeded" -eq 0 ] && worker_agent_prompt=$original_prompt
+  [ "$_retry_succeeded" -eq 1 ]
+}
+_worker_prepare_sandbox_retry() {
+  if _agent_is_rate_limit_error; then
+    _worker_wait_for_agent_rate_limit
+    return
+  fi
+  _worker_create_error_retry_prompt
+}
+_worker_create_error_retry_prompt() {
+  worker_agent_prompt=$worker_agent_job_path/prompt-error-$(date +%s)
+  printf 'Attempt to resolve the following error (the snippet below is only the last %s lines of the log, the full log is located @ %s):\n' \
+    $agent_validation_error_context_lines $log_logfile >$worker_agent_prompt
+  tail -${agent_validation_error_context_lines} $log_logfile >>$worker_agent_prompt
+  worker_agent_prompt=$(realpath -m $worker_agent_prompt)
+  git add $worker_agent_prompt
+}
+_worker_run_job() {
+  type _agent_job_batcher >/dev/null 2>&1 || {
+    _worker_run_joblet
+    local task_status=$? # capture BEFORE unset — unset always returns 0
+    unset agent_job_task_type
+    return $task_status
+  }
+  _worker_run_job_with_batcher
+}
+_worker_run_job_with_batcher() {
+  log_add_context batch
+  worker_agent_job_work_iteration=0
+  for worker_agent_job_work_item in $(_agent_job_batcher); do
+    log_add_context $worker_agent_job_work_item
+    _worker_sleep_between_batch_iterations
+    _worker_run_joblet
+    worker_agent_job_work_iteration=$(($worker_agent_job_work_iteration + 1))
+    log_remove_context
+  done
+  log_detail "ran $worker_agent_job_work_iteration batch iteration(s)"
+  log_remove_context
+  unset worker_agent_job_work_item worker_agent_job_work_iteration
+}
+worker_sandbox_commit_local() {
+  cd $worker_agent_job_path
+  git add log
+  git commit log -m 'add log' || log_detail "no new log content to commit"
+  git push
+  cd $agent_job_work_path
+  git add .
+  git commit -m "$agent_worker - $agent_job_name_key" || {
+    log_warn "nothing to commit in $agent_job_work_path — agent produced no changes"
+    return 1
+  }
+  git push -u
+}
+worker_sandbox_init_container() {
+  _git_archive_filter $agent_job_git_repository "$agent_job_git_branch" "$worker_agent_job_work_item" "$file_extension_filter" $agent_job_work_path
+  exec_call _agent_batch_extension_filter
+  cd $agent_job_work_path || exit_with_error "unable to cd to $agent_job_work_path"
+  git init
+  git add .
+  git commit -am 'init work'
+  agent_work_initial_commit=$(git rev-parse --short=8 HEAD --)
+}
+worker_sandbox_run_container() {
+  log_info "running job in podman container"
+  sandbox_marker="/tmp/sandbox-session-$$"
+  printf '%s' "$$" >"$sandbox_marker"
+  exit_defer _worker_cleanup_sandbox
+  printf '### sandbox logs\n' >>$log_logfile
+  export INPUT_DIR=$agent_job_work_path
+  _agent_cmd
+  #
+  local _pipe_status_file
+  _pipe_status_file=$(_mktemp_mktemp)
+  {
+    podman-compose -f $APP_PATH/container/dev/docker-compose.yml run --rm sandbox bash -c "$_AGENT_CMD < /input/prompt.md"
+    printf '%s' "$?" >"$_pipe_status_file"
+  } 2>&1 | log_sanitize_input >>$log_logfile
+  local _container_status
+  _container_status=$(cat "$_pipe_status_file" 2>/dev/null)
+  rm -f "$_pipe_status_file"
+  return "${_container_status:-1}"
+}
+_worker_export_container_work_as_patch() {
+  log_detail "creating patch"
+  cd $agent_job_work_path
+  _worker_remove_container_prompt_file
+  _worker_move_container_generated_docs
+  _worker_sync_job_log_to_work_tree
+  _worker_stage_container_changes
+  _worker_commit_container_work
+  _worker_write_container_patch_file
+}
+_worker_remove_container_prompt_file() {
+  rm -f prompt.md
+}
+_worker_move_container_generated_docs() {
+  find . -maxdepth 1 -mindepth 1 -type f -name '*.md' ! -name 'prompt.md' -print -quit | grep -cqm1 '.' && {
+    log_detail "organizing docs"
+    mkdir -p doc.secret
+    mv *.md doc.secret
+    git add doc.secret
+  }
+}
+_worker_stage_container_changes() {
+  [ $conf_log_level -eq 0 ] && find . ! -path '*/.git/*' -type f
+  if [ -n "$file_extension_filter" ]; then
+    _worker_stage_container_files_by_extension
+    return
+  fi
+  _worker_stage_container_text_files
+}
+_worker_stage_container_files_by_extension() {
+  git add $(find . -type f ! -path '*/*.git/*' -name "$file_extension_filter")
+  git add log
+}
+_worker_stage_container_text_files() {
+  git ls-files -o -m --exclude-standard | while IFS= read -r file; do
+    if file --mime "$file" | grep -q 'charset=binary'; then
+      log_warn "skipping binary: $file"
+    else
+      git add "$file"
+    fi
+  done
+}
+_worker_commit_container_work() {
+  git commit -m 'final work'
+}
+_worker_write_container_patch_file() {
+  git diff $agent_work_initial_commit >patch
+  [ -s patch ] || {
+    log_warn "empty patch"
+    rm -f patch
+    return 1
+  }
+}
+_worker_apply_container_patch_to_repository() {
+  agent_job_git_path=$(_mktemp_options=d _mktemp_mktemp)
+  exit_defer rm -rf $agent_job_git_path
+  _worker_checkout_container_patch_target
+  _worker_commit_container_patch
+  cd ..
+  rm -rf $agent_job_git_path
+}
+_worker_checkout_container_patch_target() {
+  git clone $agent_job_git_repository -b $agent_job_git_branch $agent_job_git_path
+  cd $agent_job_git_path
+  log_detail "patching"
+  git checkout -b $agent_job_name_key
+  git apply $agent_job_work_path/patch
+  git add .
+}
+_worker_commit_container_patch() {
+  local worker_message="$worker_agent_job_work_item"
+  [ -z "$worker_message" ] && {
+    worker_message="$agent_job_name_key"
+  }
+  git commit -m "agent - $worker_message"
+  git push -u
+}
+worker_sandbox_commit_container() {
+  _worker_export_container_work_as_patch
+  _worker_apply_container_patch_to_repository
+}
+_worker_sandbox_init() {
+  agent_job_work_path=$(realpath -m ./work)
+  mkdir -p $agent_job_work_path
+  [ -z "$agent_job_git_branch" ] && agent_job_git_branch=main
+  _agent_get_job_name_key
+  worker_sandbox_init_${conf_agent_worker_environment}
+}
+worker_sandbox_init_local() {
+  if [ -e $agent_job_work_path/.git ]; then
+    cd $agent_job_work_path
+    git pull
+  else
+    git clone $agent_job_git_repository -b $agent_job_git_branch $agent_job_work_path
+    cd $agent_job_work_path
+  fi
+  #
+  #
+  git checkout -b "$agent_job_name" 2>/dev/null || {
+    log_warn "branch $agent_job_name already exists locally — reusing it"
+    git checkout "$agent_job_name" || exit_with_error "unable to checkout branch: $agent_job_name"
+  }
+}
+_worker_wait_for_agent_rate_limit() {
+  log_warn "hit rate limit"
+  local agent_backoff_epoch=$(_agent_rate_limit_wait)
+  mkdir -p $APP_DATA_PATH
+  printf '%s\n' $agent_backoff_epoch >$APP_DATA_PATH/$agent_worker.backoff
+  local now=$(_time_current_time_unix_epoch)
+  local delta=$(($agent_backoff_epoch - $now))
+  if [ $delta -gt $conf_agent_rate_limit_wait_time ]; then
+    log_warn "need to wait $delta before retrying > $conf_agent_rate_limit_wait_time"
+    job_tries_remaining=0
+  else
+    log_warn "waiting $delta for rate limit to clear"
+    sleep $delta
+    rm -f $APP_DATA_PATH/$agent_worker.backoff
+  fi
+}
+_worker_sandbox_run() {
+  log_info "running $agent_worker: $job_tries_remaining ($conf_agent_worker_environment)"
+  set >>$log_logfile
+  worker_sandbox_run_${conf_agent_worker_environment}
+}
+worker_sandbox_run_local() {
+  log_info "running job locally"
+  _agent_run
+}
+_worker_select_random_available_agent() {
+  local _selected_agent
+  _selected_agent=$(_worker_list_available_agents | shuf -n 1)
+  validation_require "$_selected_agent" _selected_agent
+  log_info "selected agent: $_selected_agent"
+  printf '%s\n' "$_selected_agent"
+}
+_worker_list_available_agents() {
+  find "$APP_PATH/provider" -type f | while read agent_file; do
+    local _agent_worker
+    _agent_worker=$(basename "$agent_file" .sh)
+    _worker_is_agent_disabled $_agent_worker && continue
+    _worker_is_agent_rate_limited $_agent_worker && continue
+    printf '%s\n' "$_agent_worker"
+  done
+}
+_worker_is_agent_disabled() {
+  set | grep -cqm1 "^agent_${1}_disabled=" && {
+    log_warn "$1 is disabled"
+    return 0
+  }
+  return 1
+}
+_worker_is_agent_rate_limited() {
+  [ -e $APP_DATA_PATH/$1 ] && {
+    local agent_wait_until=$(head -1 $APP_DATA_PATH/$1.backoff)
+    local current_date_time=$(date +%s)
+    [ $current_date_time -lt $agent_wait_until ] && {
+      log_warn "agent is rate-limited"
+      return 0
+    }
+    log_warn "clearing agent wait: $1"
+    rm -f $APP_DATA_PATH/$1.backoff
+  }
+  return 1
+}
+_worker_validate_job_output() {
+  _worker_run_task_type_validation || return 1
+  _worker_run_job_file_validation || return 1
+}
+_worker_run_task_type_validation() {
+  [ -n "$agent_job_task_type" ] || return 0
+  type agent_job_validation_${agent_job_task_type} >/dev/null 2>&1 || return 0
+  log_info "running job validation ($agent_job_task_type)"
+  agent_job_validation_${agent_job_task_type}
+}
+_worker_run_job_file_validation() {
+  type _agent_job_validation >/dev/null 2>&1 || return 0
+  log_info "running _agent_job_validation"
+  if ! _agent_job_validation; then
+    _worker_retry_failed_sandbox_run || return 1
+    _agent_job_validation || return 1
+  fi
+}
+agent_job_validation_coding() {
+  log_info "running format"
+  if ! format >>$log_logfile 2>&1; then
+    _worker_retry_failed_sandbox_run || {
+      log_warn "format failed and retry exhausted — aborting coding validation"
+      return 1
+    }
+  fi
+  git commit -am 'formatted'
+  git push -u
+  log_info "running build"
+  if ! build >>$log_logfile 2>&1; then
+    _worker_retry_failed_sandbox_run || {
+      log_warn "build failed and retry exhausted — aborting coding validation"
+      return 1
+    }
+  fi
+  git commit -am 'built'
+  git push -u
+}
+agent_job_validation_documentation() {
+  [ -z "$agent_documentation_path" ] && return 0
+  find . -type f -path "*/$agent_documentation_path/*.md" -print -quit | grep -cqm1 '.'
+}
+unit_test_validation() {
+  :
+}
+_git_archive_filter() {
+  local repository=$1
+  local git_ref=$2
+  local path=$3
+  local file_extension_filter=$4
+  local target=$5
+  [ -z "$git_ref" ] && git_ref=main
+  git archive --remote $repository $git_ref $path | tar -x -C $target
+  find $target \( -type f -or -type l \) -and \( -path '*.secret*' -or -path '*.archived*' \) -delete
+  [ -n "$file_extension_filter" ] && find $target -type f ! -name "$file_extension_filter" -delete
+}
+_agent_get_job_name_key() {
+  agent_job_name_key="${agent_job_name#[0-9][0-9].}"
+  agent_job_name_key="${agent_job_name_key%.job}"
+}
+_agent_git_init_workspace() {
+  [ ! -e $agent_workspace ] && {
+    log_detail 'initializing workspace'
+    system_id=$(_system_get_id)
+    git clone $conf_agent_git_repository_prefix/$system_id/$USER/agent-work.git $agent_workspace
+  }
+  log_detail 'updating workspace'
+  cd $agent_workspace
+  git pull
+}
+_rclone_prune_stale_files() {
+  log_warn "pruning stale files: $rclone_remote : $rclone_min_age"
+  local rclone_options
+  [ "$conf_log_level" -eq 0 ] && rclone_options="--dry-run"
+  rclone delete $rclone_remote --min-age $rclone_min_age $rclone_options
+}
+_provider_load() {
+  [ $# -lt 1 ] && exit_with_error "provider name is required, ie. firefox"
+  local _provider_name=$1
+  shift
+  [ $provider_import_path ] || provider_import_path=$APP_PATH/provider
+  local provider_file=$(find $provider_import_path -type f -name "$_provider_name.sh" | head -1)
+  _include_optional $provider_file || exit_with_error "unable to load $provider_file | $provider_import_path"
+}
+_system_get_id() {
+  head -1 ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH} 2>/dev/null
+}
+readonly APPLICATION_NAME=agent
+readonly APPLICATION_START_TIME=$(date +%s)
+readonly APPLICATION_CMD=$(basename $0)
+readonly APP_PLATFORM_ARCHITECTURE=$(uname -m)
+readonly APP_PLATFORM_OS_NAME=$(uname)
+case "$APP_PLATFORM_OS_NAME" in
+Darwin)
+  readonly APP_PLATFORM_PLATFORM="Apple"
+  ;;
+MINGW64_NT-* | MSYS_NT-*)
+  readonly APP_PLATFORM_PLATFORM="Windows"
+  ;;
+*)
+  readonly APP_PLATFORM_PLATFORM="$APP_PLATFORM_OS_NAME"
+  ;;
+esac
+: ${APP_PLATFORM_ROOT:=/}
+APP_PLATFORM_ROOT=$(realpath -m $APP_PLATFORM_ROOT)
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+readonly RUN_PATH=/tmp/$USER/walterjwhite/app
+readonly APP_CONTEXT="default"
+readonly APPLICATION_CONTEXT_GROUP=$RUN_PATH/$APP_CONTEXT
+readonly APPLICATION_CMD_DIR=$APPLICATION_CONTEXT_GROUP/$APPLICATION_NAME/$APPLICATION_CMD
+readonly APPLICATION_PIPE=$APPLICATION_CMD_DIR/$$
+readonly APPLICATION_PIPE_DIR=$(dirname $APPLICATION_PIPE)
+case $0 in
+*${HOME}*)
+  readonly APP_PLATFORM_PATH=$(printf '%s' "$APP_PLATFORM_ROOT/$HOME/.local/walterjwhite" | tr -s /)
+  readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT${HOME}/.config/walterjwhite/shell | tr -s /)
+  readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT${HOME}/.local/bin | tr -s /)
+  ;;
+*)
+  readonly APP_PLATFORM_PATH=$(printf '%s' "$APP_PLATFORM_ROOT/usr/local/walterjwhite" | tr -s /)
+  readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT/usr/local/etc/walterjwhite/shell | tr -s /)
+  readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT/usr/local/bin | tr -s /)
+  ;;
+esac
+readonly DATA_PATH=$(printf '%s' ${APP_PLATFORM_ROOT}$HOME/.data | tr -s /)
+readonly APP_PLATFORM_DATA_PATH=$DATA_PATH
+readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
+readonly APP_PATH=$APP_PLATFORM_PATH/apps/$APPLICATION_NAME
+readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
+readonly EXTENSIONS_PATH=$APP_PLATFORM_PATH/extensions
+readonly _TAR_ARGS=" -f - "
+readonly _SUDO_CMD="sudo"
+readonly GNU_SED=/opt/homebrew/bin/gsed
+readonly GNU_GREP=/opt/homebrew/opt/grep/libexec/gnubin/grep
+readonly IO_STAT_ARGS='-f %OLp'
+readonly REQUIRED_ARGUMENTS="agent_job:Agent Task"
+_metadata_load
+_include_optional . agent beep context logging net paths platform wait
+: ${beep_enabled:=0}
+: ${conf_log_beep_timeout:=5}
+: ${conf_log_beep_err:=''}
+: ${conf_log_beep_alrt:=''}
+: ${conf_log_beep_scs:=''}
+: ${conf_log_beep_wrn:=''}
+: ${conf_log_beep_info:=''}
+: ${conf_log_beep_detail:=''}
+: ${conf_log_beep_debug:=''}
+: ${conf_log_beep_stdin:=''}
+: ${conf_log_sudo_beep_tone:=''}
+: ${conf_install_apple_beep_message:=beep}
+: ${conf_install_apple_sudo_precmd_message:="sudo"}
+: ${APP_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${APP_CONTEXT:=default}
+CONF_LOG_HEADER="##################################################"
+: ${conf_log_c_err:="1;31"}
+: ${conf_log_c_scs:="1;32"}
+: ${conf_log_c_wrn:="1;33"}
+: ${conf_log_c_info:="1;36"}
+: ${conf_log_c_detail:="1;0;36"}
+: ${conf_log_c_debug:="1;35"}
+: ${conf_log_c_stdin:="1;34"}
+: ${conf_log_date_format:="%y/%m/%d|%h:%m:%s"}
+: ${conf_log_date_time_format:="%y/%m/%d %h:%m:%s"}
+: ${conf_log_level:=2}
+: ${console_log_fd:=2}
+: ${conf_log_indent:="  "}
+: ${conf_log_validation_function:=warn}
+: ${conf_log_waiter_level:=debug}
+: ${conf_log_feature_timeout_error_level:=warn}
+: ${conf_log_long_running_cmd:=30}
+: ${conf_log_long_running_cmd_lines:=1000}
+: ${conf_log_date_time_to_console:=0}
+command -v mail >/dev/null 2>&1 || conf_log_mail_disabled=1
+[ -n "${GITHUB_ACTIONS}" ] || [ -n "${CI}" ] && {
+  NON_INTERACTIVE=1
+  NO_LOG_FILE=1
+}
+: ${conf_network_test_timeout:=5}
+: ${conf_network_test_targets:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${curl_flags:="--connect-timeout 5 --max-time 30"}
+: ${conf_wait_interval:=30}
+: ${agent_workspace:=/workspace/agent}
+: ${agent_validation_error_context_lines:=100}
+: ${agent_job_iteration_delay:=30}
+: ${agent_rate_limit_wait:=60}
+: ${conf_agent_scheduled_jobs_window_start_time:=1600}
+: ${conf_agent_scheduled_jobs_window_stop_time:=0600}
+: ${conf_agent_rate_limit_wait_time:=300}
+: ${rclone_min_age:=1d}
+: ${conf_agent_worker_environment:=local}
+trap '_exit_on_hup $LINENO' 1
+trap '_exit_on_int $LINENO' 2
+trap '_exit_on_quit $LINENO' 3
+trap '_exit_on_illegal $LINENO' 4
+trap '_exit_on_abort $LINENO' 6
+trap '_exit_on_alarm $LINENO' 14
+trap '_exit_on_term $LINENO' 15
+trap exit_with_success 0
+_processes_is_backgrounded && backgrounded=1
+[ -n "$NON_INTERACTIVE" ] && {
+  [ -z "$NO_LOG_FILE" ] && {
+    [ -z "$log_logfile" ] && log_logfile="$APP_DATA_PATH/log/$(date +%Y%m%d-%H%M%S).log"
+  }
+}
+log_init
+for _ARG in "$@"; do
+  case $_ARG in
+  -h | --help)
+    _help_print_and_exit
+    ;;
+  -w=*)
+    wait_waiter_pid="${1#*=}"
+    shift
+    ;;
+  -w)
+    readonly WAIT_WAITEE=1
+    shift
+    ;;
+  -conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
+    _configuration_name=${_ARG#*-}
+    _configuration_name=${_configuration_name%%=*}
+    printf '%s' "$_configuration_name" | grep -cqm1 '_$' && {
+      _configuration_name=${_configuration_name%%_*}
+      printf '%s' "$_configuration_name" | grep -cqm1 '^conf' && {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$APPLICATION_NAME-/" -e 's/--/-/')
+      } || {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$APPLICATION_NAME-/" -e 's/--/-/')
+      }
+    }
+    _configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+    case "$_ARG" in
+    *-*)
+      _configuration_value=${_ARG#*=}
+      ;;
+    *)
+      _configuration_value=1
+      ;;
+    esac
+    eval "${_configuration_name}=\"$_configuration_value\""
+    unset _configuration_name _configuration_value
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_agent_git_repository_prefix"
+_cfg_validate_required
+readonly ACTUAL_ARGUMENT_COUNT=$#
+readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
+arg_index=1
+while [ $arg_index -le $DISCOVERED_ARGUMENT_COUNT ]; do
+  _argument_name=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/:.*$//')
+  _argument_message=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/^.*://')
+  if [ -z "$1" ]; then
+    log_warn "$arg_index:$_argument_message was not provided"
+  else
+    log_debug "$arg_index:$_argument_name=$1"
+    eval "$_argument_name=\"$1\""
+    shift
+  fi
+  arg_index=$(($arg_index + 1))
+done
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && exit_with_error "missing arguments"
+unset arg_index _argument_name _argument_message
+readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
+log_debug "remaining args: $*"
+wait_waitee_init
+wait_waiter
+sudo_ensure_not_root
+_agent_run_remotely $agent_job "$@" && exit $remote_exit_status
+agent_job_name=$(basename $agent_job)
+log_add_context $agent_job_name
+_agent_git_init_workspace
+_worker_init_job
+_worker_run_job

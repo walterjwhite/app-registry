@@ -1,0 +1,12 @@
+java-version - Java Version Checker
+USAGE:
+    java-version
+DESCRIPTION:
+    Check Java class file version in compiled project. Analyzes
+    .class files or extracts .jar files to determine major version.
+OUTPUT:
+    Major version numbers for Java class files
+NOTE:
+    Looks in target directory for compiled classes.
+EXAMPLES:
+    java-version

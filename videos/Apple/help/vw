@@ -1,0 +1,5 @@
+video watch
+    -castnow
+        send video to a chromecast device
+    -castnow=*
+        send video to the specified chromecast device

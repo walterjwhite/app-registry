@@ -1,0 +1,3 @@
+: ${conf_system_maintenance_network_retries:=3}
+: ${conf_system_maintenance_network_backoff_time:=30}
+: ${conf_system_maintenance_network_target:=google.com}

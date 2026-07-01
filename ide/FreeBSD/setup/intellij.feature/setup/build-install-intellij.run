@@ -1,0 +1,91 @@
+#!/bin/sh
+_download_fetch() {
+  mkdir -p "$TARGET_APP_PLATFORM_CACHE_PATH"
+  local _cached_filename
+  if [ $# -gt 1 ]; then
+    _cached_filename="$2"
+  else
+    _cached_filename=$(basename "$1" | sed -e 's/?.*$//')
+  fi
+  download_file="$TARGET_APP_PLATFORM_CACHE_PATH/$_cached_filename"
+  [ -z "$no_cache" ] && {
+    [ -e "$download_file" ] && {
+      log_detail "$1 already downloaded to: $download_file"
+      return
+    }
+  }
+  if [ -z "$download_disabled" ]; then
+    log_info "downloading $1 -> $download_file"
+    curl $curl_flags -o "$download_file" -sL "$1"
+  else
+    _stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+  fi
+}
+_download_install_file() {
+  warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+  warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+  : ${_install_file_chmod:=444}
+  log_info "installing $download_file -> $1"
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run mkdir -p $(dirname $1)
+    sudo_run cp "$download_file" $1
+    sudo_run chmod $_install_file_chmod $1
+  else
+    mkdir -p $(dirname $1)
+    cp "$download_file" $1
+    chmod $_install_file_chmod $1
+  fi
+  unset download_file
+  [ -e $1 ] || {
+    log_warn "failed to install file to: $1"
+    return 1
+  }
+  _install_record_path "$1"
+}
+_download_verify() {
+  shasum -a 512 -c $1 >/dev/null 2>&1
+}
+_intellij_build() {
+    exit_defer _cleanup_intellij_patch
+    _download_fetch 'https://bz-attachments.freebsd.org/attachment.cgi?id=258323' 'intellij-2024.3.3.patch' || {
+        log_warn "intellij-port does NOT exist"
+        return 1
+    }
+    pkg info intellij > /dev/null 2>&1 && sudo_run pkg remove -y intellij
+    cd /usr/ports/java/intellij
+    log_info "applying patch to intellij"
+    sudo_run git apply $download_file
+    log_info "building intellij"
+    BATCH=yes sudo_options="--preserve-env=BATCH" sudo_run make install || {
+        log_warn "unable to build intellij"
+        return 2
+    } 
+}
+_intellij_init_ports() {
+    [ ! -e /usr/ports/.git ] && {
+        sudo_run git clone --depth 1 https://git.FreeBSD.org/ports.git /usr/ports || {
+          log_warn "unable to setup ports"
+          return 1  
+        }
+        return
+    }
+    sudo_run git -C /usr/ports reset --hard HEAD
+    sudo_run git -C /usr/ports pull
+}
+_cleanup_intellij_patch() {
+    log_info "cleaning up intellij patch"
+    cd /usr/ports/java/intellij
+    BATCH=yes sudo_options="--preserve-env=BATCH" sudo_run make clean
+    sudo_run rm -rf work
+    sudo_run git reset --hard HEAD
+}
+_intellij_configure() {
+    sudo_run rm -f /usr/local/share/intellij/bin/idea.vmoptions
+    printf '%s\n' '-Dawt.useSystemAAFontSettings=on' | _append /usr/local/share/intellij/bin/idea.vmoptions
+    printf '%s\n'  '-Dswing.aatext=true' | _append /usr/local/share/intellij/bin/idea.vmoptions
+    printf '%s\n'  '-Dsun.java2d.xrender=true' | _append /usr/local/share/intellij/bin/idea.vmoptions
+    sudo_run $GNU_SED -i 's/^-Dsun.java2d.xrender=false/-Dsun.java2d.xrender=true/' /usr/local/share/intellij/bin/idea64.vmoptions
+    printf '%s\n'  '-Dawt.useSystemAAFontSettings=on' | _append /usr/local/share/intellij/bin/idea64.vmoptions
+    printf '%s\n'  '-Dswing.aatext=true' | _append /usr/local/share/intellij/bin/idea64.vmoptions
+}
+log_warn "this is unmaintained"

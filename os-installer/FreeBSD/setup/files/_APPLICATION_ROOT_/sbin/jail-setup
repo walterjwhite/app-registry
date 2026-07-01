@@ -1,0 +1,1265 @@
+#!/bin/sh
+_beep_beep() {
+  [ -e /dev/speaker ] || return
+  printf '%s' "$@" >/dev/speaker 2>/dev/null &
+}
+sudo_precmd() {
+  _beep_beep $conf_log_sudo_beep_tone
+}
+_cfg_validate_required() {
+  [ -n "$REQUIRED_APP_CONF" ] && {
+    for required_app_conf_element in $REQUIRED_APP_CONF; do
+      _environment_variable_is_set $required_app_conf_element || {
+        log_warn "required configuration unset: $required_app_conf_element"
+        missing_required_conf=1
+      }
+    done
+    if [ -n "$missing_required_conf" ]; then
+      exit_with_error "required configuration is missing, please refer to above error(s)"
+    fi
+  }
+}
+_environment_variable_is_set() {
+  set | grep -cqm1 "^$1=.*$"
+}
+_environment_dump() {
+  [ "$conf_log_level" -gt 0 ] && return
+  set | sort
+}
+_environment_export_matching_vars() {
+  local _var
+  local _oifs
+  _oifs=$IFS
+  IFS=$'\n'
+  for _var in $(set | $GNU_GREP -P "${1}.*=" | sed -e 's/=.*$//'); do
+    log_debug "exporting: $_var"
+    export "$_var"
+  done
+  IFS=$_oifs
+  [ $conf_log_level -eq 0 ] && set >>$log_logfile.env
+}
+exec_call() {
+  local _function_name=$1
+  shift
+  type $_function_name >/dev/null 2>&1 || {
+    log_debug "${_function_name} does not exist"
+    return 255
+  }
+  $_function_name "$@"
+}
+exec_wrap() {
+  if [ -n "$exec_attempts" ]; then
+    local _attempt=1
+    while [ $_attempt -le $exec_attempts ]; do
+      [ $_attempt -gt 1 ] && [ -n "$exec_delay" ] && sleep $exec_delay
+      warn_on_error=1 _exec_do_exec "$@" && return
+      _attempt=$(($_attempt + 1))
+    done
+    exit_with_error "failed after $_attempt attempts: $*"
+  fi
+  _exec_do_exec "$@"
+}
+_exec_do_exec() {
+  local _successful_exit_status=0
+  if [ -n "$successful_exit_status" ]; then
+    _successful_exit_status=$successful_exit_status
+    unset successful_exit_status
+  fi
+  log_info "$*"
+  local _exit_status
+  if [ -z "$dry_run" ]; then
+    if [ -z "$log_logfile" ]; then
+      "$@"
+      _exit_status=$?
+    else
+      "$@" 2>&1 | sed -u 's/^/    /' | tee -a "$log_logfile"
+      _exit_status=$?
+    fi
+  else
+    log_warn "using dry run status: $dry_run"
+    _exit_status=$dry_run
+  fi
+  if [ $_exit_status -ne $_successful_exit_status ]; then
+    if [ -n "$on_failure" ]; then
+      $on_failure
+      return
+    fi
+    if [ -z "$warn_on_error" ]; then
+      exit_with_error "previous cmd failed: $* - $_exit_status"
+    else
+      unset warn_on_error
+      log_warn "previous cmd failed: $* - $_exit_status"
+      environment_file=$(_mktemp_mktemp error) _environment_dump
+      return $_exit_status
+    fi
+  fi
+}
+exit_with_error() {
+  [ -n "$exit_status" ] && return
+  if [ $# -ge 2 ]; then
+    exit_status=$2
+  else
+    exit_status=1
+  fi
+  [ -n "$3" ] && {
+    _exit_print_line $3
+  }
+  exit_log_level=4
+  exit_status_code="ERR"
+  exit_color_code="$conf_log_c_err"
+  exit_message="$1 ($exit_status)"
+  exit_beep="$conf_log_beep_err"
+  exit_defer _exit_log_app_exit
+  exit_defer _environment_dump
+  _exit_run_defers
+  exit $exit_status
+}
+exit_with_success() {
+  [ -n "$exit_status" ] && return
+  exit_status=0
+  exit_log_level=1
+  exit_status_code="SCS"
+  exit_color_code="$conf_log_c_scs"
+  exit_message="$1"
+  [ -z "$exit_message" ] && exit_message="success"
+  exit_beep="$conf_log_beep_scs"
+  exit_defer _alert_long_running_cmd
+  exit_defer _exit_log_app_exit
+  _exit_run_defers
+  exit $exit_status
+}
+_exit_on_hup() {
+  log_info "hup received"
+}
+_exit_on_int() {
+  exit_with_error "interrupted" $? $1
+}
+_exit_on_quit() {
+  exit_with_error "quit" $? $1
+}
+_exit_on_illegal() {
+  exit_with_error "illegal instruction" $? $1
+}
+_exit_on_abort() {
+  exit_with_error "abort" $? $1
+}
+_exit_on_alarm() {
+  exit_with_error "alarm" $? $1
+}
+_exit_on_term() {
+  exit_with_error "term" $? $1
+}
+_exit_print_line() {
+  log_warn "unhandled error"
+  local _exception_line
+  _exception_line=$($GNU_SED -n "${1}p" $0)
+  printf '  %s @ %s:%s\n' "$_exception_line" $0 $1
+}
+exit_defer() {
+  log_debug "deferring: $*"
+  if [ $# -gt 1 ]; then
+    local _defer_with_args
+    _defer_with_args=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+    exit_defers="$_defer_with_args $exit_defers"
+  else
+    exit_defers="$1 $exit_defers"
+  fi
+}
+exit_undefer() {
+  log_debug "undeferring: $*"
+  local _undefer_target
+  if [ $# -gt 1 ]; then
+    _undefer_target=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+  else
+    _undefer_target="$1"
+  fi
+  local _new_defers=""
+  local _defer
+  for _defer in $exit_defers; do
+    if [ "$_defer" != "$_undefer_target" ]; then
+      _new_defers="$_defer $_new_defers"
+    fi
+  done
+  exit_defers=""
+  for _defer in $_new_defers; do
+    exit_defers="$_defer $exit_defers"
+  done
+}
+_exit_run_defers() {
+  [ -z "$exit_defers" ] && return 1
+  for exit_defer in $exit_defers; do
+    case "$exit_defer" in
+    *:*)
+      local _func_name=$(printf '%s' "$exit_defer" | cut -d':' -f1)
+      local _args=$(printf '%s' "$exit_defer" | cut -d':' -f2 | tr ',' ' ')
+      exec_call $_func_name $_args
+      ;;
+    *)
+      exec_call $exit_defer
+      ;;
+    esac
+  done
+  unset exit_defers
+}
+_exit_log_app_exit() {
+  [ "$exit_message" ] && {
+    _exit_disable_beep
+    log_print_log $exit_log_level "$exit_status_code" "$exit_color_code" "$exit_beep" "$exit_message"
+  }
+  log_app exit
+  [ -n "$log_logfile" ] && [ -n "$optn_log_exit_cmd" ] && {
+    $optn_log_exit_cmd -file $log_logfile
+  }
+}
+_exit_disable_beep() {
+  [ -z "$APPLICATION_START_TIME" ] && {
+    unset exit_beep
+    return
+  }
+  local _current_time=$(date +%s)
+  local _timeout=$(($APPLICATION_START_TIME + $conf_log_beep_timeout))
+  [ $_current_time -ge $_timeout ] && return
+  unset exit_beep
+}
+_help_print() {
+  if [ -e $2 ]; then
+    log_info "$1:"
+    cat $2
+    printf '\n'
+  fi
+}
+_help_print_and_exit() {
+  _help_print 'system-wide options' $APP_PLATFORM_PATH/install/help/default
+  if [ "$APPLICATION_NAME" != "install" ]; then
+    _help_print $APPLICATION_NAME $APP_PLATFORM_PATH/$APPLICATION_NAME/help/default
+    _help_print "$APPLICATION_NAME/$APPLICATION_CMD" $APP_PLATFORM_PATH/$APPLICATION_NAME/help/$APPLICATION_CMD
+  fi
+  exit 0
+}
+file_require() {
+  local _filename=$1
+  local _message=$2
+  validation_require "$_filename" "filename file_require"
+  [ -e "$_filename" ] && return
+  [ -z "$warn_on_error" ] && exit_with_error "file: $_filename does not exist | $_message"
+  log_warn "file: $_filename does not exist | $_message"
+  return 1
+}
+_include_optional() {
+  inc_err=0
+  inc_dir="$HOME/.config/walterjwhite/shell"
+  for inc_file in "$@"; do
+    case "$inc_file" in
+    */*) ;;
+    *)
+      inc_file="$inc_dir/$inc_file"
+      ;;
+    esac
+    if [ -f "$inc_file" ] && . "$inc_file"; then
+      :
+    else
+      inc_err=$(($inc_err + 1))
+    fi
+  done
+  unset inc_file inc_dir
+  [ "$inc_err" -eq 0 ]
+}
+log_to_console() {
+  local _color=$1 _event_date_time=$2 _message=$3
+  if [ -n "$interactive" ]; then
+    if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+      printf '\033[%sm%s - %s\033[0m\n' "$_color" "$_event_date_time" "$_message" >&2
+    else
+      printf '\033[%sm%s\033[0m\n' "$_color" "$_message" >&$console_log_fd
+    fi
+    return
+  fi
+  if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+    printf '%s - %s\n' "$_event_date_time" "$_message" >&$console_log_fd
+  else
+    printf '%s\n' "$_message" >&$console_log_fd
+  fi
+}
+log_add_context() {
+  [ -z "$1" ] && return 1
+  local context_to_add="$1"
+  case "$context_to_add" in
+  *:*)
+    log_debug "replacing : with |"
+    context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
+    ;;
+  esac
+  if [ -z "$logging_context" ]; then
+    logging_context="$context_to_add"
+  else
+    logging_context="${logging_context}:$context_to_add"
+  fi
+}
+log_remove_context() {
+  [ -z "$logging_context" ] && return 1
+  case $logging_context in
+  *:*)
+    logging_context=$(printf '%s' "$logging_context" | sed -e 's/\:[a-zA-Z0-9/@\. _-]*$//')
+    ;;
+  *)
+    unset logging_context
+    ;;
+  esac
+}
+log_to_file() {
+  [ -z "$log_logfile" ] && return 0
+  printf '%s %s %s\n' "$1" "$2" "$3" >>$log_logfile
+}
+_log_set_logfile() {
+  [ -z "$1" ] && return
+  log_logfile="$(realpath -m $(dirname $1))/$(basename $1)"
+  mkdir -p $(dirname $log_logfile)
+  log_to_console "${conf_log_c_wrn}" "$(date '+%Y/%m/%d %H:%M:%S')" "writing logs to ${log_logfile}${log_msg}"
+  if [ -z "${_log_saved_fds}" ]; then
+    if [ "$console_log_fd" -le 2 ]; then
+      exec 3>&1 4>&2
+      console_log_fd=4
+    fi
+    _log_saved_fds=1
+  fi
+  exec >>"$log_logfile" 2>&1
+}
+log_warn() {
+  log_print_log 3 WRN "${conf_log_c_wrn}" "${conf_log_beep_wrn}" "$1"
+}
+log_info() {
+  log_print_log 2 INF "${conf_log_c_info}" "${conf_log_beep_info}" "$1"
+}
+log_detail() {
+  log_print_log 2 DTL "${conf_log_c_detail}" "${conf_log_beep_detail}" "$1"
+}
+log_debug() {
+  log_print_log 1 DBG "${conf_log_c_debug}" "${conf_log_beep_debug}" "($$) $1"
+}
+log_init() {
+  [ -n "$log_logfile" ] && _log_set_logfile "$log_logfile"
+  if [ -n "$add_log_context" ]; then
+    log_add_context "$add_log_context"
+    unset add_log_context
+  fi
+  log_enable_debug_mode
+}
+log_enable_debug_mode() {
+  [ "$conf_log_level" -gt 0 ] && {
+    set +x
+    return
+  }
+  [ -z "$log_logfile" ] && {
+    log_msg=" - DEBUG"
+    _log_set_logfile "$(_mktemp_mktemp debug)" || return 1
+  }
+  set -x
+}
+log_print_log() {
+  local _level=$1 _level_str=$2 _color=$3 _tone=$4 _message="$5"
+  [ $_level -lt $conf_log_level ] && return 0
+  [ -n "$logging_context" ] &&
+    _message="${logging_context} - ${_message}"
+  [ -n "$_tone" ] && [ $beep_enabled -eq 1 ] && _beep_beep "$_tone"
+  local log_event_date_time="$(date '+%Y/%m/%d %H:%M:%S')"
+  log_to_file "$_level_str" "$log_event_date_time" "$_message"
+  log_to_console "$_color" "$log_event_date_time" "$_message"
+  log_user_log "$_level_str" "$log_event_date_time" "$_message"
+  [ -n "$log_syslog" ] && _syslog_syslog "$_message"
+  return 0
+}
+log_app() {
+  log_debug "$APPLICATION_NAME:$APPLICATION_CMD - $1 ($$)"
+}
+log_user_log() { :; }
+_metadata_load() {
+  [ -f $APP_PATH/.metadata ] || return 1
+  . $APP_PATH/.metadata
+}
+_mktemp_mktemp() {
+  local _suffix=$1
+  [ -n "$_suffix" ] && _suffix=".$_suffix"
+  mktemp -"${_mktemp_options}"t "${APPLICATION_NAME}.${APPLICATION_CMD}${_suffix}"
+}
+platform_is_supported() {
+  case $APP_PLATFORM_PLATFORM in
+  $APP_PLATFORM_PLATFORM)
+    return 0
+    ;;
+  *)
+    exit_with_error "please use the appropriate platform application: ($APP_PLATFORM_PLATFORM)"
+    ;;
+  esac
+}
+processes_restrict_to_single_process() {
+  _processes_has_other_instances && {
+    exit_with_error "$APPLICATION_CMD is restricted to a single instance and another instance is running"
+  }
+  processes_setup_app_pipe
+}
+_processes_has_other_instances() {
+  find $APPLICATION_CMD_DIR -maxdepth 1 -type p ! -name $$ 2>/dev/null | grep -qm1 '.'
+}
+processes_setup_app_pipe() {
+  mkdir -p $APPLICATION_PIPE_DIR
+  mkfifo $APPLICATION_PIPE
+  exit_defer processes_cleanup_app_pipe
+}
+processes_cleanup_app_pipe() {
+  rm -rf $APPLICATION_PIPE_DIR
+}
+_processes_is_backgrounded() {
+  [ -n "$no_ps" ] && return 1
+  case "$(ps -o stat= -p $$)" in
+  *+*)
+    return 1
+    ;;
+  esac
+  return 0
+}
+_stdin_interactive_alert_if() {
+  _stdin_is_interactive_alert_enabled && _interactive_alert "$@"
+}
+_stdin_is_interactive_alert_enabled() {
+  grep -cq '^optn_log_interactive_alert=1$' $APP_CONFIG_PATH 2>/dev/null
+}
+_stdin_continue_if() {
+  unset _proceed
+  _stdin_read_if "$1" _proceed "$2"
+  if [ -z "$_proceed" ]; then
+    _default=$(printf '%s' $2 | awk -F'/' {'print$1'})
+    _proceed=$_default
+  fi
+  printf '%s' "$_proceed" | tr '[:lower:]' '[:upper:]' | $GNU_GREP -Pcqm1 '^Y$'
+}
+_stdin_read_if() {
+  if [ $(set | grep -c "^$2=.*") -eq 1 ]; then
+    log_debug "$2 is already set"
+    return 1
+  fi
+  [ -z "$interactive" ] && exit_with_error "running in non-interactive mode and user input was requested: $@" 10
+  log_print_log 9 STDI "$conf_log_c_stdin" "$conf_log_beep_stdin" "$1 $3"
+  _stdin_interactive_alert_if $1 $3
+  read -r $2
+}
+_syslog_syslog() {
+  local _message=$1
+  logger -i -t "${APPLICATION_NAME}.${APPLICATION_CMD}" "$_message"
+}
+sudo_run() {
+  [ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
+  sudo_is_validation_required || {
+    "$@"
+    return
+  }
+  validation_require "$_SUDO_CMD" "sudo_cmd - $*"
+  [ -n "$interactive" ] && {
+    $_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
+  }
+  $_SUDO_CMD $sudo_options "$@"
+  unset sudo_options
+}
+sudo_is_validation_required() {
+  [ -n "$sudo_user" ] && {
+    [ "$sudo_user" = "$USER" ] && return 1
+    sudo_options="$sudo_options -u $sudo_user"
+    return 0
+  }
+  [ "$USER" = "root" ] && return 1
+  return 0
+}
+sudo_ensure_root() {
+  [ "$(id -u)" -eq 0 ] && return
+  log_info "enter sudo password to run this program as root"
+  sudo_run "$0" "$@"
+  exit $?
+}
+sudo_ensure_not_root() {
+  [ $(id -u) -ne 0 ] && return
+  exit_with_error "$0 cannot be run as root"
+}
+time_timeout() {
+  local _timeout=$1
+  shift
+  local _message=$1
+  shift
+  local _timeout_units='s'
+  if [ $(printf '%s' "$_timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+    unset _timeout_units
+  fi
+  local _sudo
+  [ -n "$sudo_required" ] || [ -n "$sudo_user" ] && _sudo=sudo_run
+  $_sudo timeout $options $_timeout "$@" || {
+    local _error_status=$?
+    local _error_message="Other error"
+    if [ $_error_status -eq 124 ]; then
+      _error_message="Timed Out"
+    fi
+    [ $timeout_err_function ] && $timeout_err_function
+    local timeout_error_msg="time_timeout: $_error_message: ${_timeout}${_timeout_units} - $_message ($_error_status): $_sudo timeout $options $_timeout $* ($USER)"
+    [ $warn_on_error ] && {
+      log_warn "$timeout_error_msg"
+      return $_error_status
+    }
+    exit_with_error "$timeout_error_msg"
+  }
+}
+wait_waitee_init() {
+  [ -z "$WAIT_WAITEE" ] && return
+  processes_setup_app_pipe
+  log_warn "please use -w=$$ ($APPLICATION_CMD)"
+  exit_defer wait_waitee_done
+}
+wait_waitee_done() {
+  [ -z "$WAIT_WAITEE" ] && return
+  [ -e $application_pipe ] || return
+  log_info "$0 process completed, notifying ($exit_status)"
+  printf '%s\n' "$exit_status" >$application_pipe
+  log_info "$0 downstream process picked up"
+}
+wait_waiter() {
+  local _upstream_application_pipe
+  local _upstream_application_status
+  local _upstream_status
+  [ -z "$wait_waiter_pid" ] && return
+  _upstream_application_pipe=$(find $APPLICATION_CONTEXT_GROUP -type p -name $wait_waiter_pid 2>/dev/null | head -1)
+  [ -z "$_upstream_application_pipe" ] && exit_with_error "$wait_waiter_pid not found"
+  [ ! -e $_upstream_application_pipe ] && {
+    log_warn "$_upstream_application_pipe does not exist, did upstream start?"
+    return
+  }
+  log_info "waiting for upstream to complete: $wait_waiter_pid"
+  while :; do
+    if [ ! -e $_upstream_application_pipe ]; then
+      exit_with_error "upstream pipe no longer exists"
+    fi
+    _upstream_application_status=$(time_timeout $conf_wait_interval "wait_waiter:upstream" cat $_upstream_application_pipe 2>/dev/null)
+    _upstream_status=$?
+    if [ $_upstream_status -eq 0 ]; then
+      if [ -z "$_upstream_application_status" ] || [ $_upstream_application_status -gt 0 ]; then
+        exit_with_error "upstream exited with exit_with_error ($_upstream_application_status)"
+      fi
+      log_warn "upstream finished: $_upstream_application_pipe ($_upstream_status)"
+      break
+    fi
+    log_detail "upstream is still running: $_upstream_application_pipe ($_upstream_status)"
+    sleep 1
+  done
+}
+validation_require() {
+  [ -n "$1" ] && return
+  [ -n "$warn_on_error" ] && {
+    log_warn "$2 required $required_message" $3
+    return 1
+  }
+  exit_with_error "$2 required $required_message" $3
+}
+_mail_send() {
+  [ -n "$conf_log_mail_disabled" ] && {
+    log_warn "mail is disabled"
+    return 1
+  }
+  if [ $# -lt 3 ]; then
+    log_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+    return 2
+  fi
+  local _recipients
+  _recipients=$(printf '%s' "$1" | tr '|' ' ')
+  shift
+  local _subject
+  _subject="$1"
+  shift
+  local _message
+  _message="$1"
+  shift
+  printf '%s\n' "$_message" | mail -s "$_subject" $_recipients
+}
+_alert_alert() {
+  local _recipients
+  local _subject
+  local _log_color
+  case $exit_status in
+  0)
+    _log_color=$conf_log_c_scs
+    ;;
+  *)
+    _log_color=$conf_log_c_err
+    ;;
+  esac
+  log_print_log 5 ALRT "$_log_color" "$conf_log_beep_alrt" "$1"
+  _recipients="$optn_log_alert_recipients"
+  _subject="alert: $0 - $1"
+  if [ -z "$_recipients" ]; then
+    log_debug "recipients is empty, aborting"
+    return 1
+  fi
+  _mail_send "$_recipients" "$_subject" "$2"
+}
+_alert_long_running_cmd() {
+  [ -n "$optn_disable_long_running_cmd_notification" ] && return
+  local _application_end_time
+  local _application_runtime
+  local _subject
+  local _message
+  _application_end_time=$(date +%s)
+  _application_runtime=$(($_application_end_time - $APPLICATION_START_TIME))
+  [ $_application_runtime -lt $conf_log_long_running_cmd ] && return
+  _subject="[$APPLICATION_NAME] - $exit_message - ($exit_status)"
+  _message=""
+  if [ -n "$log_logfile" ]; then
+    _message=$(tail -$conf_log_long_running_cmd_lines $log_logfile)
+  fi
+  _alert_alert "$_subject" "$_message"
+}
+_init_chroot_ssh() {
+  [ "$conf_os_installer_mountpoint" = "/" ] && return
+  [ -e $conf_os_installer_mountpoint/etc/ssh ] && {
+    cp /etc/ssh/sshd_config $conf_os_installer_mountpoint/etc/ssh/sshd_config
+  }
+  mkdir -p $conf_os_installer_mountpoint/root/.ssh/socket
+  cp /root/.ssh/id* \
+    /root/.ssh/authorized_keys \
+    /root/.ssh/known_hosts \
+    $conf_os_installer_mountpoint/root/.ssh
+  target=$conf_os_installer_mountpoint _ssh_use_host_ssh_conf
+}
+_write_system() {
+  APP_PLATFORM_ROOT=$conf_os_installer_mountpoint _system_write_id $conf_os_installer_system_name $conf_os_installer_system_ref $conf_os_installer_system_git
+}
+_cleanup_mounts() {
+  mount | grep -qm1 " on $conf_os_installer_mountpoint" || return 0
+  umount -f$os_installer_umount_options $(mount | grep " on $conf_os_installer_mountpoint" | awk {'print$3'} | sort -r)
+  mount | grep -qm1 $conf_os_installer_mountpoint && exit_with_error "unable to unmount all volumes, please check"
+  return 0
+}
+_setup_git() {
+  _os_installer_system_workspace_path=${conf_os_installer_mountpoint}$conf_os_installer_system_workspace
+  rm -rf $_os_installer_system_workspace_path
+  _setup_git_clone $conf_os_installer_system_name $_os_installer_system_workspace_path
+  cd $_os_installer_system_workspace_path
+}
+_setup_git_clone() {
+  mkdir -p $2
+  git archive --remote $conf_os_installer_system_git $1 | tar xp -C $2 || {
+    exit_with_error "error setting up git $conf_os_installer_system_git [$*]"
+  }
+  cd $2
+  [ -e .import ] || {
+    log_detail "no imports detected - $2"
+    return
+  }
+  local git_import_contents=$(head -1 .import)
+  log_add_context $git_import_contents
+  log_detail "setting up import"
+  _setup_git_clone $git_import_contents $_os_installer_system_workspace_path/imports/$git_import_contents
+  log_remove_context
+}
+_mount_data_cache() {
+  df -h -t $os_installer_sshfs_type $APP_PLATFORM_CACHE_PATH >/dev/null 2>&1 && return 0
+  _mount_sshfs_cache_do '' $APP_PLATFORM_CACHE_PATH
+}
+_mount_sshfs_cache_do() {
+  [ -z "$os_installer_cache_enabled" ] && return 1
+  [ -z "$os_installer_cache_fses" ] || [ -z "$os_installer_cache_path" ] && return 2
+  ssh $os_installer_cache ls $os_installer_cache_path >/dev/null 2>&1 || {
+    local sshfs_status=$?
+    log_warn "cache path $os_installer_cache_path not found on $os_installer_cache"
+    return $sshfs_status
+  }
+  local _cache_prefix=$1
+  shift
+  local cache_fs
+  for cache_fs in $@; do
+    mkdir -p $_cache_prefix/${cache_fs}
+    ssh $os_installer_cache mkdir -p $os_installer_cache_path/$APP_PLATFORM_PLATFORM/$APP_PLATFORM_SUB_PLATFORM/${cache_fs} >/dev/null 2>&1 || return $?
+    sshfs -o StrictHostKeyChecking=no $os_installer_sshfs_options $os_installer_cache:$os_installer_cache_path/$APP_PLATFORM_PLATFORM/$APP_PLATFORM_SUB_PLATFORM/${cache_fs} \
+      $_cache_prefix/${cache_fs} && exit_defer "umount:$_cache_prefix/${cache_fs}"
+  done
+  unset _cache_prefix cache_fs sshfs_status
+}
+_init_chroot() {
+  _mount_data_cache
+  _dist_freebsd_version
+  local freebsd_base_distribution_url="$os_installer_mirror_site/pub/FreeBSD/$_os_installer_version_type/$(uname -m)/$(uname -p)/$os_installer_version"
+  _download_fetch "$freebsd_base_distribution_url/MANIFEST" || exit_with_error "unable to download manifest"
+  local manifest_file=$download_file
+  local distribution distribution_checksum
+  for distribution in $os_installer_distributions; do
+    _download_fetch "$freebsd_base_distribution_url/$distribution.txz" || exit_with_error "unable to download distribution"
+    distribution_checksum=$(sha256 -q $download_file)
+    awk -v checksum=$distribution_checksum -v dist=$distribution.txz -v found=0 '{
+      if (dist == $1) {
+        found = 1
+        if (checksum == $2)
+          exit(0)
+        else
+          exit(2)
+      }
+    } END {if (!found) exit(1);}' $manifest_file || exit_with_error "checksum failed: $distribution"
+    log_detail "extracting $distribution -> $conf_os_installer_mountpoint"
+    tar -xkf "$download_file" -C $conf_os_installer_mountpoint
+  done
+  mkdir -p $conf_os_installer_mountpoint/boot/efi
+}
+_dist_freebsd_version() {
+  case $os_installer_version in
+  *-RELEASE)
+    _os_installer_version_type=releases
+    ;;
+  *)
+    _os_installer_version_type=snapshots
+    ;;
+  esac
+}
+_freebsd_update() {
+  local _freebsd_update_configuration_file=$freebsd_root/etc/freebsd-update.conf
+  local _freebsd_update_options
+  [ -n "$freebsd_root" ] && _freebsd_update_options="-b $jail_zfs_mountpoint/$jail_name"
+  grep -qs '^CreateBootEnv yes' "$_freebsd_update_configuration_file" || {
+    printf '# disable creation of boot environments, will be handled automatically via system-maintenance app\n' >>"$_freebsd_update_configuration_file"
+    printf 'CreateBootEnv no\n' >>"$_freebsd_update_configuration_file"
+  }
+  env PAGER=cat freebsd-update $_freebsd_update_options "$@" --not-running-from-cron fetch install
+}
+_jail_mounts() {
+  _jail_mount_host_all
+  _jail_mount procfs proc proc
+}
+_jail_mount_host_all() {
+  _jail_mount_host var/cache/pkg
+  _jail_mount_host usr/src
+  _jail_mount_host usr/ports
+}
+_jail_mount_host() {
+  [ -e /sbin/mount_nullfs ] || return 1
+  [ -e /var/cache/pkg ] || return 1
+  local target=$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$1
+  mkdir -p $target
+  log_detail "mounting host $1 -> $target"
+  mount -t nullfs /$1 $target || {
+    log_warn "error mounting host $1"
+    log_warn "$1 mounts: $(mount | awk {'print$3'} | grep \"^$target$\")"
+    log_warn "mounts: $(mount | awk {'print$3'})"
+    return 1
+  }
+  exit_defer umount $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$1
+  log_detail "mounted host $1"
+}
+_jail_mount() {
+  log_detail "mounting $1 @ $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$3"
+  mkdir -p $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$3
+  mount -t $1 $2 $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$3 || {
+    log_warn "error mounting $1 @ $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$3"
+    return 1
+  }
+  exit_defer umount $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$3
+}
+_jail_write_mounts() {
+  [ -n "$jail_procfs_enable" ] && _jail_enable_procfs
+  [ -n "$jail_tmpfs_tmpfs_tmp_size" ] && _jail_enable_tmpfs /tmp $jail_tmpfs_tmpfs_tmp_size
+  [ -n "$jail_tmpfs_tmpfs_var_tmp_size" ] && _jail_enable_tmpfs /var/tmp $jail_tmpfs_tmpfs_var_tmp_size
+  [ -n "$jail_tmpfs_tmpfs_run_size" ] && _jail_enable_tmpfs /run $jail_tmpfs_tmpfs_run_size
+  [ -n "$jail_pkg_cache_enable" ] && _jail_enable_nullfs /var/cache/pkg
+  [ -n "$jail_usr_ports_enable" ] && _jail_enable_nullfs /usr/ports
+  [ -n "$jail_usr_src_enable" ] && _jail_enable_nullfs /usr/src
+}
+_jail_update_mount_point() {
+  $GNU_SED -i 's/".*\/jails/"\/jails/' /etc/jail.conf.d/$os_installer_jail_name.conf
+  $GNU_SED -i 's/ .*\/jails/ \/jails/' $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name.fstab
+}
+_jail_update_post_jail() {
+  $GNU_SED -i "s/^#_POST_JAIL_#//" /etc/jail.conf.d/$os_installer_jail_name.conf
+  $GNU_SED -i 's/^\(.*#_POST_JAIL_SETUP_DISABLE_#\)$/#\1/' /etc/jail.conf.d/$os_installer_jail_name.conf $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name.fstab
+}
+_jail_enable_procfs() {
+  printf 'proc %s/proc procfs ro 0 0\n' $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name >>$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name.fstab
+}
+_jail_enable_tmpfs() {
+  mkdir -p $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/$1
+  printf 'tmpfs %s tmpfs rw,mode=1777,size=%s 0 0\n' $1 $2 >>$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name.fstab
+}
+_jail_enable_nullfs() {
+  printf '%s %s%s nullfs rw 0 0\n' "$1" "$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name" "$1" >>$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name.fstab
+}
+_jail_post() {
+  [ $_jail_execution_status -gt 0 ] && log_warn "jail provisioning completed with errors"
+  service jail stop $_jail_install_name
+  cd $_pre_jail_pwd
+  _jail_rename
+  _jail_do_setup post
+  _jail_write_mounts
+  _jail_update_mount_point
+  _jail_update_post_jail
+  _jail_update_jail_conf
+  _jail_write_devfs
+}
+_jail_rename() {
+  log_detail "renaming $_jail_install_name to $os_installer_jail_name"
+  mv /etc/jail.conf.d/$_jail_install_name.conf /etc/jail.conf.d/$os_installer_jail_name.conf
+  $GNU_SED -i "s/$_jail_install_name/$os_installer_jail_name/" /etc/jail.conf.d/$os_installer_jail_name.conf
+  $GNU_SED -i "s/$_jail_install_name/$os_installer_jail_name/" /etc/devfs.rules
+}
+_jail_update_jail_conf() {
+  _jail_insert_before_last "created"
+  _jail_insert_before_last "prestop"
+}
+_jail_insert_before_last() {
+  local action_file action=$1
+  for action_file in $(find /usr/local/etc/walterjwhite/jails/$os_installer_jail_name/$action -type f | sort -V); do
+    $GNU_SED -i "/}/i\    exec.$action += $action_file;" /etc/jail.conf.d/$os_installer_jail_name.conf
+  done
+}
+_jail_write_devfs() {
+  [ ! -e $_JAIL_PATH/devfs.rules ] && return
+  printf '[jail_%s=%s]\n' "$os_installer_jail_name" "$_jail_id" >>/etc/devfs.rules
+  cat $_JAIL_PATH/devfs.rules >>/etc/devfs.rules
+  printf '\n\n' >>/etc/devfs.rules
+}
+_jail_setup() {
+  log_info "setting up base system in jail"
+  conf_os_installer_mountpoint=$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name os_installer_distributions=base _init_chroot
+  log_info "setting up DNS in jail"
+  printf 'nameserver %s\n' "$conf_os_installer_container_host_ip" >$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/etc/resolv.conf
+  target=$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name _ssh_use_host_ssh_conf
+  cp $_JAIL_PATH/jail.conf /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s/_DEVFS_RULESET_/$_jail_id/" /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s/_GUEST_IP_/$conf_os_installer_container_guest_ip/" /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s/_JAIL_INSTALL_NAME_/$_jail_install_name/g" /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s/_JAIL_NAME_/$os_installer_jail_name/g" /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s/_JAIL_SUBNET_/$conf_os_installer_container_subnet/" /etc/jail.conf.d/$_jail_install_name.conf
+  $GNU_SED -i "s|_JAIL_ZFS_MOUNTPOINT_|$_os_installer_jail_zfs_mountpoint|" /etc/jail.conf.d/$_jail_install_name.conf
+}
+_jail_install_app() {
+  log_info "installing $* in jail"
+  _git_system_conf $os_installer_jail_name /$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name
+  APP_PLATFORM_ROOT=/$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name app-install "$@"
+}
+_update_jails_list() {
+  local jails=$(sysrc -f /etc/rc.conf -e jail_list | cut -f2 -d'=' | tr -d '"')
+  if [ -n "$jails" ]; then
+    jails="$jails $os_installer_jail_name"
+  else
+    jails="$os_installer_jail_name"
+  fi
+  sysrc -f /etc/rc.conf jail_list="$jails"
+}
+_jail_configure() {
+  _pre_jail_pwd=$PWD
+  jail_conf_path=$_JAIL_PATH/.jail
+  . $jail_conf_path
+  validation_require "$os_installer_jail_name" os_installer_jail_name
+  _jail_root_path=$_os_installer_jail_zfs_mountpoint/$os_installer_jail_name
+  _jail_install_name=${os_installer_jail_prefix}-$os_installer_jail_name
+  conf_os_installer_system_name=$os_installer_jail_name
+  conf_os_installer_mountpoint=$_jail_root_path
+  _jail_get_id
+}
+_jail_get_id() {
+  _jail_id=$(grep jail_ /etc/devfs.rules 2>/dev/null | sed -e 's/^.*=//' -e 's/]//')
+  [ -z "$_jail_id" ] && {
+    _jail_id=10
+    return
+  }
+  _jail_id=$(($_jail_id + 1))
+}
+_jail_do_setup() {
+  local setup_path=$_JAIL_PATH/$1-setup
+  [ ! -e $setup_path ] && {
+    log_debug "$setup_path does not exist: $PWD"
+    return
+  }
+  log_detail "running $setup_path"
+  local setup_script
+  for setup_script in $(find $setup_path -type f); do
+    log_detail "running $setup_script"
+    . $setup_script
+  done
+}
+_jail_create_zfs_datasets() {
+  log_info "creating ZFS datasets $_os_installer_jail_zfs_dataset/$os_installer_jail_name"
+  zfs create -o mountpoint=$_OS_CONTAINER_MOUNTPOINT/$os_installer_jail_name $_os_installer_jail_zfs_dataset/$os_installer_jail_name
+}
+_jail_enable_bastion_host() {
+  bastion_host=$conf_os_installer_container_host_ip
+  bastion_port=$conf_os_installer_container_host_port
+  bastion_hostnames="$conf_os_installer_container_bastion_hosts"
+  _ssh_prepare_ssh_conf $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/root root
+  exit_defer _jail_disable_bastion_host
+}
+_jail_disable_bastion_host() {
+  log_info "disabling bastion host"
+  find $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/root $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/home/* \
+    -maxdepth 2 -mindepth 2 -type f -name config -path '*/.ssh/config' -exec $GNU_SED -i 's/^Host/#Host/' {} + 2>/dev/null
+  find $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/root $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/home/* \
+    -maxdepth 2 -mindepth 2 -type f -name config -path '*/.ssh/config' -exec $GNU_SED -i 's/^ Hostname/# Hostname/' {} + 2>/dev/null
+  find $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/root $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/home/* \
+    -maxdepth 2 -mindepth 2 -type f -name config -path '*/.ssh/config' -exec $GNU_SED -i 's/^ ProxyJump/# ProxyJump/' {} + 2>/dev/null
+  find $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/root $_os_installer_jail_zfs_mountpoint/$os_installer_jail_name/home/* \
+    -maxdepth 2 -mindepth 2 -type f -name config -path '*/.ssh/config' -exec $GNU_SED -i 's/^ User/# User/' {} + 2>/dev/null
+}
+_ssh_prepare_ssh_conf() {
+  local _path=$1
+  local _user=$2
+  mkdir -p "$_path/.ssh/socket"
+  chmod 700 "$_path/.ssh/socket"
+  printf 'StrictHostKeyChecking no\n' >>"$_path/.ssh/config"
+  _ssh_init_bastion_host "$_path"
+  [ "$_user" = "root" ] && return
+  if [ -e /root/.ssh ]; then
+    log_info "copying host ssh -> $_path/.ssh"
+    cp /root/.ssh/id* /root/.ssh/config /root/.ssh/known_hosts "$_path/.ssh"
+  fi
+  if [ -e /root/.config/walterjwhite/shell ]; then
+    log_info "copying walterjwhite conf -> $_path/.config/walterjwhite/shell"
+    rm -rf "$_path/.config/walterjwhite/shell" && mkdir -p "$_path/.config/walterjwhite"
+    cp -r /root/.config/walterjwhite/shell "$_path/.config/walterjwhite/shell"
+  else
+    log_warn "no walterjwhite conf found"
+    find /tmp -maxdepth 1
+  fi
+  chown -R "$_user:$_user" "$_path"
+}
+_ssh_init_bastion_host() {
+  local _path=$1
+  [ -z "$bastion_host" ] && return 1
+  log_info "setting up SSH Bastion host: $_path"
+  _ssh_bastion_host "$_path"
+  _ssh_bastion_proxies "$_path"
+  chmod 600 "$_path/.ssh/config"
+}
+_ssh_bastion_host() {
+  local _path=$1
+  log_info "setting up SSH Bastion host: $_path"
+  printf 'Host host-proxy\n' >>"$_path/.ssh/config"
+  printf ' Hostname %s\n' "$bastion_host" >>"$_path/.ssh/config"
+  printf ' User root\n' >>"$_path/.ssh/config"
+}
+_ssh_bastion_proxies() {
+  local _path=$1
+  for bastion_hostname in $(printf '%s' "$bastion_hostnames" | sort -u); do
+    _ssh_bastion_proxy "$_path"
+  done
+}
+_ssh_bastion_proxy() {
+  local _path=$1
+  log_info "setting up SSH host proxy: $_path"
+  printf 'Host %s\n' "$bastion_hostname" >>"$_path/.ssh/config"
+  printf ' ProxyJump host-proxy:%s\n' "$bastion_port" >>"$_path/.ssh/config"
+  printf ' User root\n' >>"$_path/.ssh/config"
+}
+_ssh_use_host_ssh_conf() {
+  rm -rf "$target/tmp/HOST-SSH" && mkdir -p "$target/tmp"
+  cp -R /root/.ssh "$target/tmp/HOST-SSH"
+}
+_git_system_conf() {
+  log_warn "system conf: $1 | $2 | $optn_git_mirror"
+  mkdir -p $2/root/.data/install
+  [ -e $2/root/.config/walterjwhite/shell ] && {
+    log_warn "configuration already exists, skipping"
+    return
+  }
+  mkdir -p $2/root/.config/walterjwhite/shell
+  git archive --remote $optn_git_mirror/data/$1/root/configuration.git $os_installer_configuration_branch walterjwhite-conf/shell |
+    tar xp -C $2/root/.config/walterjwhite/shell -s '/walterjwhite-conf//' -s '/shell//'
+}
+_download_fetch() {
+  mkdir -p $APP_PLATFORM_CACHE_PATH
+  local _cached_filename
+  if [ $# -gt 1 ]; then
+    _cached_filename="$2"
+  else
+    _cached_filename=$(basename "$1" | sed -e 's/?.*$//')
+  fi
+  download_file=$APP_PLATFORM_CACHE_PATH/$_cached_filename
+  [ -z "$no_cache" ] && {
+    [ -e "$download_file" ] && {
+      log_detail "$1 already downloaded to: $download_file"
+      return
+    }
+  }
+  if [ -z "$download_disabled" ]; then
+    log_info "downloading $1 -> $download_file"
+    curl $curl_flags -o "$download_file" -sL "$1"
+  else
+    _stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+  fi
+}
+_download_install_file() {
+  warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+  warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+  : ${_install_file_chmod:=444}
+  log_info "installing $download_file -> $1"
+  mkdir -p $(dirname $1)
+  cp "$download_file" $1
+  chmod $_install_file_chmod $1
+  unset download_file
+  [ -e $1 ] || log_warn "failed to install file to: $1"
+}
+_system_write_id() {
+  (
+    printf '%s\n' $1
+    printf '%s\n' $2
+    printf '%s\n' $3
+    git ls-remote $3 -b $1 | awk {'print$1'}
+    printf 'Provision Date: %s\n' "$(date)"
+  ) | _write_write ${APP_PLATFORM_ROOT}${PLATFORM_SYSTEM_ID_PATH}
+}
+_write_write() {
+  local _filename=$1
+  sudo_run mkdir -p $(dirname $_filename)
+  sudo_run tee "$_filename" >/dev/null
+}
+readonly APPLICATION_NAME=os-installer
+APP_PLATFORM_PATH=/usr/local/walterjwhite
+readonly APPLICATION_START_TIME=$(date +%s)
+readonly APPLICATION_CMD=$(basename $0)
+readonly APP_PLATFORM_ARCHITECTURE=$(uname -m)
+readonly APP_PLATFORM_OS_NAME=$(uname)
+case "$APP_PLATFORM_OS_NAME" in
+Darwin)
+  readonly APP_PLATFORM_PLATFORM="Apple"
+  ;;
+MINGW64_NT-* | MSYS_NT-*)
+  readonly APP_PLATFORM_PLATFORM="Windows"
+  ;;
+*)
+  readonly APP_PLATFORM_PLATFORM="$APP_PLATFORM_OS_NAME"
+  ;;
+esac
+if [ -z "$APP_PLATFORM_ROOT" ]; then
+  APP_PLATFORM_ROOT=/
+else
+  APP_PLATFORM_ROOT=$(realpath -m $APP_PLATFORM_ROOT)
+fi
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+readonly RUN_PATH=/tmp/$USER/walterjwhite/app
+readonly APP_CONTEXT="default"
+readonly APPLICATION_CONTEXT_GROUP=$RUN_PATH/$APP_CONTEXT
+readonly APPLICATION_CMD_DIR=$APPLICATION_CONTEXT_GROUP/$APPLICATION_NAME/$APPLICATION_CMD
+readonly APPLICATION_PIPE=$APPLICATION_CMD_DIR/$$
+readonly APPLICATION_PIPE_DIR=$(dirname $APPLICATION_PIPE)
+readonly DATA_PATH=${APP_PLATFORM_ROOT}$HOME/.data
+readonly APP_PLATFORM_DATA_PATH=$(printf '%s' $APP_PLATFORM_ROOT/$DATA_PATH | tr -s /)
+readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
+: ${APP_PLATFORM_PATH:=$(printf '%s' "$APP_PLATFORM_ROOT/$HOME/.local/walterjwhite" | tr -s /)}
+readonly APP_PATH=$APP_PLATFORM_PATH/apps/$APPLICATION_NAME
+readonly _TAR_ARGS=" -f - "
+readonly GNU_GREP=/usr/local/bin/ggrep
+readonly GNU_SED=gsed
+readonly _SUDO_CMD="sudo"
+readonly IO_STAT_ARGS='-f %OLp'
+readonly REQUIRED_ARGUMENTS="_JAIL_PATH:The path to the jail configuration directory"
+_include_optional . beep context git install logging net os-installer paths platform wait
+_metadata_load
+: ${beep_enabled:=0}
+: ${conf_log_beep_timeout:=5}
+: ${conf_log_beep_err:='L32c'}
+: ${conf_log_beep_alrt:='L32f'}
+: ${conf_log_beep_scs:='L32a'}
+: ${conf_log_beep_wrn:=''}
+: ${conf_log_beep_info:=''}
+: ${conf_log_beep_detail:=''}
+: ${conf_log_beep_debug:=''}
+: ${conf_log_beep_stdin:='L32ab'}
+: ${conf_log_sudo_beep_tone:=L32aL8fL32c}
+: ${APP_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${APP_CONTEXT:=default}
+CONF_LOG_HEADER="##################################################"
+: ${conf_log_c_err:="1;31"}
+: ${conf_log_c_scs:="1;32"}
+: ${conf_log_c_wrn:="1;33"}
+: ${conf_log_c_info:="1;36"}
+: ${conf_log_c_detail:="1;0;36"}
+: ${conf_log_c_debug:="1;35"}
+: ${conf_log_c_stdin:="1;34"}
+: ${conf_log_date_format:="%y/%m/%d|%h:%m:%s"}
+: ${conf_log_date_time_format:="%y/%m/%d %h:%m:%s"}
+: ${conf_log_level:=2}
+: ${console_log_fd:=2}
+: ${conf_log_indent:="  "}
+: ${conf_log_validation_function:=warn}
+: ${conf_log_waiter_level:=debug}
+: ${conf_log_feature_timeout_error_level:=warn}
+: ${conf_log_long_running_cmd:=30}
+: ${conf_log_long_running_cmd_lines:=1000}
+: ${conf_log_date_time_to_console:=0}
+command -v mail >/dev/null 2>&1 || conf_log_mail_disabled=1
+[ -z "${GITHUB_ACTIONS}" ] && [ -z "${CI}" ] && {
+  [ -t 0 ] && [ -t 1 ] && interactive=1
+}
+: ${conf_network_test_timeout:=5}
+: ${conf_network_test_targets:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${curl_flags:="--connect-timeout 5 --max-time 30"}
+: ${conf_wait_interval:=30}
+os_installer_instance=$(date +%s)
+log_logfile=/var/log/walterjwhite/os-installer-$os_installer_instance.log
+: ${conf_os_installer_ssh_key_type:=ed25519}
+: ${conf_os_installer_disk_type:=ZFS}
+: ${conf_os_installer_mountpoint:=/mnt/os}
+: ${conf_os_installer_execution_log:="/tmp/.os/exec"}
+: ${conf_os_installer_system_workspace:="/tmp/os"}
+: ${os_installer_drive_mount_point:=/mnt/usb}
+: ${os_installer_system_timezone:=America/New_York}
+: ${os_installer_configuration_branch:=main}
+: ${os_installer_cache_enabled:=1}
+: ${os_installer_cache:=cache}
+: ${os_installer_cache_path:=/cache}
+case $APPLICATION_CMD in
+*os-installer* | *chroot* | jail-setup)
+  ;;
+*)
+  unset log_logfile
+  ;;
+esac
+: ${os_installer_zap_snapshot_retention_duration:=30d}
+: ${conf_os_installer_cups_conf_dir:=/usr/local/etc/cups}
+: ${conf_os_installer_package_install_once:=0}
+freebsd_pkg_options="-y"
+_ZPOOL_OPTIONS="-o ashift=12 -O compress=zstd -O atime=off -m none"
+: ${FREEBSD_VDEV_TYPE:=stripe}
+: ${ZFSBOOT_BOOT_TYPE:=UEFI}
+: ${ZFSBOOT_PARTITION_SCHEME:=GPT}
+: ${ZFSBOOT_SWAP_SIZE:=0}
+: ${os_installer_mirror_site:=http://ftp.freebsd.org}
+: ${os_installer_version:=15.0-RELEASE}
+: ${os_installer_distributions:=base kernel}
+: ${os_installer_minimum_installation_memory:=8589934592}
+: ${FREEBSD_SWAP_SIZE:=4G}
+: ${conf_os_installer_container_host_ip:=10.0.0.254}
+: ${conf_os_installer_container_guest_ip:=10.0.0.1}
+: ${conf_os_installer_container_access_network:=10.0.0.0/8}
+: ${conf_os_installer_container_subnet:=255.255.255.0}
+: ${conf_os_installer_container_host_port:=2222}
+: ${conf_os_installer_container_proxy_port:=8888}
+: ${conf_os_installer_container_bastion_hosts:="git freebsd-package-cache freebsd-installer"}
+: ${os_installer_drive:=da0}
+: ${os_installer_drive_device_path:=s2a}
+: ${_OS_CONTAINER_MOUNTPOINT:=/jails}
+: ${os_installer_indexing:=plocate}
+: ${os_installer_cache_fses:=var/cache/pkg}
+: ${os_installer_sshfs_type:=fusefs.sshfs}
+: ${os_installer_jail_prefix:=install-jail}
+: ${conf_cron_provider:=default}
+: ${conf_git_system_template_path:=/usr/share/git/templates}
+: ${conf_git_clone_timeout:=30}
+: ${conf_git_compression_format:=xz}
+: ${conf_git_compression_cmd:="xz -z"}
+: ${conf_git_squash_commits:=2}
+: ${conf_git_backup_date_time_format:=%Y.%m.%d-%H.%M.%S}
+: ${conf_git_delete_period_IN_DAYS:=365}
+: ${conf_git_delete_dryrun:=0}
+readonly GIT_PROJECT_BASE_PATH=$HOME/projects
+: ${conf_install_go_path:=/usr/local}
+trap '_exit_on_hup $LINENO' 1
+trap '_exit_on_int $LINENO' 2
+trap '_exit_on_quit $LINENO' 3
+trap '_exit_on_illegal $LINENO' 4
+trap '_exit_on_abort $LINENO' 6
+trap '_exit_on_alarm $LINENO' 14
+trap '_exit_on_term $LINENO' 15
+trap exit_with_success 0
+_processes_is_backgrounded && backgrounded=1
+log_init
+for _ARG in "$@"; do
+  case $_ARG in
+  -h | --help)
+    _help_print_and_exit
+    ;;
+  -w=*)
+    wait_waiter_pid="${1#*=}"
+    shift
+    ;;
+  -w)
+    readonly WAIT_WAITEE=1
+    shift
+    ;;
+  -conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
+    _configuration_name=${_ARG#*-}
+    _configuration_name=${_configuration_name%%=*}
+    printf '%s' "$_configuration_name" | grep -cqm1 '_$' && {
+      _configuration_name=${_configuration_name%%_*}
+      printf '%s' "$_configuration_name" | grep -cqm1 '^conf' && {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$APPLICATION_NAME-/" -e 's/--/-/')
+      } || {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$APPLICATION_NAME-/" -e 's/--/-/')
+      }
+    }
+    _configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+    case "$_ARG" in
+    *-*)
+      _configuration_value=${_ARG#*=}
+      ;;
+    *)
+      _configuration_value=1
+      ;;
+    esac
+    eval "${_configuration_name}=\"$_configuration_value\""
+    unset _configuration_name _configuration_value
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+log_enable_debug_mode
+readonly REQUIRED_APP_CONF="conf_os_installer_system_git conf_os_installer_system_ref"
+_cfg_validate_required
+readonly ACTUAL_ARGUMENT_COUNT=$#
+readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
+arg_index=1
+while [ $arg_index -le $DISCOVERED_ARGUMENT_COUNT ]; do
+  _argument_name=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/:.*$//')
+  _argument_message=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/^.*://')
+  if [ -z "$1" ]; then
+    log_warn "$arg_index:$_argument_message was not provided"
+  else
+    log_debug "$arg_index:$_argument_name=$1"
+    eval "$_argument_name=\"$1\""
+    shift
+  fi
+  arg_index=$(($arg_index + 1))
+done
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && exit_with_error "missing arguments"
+unset arg_index _argument_name _argument_message
+readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
+log_debug "remaining args: $*"
+wait_waitee_init
+wait_waiter
+log_add_context jail-setup
+mkdir -p /var/log/walterjwhite
+printf 'HERE' >>/var/log/walterjwhite/jail-setup
+set >>/var/log/walterjwhite/jail-setup
+_jail_configure
+log_warn "_os_installer_jail_zfs_mountpoint.jail-setup: $_os_installer_jail_zfs_mountpoint"
+log_warn "_os_installer_jail_zfs_dataset.jail-setup: $_os_installer_jail_zfs_dataset"
+_jail_create_zfs_datasets
+_jail_setup
+_jail_mounts
+_jail_install_app install os-installer
+_init_chroot_ssh
+_update_jails_list
+_setup_git
+_write_system
+service jail start $_jail_install_name
+_jail_do_setup pre
+unset SHELL
+unset _index
+freebsd_root=$_jail_root_path _freebsd_update
+_jail_enable_bastion_host
+_environment_export_matching_vars os_installer
+_in_container=1 \
+  conf_os_installer_system_name=$os_installer_jail_name \
+  _add_log_context=$os_installer_jail_name \
+  _log_saved_fds=1 \
+  console_log_fd=$console_log_fd \
+  interactive=$interactive \
+  _os_installer_zfs_pool_name=$_os_installer_zfs_pool_name \
+  jexec $_jail_install_name $APP_PATH/bin/chroot
+_jail_execution_status=$?
+_jail_post

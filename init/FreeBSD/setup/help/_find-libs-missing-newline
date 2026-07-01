@@ -1,0 +1,8 @@
+_find-libs-missing-newline - Find libraries missing newlines
+USAGE:
+    _find-libs-missing-newline
+DESCRIPTION:
+    Find library files that are missing final newlines.
+    This is an internal tool used for code quality checks.
+EXAMPLES:
+    _find-libs-missing-newline

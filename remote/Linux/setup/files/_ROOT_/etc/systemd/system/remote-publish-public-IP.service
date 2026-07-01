@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish public IP
+[Service]
+User=remote
+Group=remote
+Type=oneshot
+ExecStart=/usr/local/walterjwhite/apps/remote/bin/publish-public-IP

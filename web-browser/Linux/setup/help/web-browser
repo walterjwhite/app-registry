@@ -1,0 +1,32 @@
+web-browser - Web Browser Launcher
+USAGE:
+    web-browser [-new-private-window] [-http-proxy=proxy] [-socks-proxy=proxy] [URL]
+DESCRIPTION:
+    Launch a web browser with specified URL and options.
+ARGUMENTS:
+    URL
+        URL to open (optional)
+        must be specified last due to how arguments are processed
+OPTIONS:
+    -new-private-window
+        Create private window
+    -http-proxy=proxy
+        Address of HTTP proxy server
+    -socks-proxy=proxy
+        Address of SOCKS proxy server
+    -remote-debug
+        Enable remote control through Chrome DevTools Protocol
+CONFIGURATION:
+    -conf-web-browser-browser BROWSER
+        Browser to use (firefox/chromium)
+    -web-browser-remote-debug 0|1
+        Enable remote debugging
+    -web-browser-http-proxy URL
+        Default HTTP proxy
+    -web-browser-socks-proxy URL
+        Default SOCKS proxy
+EXAMPLES:
+    web-browser
+    web-browser https://example.com
+    web-browser -new-private-window
+    web-browser -http-proxy=localhost:8080

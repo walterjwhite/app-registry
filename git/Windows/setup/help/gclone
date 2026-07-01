@@ -1,0 +1,20 @@
+gclone - Git Clone
+USAGE:
+    gclone <project-url>
+DESCRIPTION:
+    Clone a project in a standard location.
+    Without a console context (ticket id), clones to ~/projects/<host>/<repo>.
+    With a console context set (_CONSOLE_CONTEXT_ID), clones to
+    ~/workspace/<ticket-id>/repos/<host>/<repo> and creates a branch named
+    after the ticket id from conf_git_workspace_base_branch (default: dev).
+ARGUMENTS:
+    project-url
+        URL of the git repository to clone
+CONFIGURATION:
+    conf_git_workspace_base_path
+        Root directory for ticket workspaces (default: ~/workspace)
+    conf_git_workspace_base_branch
+        Branch to create the ticket branch from (default: dev)
+EXAMPLES:
+    gclone https://github.com/user/repo.git
+    gclone git@github.com:user/repo.git

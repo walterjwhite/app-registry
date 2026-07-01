@@ -1,0 +1,29 @@
+vgt - Video Trailer Fetcher
+USAGE:
+    vgt
+DESCRIPTION:
+    Fetch movie trailers from The Movie Database (TMDB). Gets recent
+    movies based on configuration and downloads their trailers.
+CONFIGURATION:
+    -conf-videos-the-movie-database-api-key KEY
+        TMDB v3 API key (required)
+    -conf-videos-movie-trailer-genre GENRE
+        Genre name or numeric genre ID (default: Action)
+    -conf-videos-movie-trailer-fetch-count NUM
+        Max movies to process (default: 50)
+    -conf-videos-movie-trailer-region REGION
+        ISO 3166-1 region code (default: US)
+    -conf-videos-movie-trailer-language LANGUAGE
+        ISO 639-1 language code (default: en-US)
+    -conf-videos-movie-trailer-days-back DAYS
+        Days back for "recently released" (default: 90)
+    -conf-videos-movie-trailer-days-ahead DAYS
+        Days ahead for "upcoming" (default: 90)
+    -conf-videos-movie-trailer-min-votes NUM
+        Minimum vote count filter (default: 10)
+    -conf-videos-movie-trailer-sort-by SORT
+        Sort order (default: primary_release_date.desc)
+    -conf-videos-movie-trailer-origin-country COUNTRY
+        Origin country filter (default: US)
+EXAMPLES:
+    vgt

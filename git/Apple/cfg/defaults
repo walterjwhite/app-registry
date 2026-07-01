@@ -1,0 +1,1 @@
+: ${conf_git_template_path:=/Library/Develop/CommandLineTools/usr/share/git-core/templates}

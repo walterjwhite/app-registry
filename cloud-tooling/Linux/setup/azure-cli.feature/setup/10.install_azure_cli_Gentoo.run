@@ -1,0 +1,17 @@
+#!/bin/sh
+: ${conf_dev_azure_login_timeout:=30}
+: ${conf_dev_azure_upgrade_timeout:=30}
+: ${conf_dev_azure_output_format:=table}
+if [ -n "$TARGET_APP_PATH" ]; then
+  : ${conf_dev_azure_venv:=$TARGET_APP_PATH/python/env/azure}
+else
+  : ${conf_dev_azure_venv:=$APP_PATH/python/env/azure}
+fi
+: ${conf_dev_azure_python_artifact=azure-cli}
+VENV_PATH=$TARGET_APP_PATH/azure-cli/venv
+mkdir -p $VENV_PATH
+python -m venv $VENV_PATH
+. $VENV_PATH/bin/activate
+pip install $conf_dev_azure_python_artifact
+deactivate
+_install_record_dir "$VENV_PATH"

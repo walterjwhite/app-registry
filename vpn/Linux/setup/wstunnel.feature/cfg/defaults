@@ -1,0 +1,2 @@
+: ${conf_vpn_wstunnel_server_port:=443}
+: ${conf_vpn_wstunnel_local_:=443}

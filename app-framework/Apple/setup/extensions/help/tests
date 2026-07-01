@@ -1,0 +1,7 @@
+tests - Test Runner
+USAGE:
+    tests
+DESCRIPTION:
+    Run application test suite.
+EXAMPLES:
+    tests

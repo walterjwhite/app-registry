@@ -1,0 +1,6 @@
+#!/bin/sh
+getent passwd remote > /dev/null 2>&1 || {
+    useradd -m remote
+    printf "remote ALL=(ALL) NOPASSWD: ALL\n" >/etc/sudoers.d/remote
+    chmod 440 /etc/sudoers.d/remote
+}

@@ -1,0 +1,8 @@
+code-metrics - Code Metrics Analyzer
+USAGE:
+    code-metrics
+DESCRIPTION:
+    Compute code metrics for project.
+    Lines of code is presently implemented (aggregated by file type).
+EXAMPLES:
+    code-metrics

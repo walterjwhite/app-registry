@@ -1,0 +1,20 @@
+#!/bin/sh
+_is_k6_installed() {
+  [ -e $TARGET_APP_PLATFORM_BIN_PATH/k6 ]
+}
+_install_k6() {
+  cd /tmp
+  git clone --depth 1 https://github.com/grafana/xk6-disruptor.git 2>/dev/null || {
+    log_warn "error cloning https://github.com/grafana/xk6-disruptor.git"
+    return 1
+  }
+  exit_defer rm -rf /tmp/xk6-disruptor
+  cd xk6-disruptor
+  unset GOPATH
+  xk6 build --output xk6-disruptor --with github.com/grafana/xk6-disruptor=. 2>/dev/null || {
+    log_warn "error building xk6-disruptor"
+    return 2
+  }
+  sudo_run cp xk6-disruptor $TARGET_APP_PLATFORM_BIN_PATH/k6
+}
+_is_k6_installed || _install_k6

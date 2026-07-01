@@ -1,0 +1,2 @@
+#!/bin/sh
+ln -s "${conf_dev_intellij_ide}" $TARGET_APP_PLATFORM_BIN_PATH/intellij

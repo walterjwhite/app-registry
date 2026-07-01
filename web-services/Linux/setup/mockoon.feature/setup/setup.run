@@ -1,0 +1,16 @@
+#!/bin/sh
+case $APP_PLATFORM_SUB_PLATFORM in
+    Ubuntu)
+        case $APP_PLATFORM_ARCHITECTURE in
+            aarch64|arm64)
+                log_warn "unsupported architecture, $APP_PLATFORM_ARCHITECTURE"
+                break
+                ;;
+        esac
+        log_detail "installing mockoon on $APP_PLATFORM_ARCHITECTURE"
+        snap install mockoon
+        ;;
+    *)
+        log_warn "unsupported distribution, $APP_PLATFORM_SUB_PLATFORM"
+        ;;
+esac

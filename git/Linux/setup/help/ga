@@ -1,0 +1,14 @@
+ga - Git Archive
+USAGE:
+    ga <source-reference> <reference>
+DESCRIPTION:
+    Create a git archive or delete a reference.
+ARGUMENTS:
+    source-reference
+        Source branch, tag, or git hash
+    reference
+        Branch, tag, or git hash to archive/delete
+EXAMPLES:
+    ga main backup
+    ga v1.0.0 release
+    ga abc123 feature-branch

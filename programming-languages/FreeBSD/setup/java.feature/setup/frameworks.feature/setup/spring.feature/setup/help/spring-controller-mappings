@@ -1,0 +1,13 @@
+spring-controller-mappings - Spring Controller Mappings
+USAGE:
+    spring-controller-mappings
+DESCRIPTION:
+    Display Spring Boot controller mappings. Shows all @RequestMapping
+    and HTTP method mappings (GET, POST, PUT) with file locations.
+OUTPUT:
+    Controller file, path, and HTTP method mappings
+CONFIGURATION:
+    -conf-dev-gawk PATH
+        Path to GNU awk for pattern matching
+EXAMPLES:
+    spring-controller-mappings

@@ -1,0 +1,11 @@
+[Unit]
+Description=PubSub Exec
+After=network.target
+[Service]
+User=remote
+Group=remote
+Type=simple
+ExecStart=/usr/local/bin/pubsub-exec -cmd=/usr/local/walterjwhite/apps/remote/bin/remote-callback
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

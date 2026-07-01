@@ -1,0 +1,14 @@
+ma - Movies Add
+USAGE:
+    ma
+DESCRIPTION:
+    Add a new movie to the database. Prompts for title, year,
+    tags, trailers, and references.
+INPUT:
+    - Movie title
+    - Publish year
+    - Movie tags (comma-delimited)
+    - Movie trailers (multiple, optional)
+    - Movie references (multiple, optional)
+EXAMPLES:
+    ma

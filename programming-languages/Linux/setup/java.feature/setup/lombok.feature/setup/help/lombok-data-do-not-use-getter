@@ -1,0 +1,13 @@
+lombok-data-do-not-use-getter - Lombok Data Fixer
+USAGE:
+    lombok-data-do-not-use-getter <source-filename>
+DESCRIPTION:
+    Fix Lombok @Data annotations to use doNotUseGetters option.
+    Removes existing @ToString and adds @ToString(doNotUseGetters = true)
+    above @Data annotation.
+ARGUMENTS:
+    source-filename
+        Java source file to fix (required)
+EXAMPLES:
+    lombok-data-do-not-use-getter MyClass.java
+    lombok-data-do-not-use-getter src/model/User.java

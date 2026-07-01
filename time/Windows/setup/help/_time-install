@@ -1,0 +1,9 @@
+_time-install - Time Tool Installation
+USAGE:
+    _time-install
+DESCRIPTION:
+    Internal tool for installing time-related utilities.
+NOTE:
+    This is an internal tool and typically not called directly.
+EXAMPLES:
+    _time-install

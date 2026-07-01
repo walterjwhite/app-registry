@@ -1,0 +1,11 @@
+vgp - Video Get Podcasts
+USAGE:
+    vgp
+DESCRIPTION:
+    Display metadata for all downloaded audio-only files (podcasts). Shows information
+    about each audio file including title, duration, uploader, and date.
+EXAMPLES:
+    vgp
+NOTES:
+    This command only shows audio-only files (where extract_audio=1).
+    Use vg to see video files only.

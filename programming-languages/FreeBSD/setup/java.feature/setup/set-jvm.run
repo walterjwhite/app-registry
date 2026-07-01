@@ -1,0 +1,6 @@
+#!/bin/sh
+_LATEST_JDK=$(find /usr/local -maxdepth 1 -type d -name 'openjdk*' ! -name 'openjdk8' | sort -h | tail -1)
+_JAVA_VERSION=$(printf '%s' "$_LATEST_JDK" | sed -e 's/^.*openjdk//')
+log_info "updating Java Home to JDK$_JAVA_VERSION"
+$GNU_SED -i 's/^JAVA_HOME=/# JAVA_HOME=/' /usr/local/etc/javavm_opts.conf
+printf 'JAVA_HOME=%s\n'  "$_LATEST_JDK" >> /usr/local/etc/javavm_opts.conf

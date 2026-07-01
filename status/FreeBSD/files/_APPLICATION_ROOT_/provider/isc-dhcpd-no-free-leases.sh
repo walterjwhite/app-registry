@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ ! -e /var/log/dhcpd ]; then
+  _FEATURE_ISC_DHCPD_NO_FREE_LEASES_DISABLED=1
+fi
+_ISC_DHCPD_LOG_FILE=/var/log/dhcpd/log.0.zst

@@ -1,0 +1,2453 @@
+#!/bin/sh
+_beep_beep() {
+  [ "$EUID" -eq 0 ] && return 1
+  beep $1 &
+}
+sudo_precmd() {
+  _beep_beep "$conf_log_sudo_beep_tone"
+}
+_cfg_validate_required() {
+  [ -n "$REQUIRED_APP_CONF" ] && {
+    for required_app_conf_element in $REQUIRED_APP_CONF; do
+      _environment_variable_is_set $required_app_conf_element || {
+        log_warn "required configuration unset: $required_app_conf_element"
+        missing_required_conf=1
+      }
+    done
+    if [ -n "$missing_required_conf" ]; then
+      exit_with_error "required configuration is missing, please refer to above error(s)"
+    fi
+  }
+}
+_environment_variable_is_set() {
+  set | grep -cqm1 "^$1=.*$"
+}
+_environment_dump() {
+  [ "$conf_log_level" -gt 0 ] && return
+  set | sort
+}
+exec_call() {
+  local _function_name=$1
+  shift
+  type $_function_name >/dev/null 2>&1 || {
+    log_debug "${_function_name} does not exist"
+    return 255
+  }
+  $_function_name "$@"
+}
+exec_wrap() {
+  if [ -n "$exec_attempts" ]; then
+    local _attempt=1
+    while [ $_attempt -le $exec_attempts ]; do
+      [ $_attempt -gt 1 ] && [ -n "$exec_delay" ] && sleep $exec_delay
+      warn_on_error=1 _exec_do_exec "$@" && return
+      _attempt=$(($_attempt + 1))
+    done
+    exit_with_error "failed after $_attempt attempts: $*"
+  fi
+  _exec_do_exec "$@"
+}
+_exec_do_exec() {
+  local _successful_exit_status=0
+  if [ -n "$successful_exit_status" ]; then
+    _successful_exit_status=$successful_exit_status
+    unset successful_exit_status
+  fi
+  log_info "$*"
+  local _exit_status
+  if [ -z "$dry_run" ]; then
+    if [ -z "$log_logfile" ]; then
+      "$@"
+      _exit_status=$?
+    else
+      "$@" 2>&1 | sed -u 's/^/    /' | tee -a "$log_logfile"
+      _exit_status=$?
+    fi
+  else
+    log_warn "using dry run status: $dry_run"
+    _exit_status=$dry_run
+  fi
+  if [ $_exit_status -ne $_successful_exit_status ]; then
+    if [ -n "$on_failure" ]; then
+      $on_failure
+      return
+    fi
+    if [ -z "$warn_on_error" ]; then
+      exit_with_error "previous cmd failed: $* - $_exit_status"
+    else
+      unset warn_on_error
+      log_warn "previous cmd failed: $* - $_exit_status"
+      environment_file=$(_mktemp_mktemp error) _environment_dump
+      return $_exit_status
+    fi
+  fi
+}
+exit_with_error() {
+  [ -n "$exit_status" ] && return
+  if [ $# -ge 2 ]; then
+    exit_status=$2
+  else
+    exit_status=1
+  fi
+  [ -n "$3" ] && {
+    _exit_print_line $3
+  }
+  exit_log_level=4
+  exit_status_code="ERR"
+  exit_color_code="$conf_log_c_err"
+  exit_message="$1 ($exit_status)"
+  exit_beep="$conf_log_beep_err"
+  exit_defer _exit_log_app_exit
+  exit_defer _environment_dump
+  _exit_run_defers
+  exit $exit_status
+}
+exit_with_success() {
+  [ -n "$exit_status" ] && return
+  exit_status=0
+  exit_log_level=1
+  exit_status_code="SCS"
+  exit_color_code="$conf_log_c_scs"
+  exit_message="$1"
+  [ -z "$exit_message" ] && exit_message="success"
+  exit_beep="$conf_log_beep_scs"
+  exit_defer _alert_long_running_cmd
+  exit_defer _exit_log_app_exit
+  _exit_run_defers
+  exit $exit_status
+}
+_exit_on_hup() {
+  log_info "hup received"
+}
+_exit_on_int() {
+  exit_with_error "interrupted" $? $1
+}
+_exit_on_quit() {
+  exit_with_error "quit" $? $1
+}
+_exit_on_illegal() {
+  exit_with_error "illegal instruction" $? $1
+}
+_exit_on_abort() {
+  exit_with_error "abort" $? $1
+}
+_exit_on_alarm() {
+  exit_with_error "alarm" $? $1
+}
+_exit_on_term() {
+  exit_with_error "term" $? $1
+}
+_exit_print_line() {
+  log_warn "unhandled error"
+  local _exception_line
+  _exception_line=$($GNU_SED -n "${1}p" $0)
+  printf '  %s @ %s:%s\n' "$_exception_line" $0 $1
+}
+exit_defer() {
+  log_debug "deferring: $*"
+  if [ $# -gt 1 ]; then
+    local _defer_with_args
+    _defer_with_args=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+    exit_defers="$_defer_with_args $exit_defers"
+  else
+    exit_defers="$1 $exit_defers"
+  fi
+}
+exit_undefer() {
+  log_debug "undeferring: $*"
+  local _undefer_target
+  if [ $# -gt 1 ]; then
+    _undefer_target=$(printf '%s' "$*" | sed -e 's/ /:/' -e 's/ /,/g')
+  else
+    _undefer_target="$1"
+  fi
+  local _new_defers=""
+  local _defer
+  for _defer in $exit_defers; do
+    if [ "$_defer" != "$_undefer_target" ]; then
+      _new_defers="$_defer $_new_defers"
+    fi
+  done
+  exit_defers=""
+  for _defer in $_new_defers; do
+    exit_defers="$_defer $exit_defers"
+  done
+}
+_exit_run_defers() {
+  [ -z "$exit_defers" ] && return 1
+  for exit_defer in $exit_defers; do
+    case "$exit_defer" in
+    *:*)
+      local _func_name=$(printf '%s' "$exit_defer" | cut -d':' -f1)
+      local _args=$(printf '%s' "$exit_defer" | cut -d':' -f2 | tr ',' ' ')
+      exec_call $_func_name $_args
+      ;;
+    *)
+      exec_call $exit_defer
+      ;;
+    esac
+  done
+  unset exit_defers
+}
+_exit_log_app_exit() {
+  [ "$exit_message" ] && {
+    _exit_disable_beep
+    log_print_log $exit_log_level "$exit_status_code" "$exit_color_code" "$exit_beep" "$exit_message"
+  }
+  log_app exit
+  [ -n "$log_logfile" ] && [ -n "$optn_log_exit_cmd" ] && {
+    $optn_log_exit_cmd -file $log_logfile
+  }
+}
+_exit_disable_beep() {
+  [ -z "$APPLICATION_START_TIME" ] && {
+    unset exit_beep
+    return
+  }
+  local _current_time=$(date +%s)
+  local _timeout=$(($APPLICATION_START_TIME + $conf_log_beep_timeout))
+  [ $_current_time -ge $_timeout ] && return
+  unset exit_beep
+}
+_help_print() {
+  if [ -e $2 ]; then
+    log_info "$1:"
+    cat $2
+    printf '\n'
+  fi
+}
+_help_print_and_exit() {
+  _help_print 'system-wide options' $APP_PLATFORM_PATH/install/help/default
+  if [ "$APPLICATION_NAME" != "install" ]; then
+    _help_print $APPLICATION_NAME $APP_PLATFORM_PATH/$APPLICATION_NAME/help/default
+    _help_print "$APPLICATION_NAME/$APPLICATION_CMD" $APP_PLATFORM_PATH/$APPLICATION_NAME/help/$APPLICATION_CMD
+  fi
+  exit 0
+}
+file_require() {
+  local _filename=$1
+  local _message=$2
+  validation_require "$_filename" "filename file_require"
+  [ -e "$_filename" ] && return
+  [ -z "$warn_on_error" ] && exit_with_error "file: $_filename does not exist | $_message"
+  log_warn "file: $_filename does not exist | $_message"
+  return 1
+}
+_file_has_contents() {
+  local _filename=$1
+  file_require "$_filename" "_file_has_contents:$_filename"
+  [ $(wc -l <"$_filename") -gt 0 ]
+}
+_include_optional() {
+  inc_err=0
+  for inc_file in "$@"; do
+    case "$inc_file" in
+    */*)
+      ;;
+    *)
+      inc_file="${APP_PLATFORM_CONFIG_PATH}/$inc_file"
+      ;;
+    esac
+    if [ -f "$inc_file" ] && . "$inc_file"; then
+      :
+    else
+      inc_err=$(($inc_err + 1))
+    fi
+  done
+  unset inc_file inc_dir _found
+  [ "$inc_err" -eq 0 ]
+}
+log_to_console() {
+  local _color=$1 _event_date_time=$2 _message=$3
+  [ -n "$NON_INTERACTIVE" ] && [ -n "$NO_LOG_FILE" ] && {
+    if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+      printf '%s - %s\n' "$_event_date_time" "$_message" >&2
+    else
+      printf '%s\n' "$_message" >&$console_log_fd
+    fi
+    return
+  }
+  if [ "$conf_log_date_time_to_console" -eq 1 ]; then
+    printf '\033[%sm%s - %s\033[0m\n' "$_color" "$_event_date_time" "$_message" >&2
+  else
+    printf '\033[%sm%s\033[0m\n' "$_color" "$_message" >&$console_log_fd
+  fi
+}
+log_add_context() {
+  [ -z "$1" ] && return 1
+  local context_to_add="$1"
+  case "$context_to_add" in
+  *:*)
+    log_debug "replacing : with |"
+    context_to_add=$(printf '%s' "$context_to_add" | tr ':' '|')
+    ;;
+  esac
+  if [ -z "$logging_context" ]; then
+    logging_context="$context_to_add"
+  else
+    logging_context="${logging_context}:$context_to_add"
+  fi
+}
+log_remove_context() {
+  [ -z "$logging_context" ] && return 1
+  case $logging_context in
+  *:*)
+    logging_context=$(printf '%s' "$logging_context" | sed -e 's/\:[a-zA-Z0-9/@\. _-]*$//')
+    ;;
+  *)
+    unset logging_context
+    ;;
+  esac
+}
+log_to_file() {
+  [ -z "$log_logfile" ] && return 0
+  [ -n "$NO_LOG_FILE" ] && return 1
+  printf '%s %s %s\n' "$1" "$2" "$3" >>$log_logfile
+}
+_log_set_logfile() {
+  [ -z "$1" ] && return
+  [ -n "$NO_LOG_FILE" ] && return 1
+  log_logfile="$(realpath -m $(dirname $1))/$(basename $1)"
+  mkdir -p $(dirname $log_logfile)
+  log_to_console "${conf_log_c_wrn}" "$(date '+%Y/%m/%d %H:%M:%S')" "writing logs to ${log_logfile}${log_msg}"
+  if [ -z "${_log_saved_fds}" ]; then
+    if [ "$console_log_fd" -le 2 ]; then
+      exec 3>&1 4>&2
+      console_log_fd=4
+    fi
+    _log_saved_fds=1
+  fi
+  exec >>"$log_logfile" 2>&1
+}
+log_warn() {
+  log_print_log 3 WRN "${conf_log_c_wrn}" "${conf_log_beep_wrn}" "$1"
+}
+log_info() {
+  log_print_log 2 INF "${conf_log_c_info}" "${conf_log_beep_info}" "$1"
+}
+log_detail() {
+  log_print_log 2 DTL "${conf_log_c_detail}" "${conf_log_beep_detail}" "$1"
+}
+log_debug() {
+  log_print_log 1 DBG "${conf_log_c_debug}" "${conf_log_beep_debug}" "($$) $1"
+}
+log_init() {
+  [ -n "$log_logfile" ] && _log_set_logfile "$log_logfile"
+  log_add_context "$APPLICATION_NAME"
+  log_add_context "$APPLICATION_CMD"
+  if [ -n "$add_log_context" ]; then
+    log_add_context "$add_log_context"
+    unset add_log_context
+  fi
+  log_enable_debug_mode
+}
+log_enable_debug_mode() {
+  [ "$conf_log_level" -gt 0 ] && {
+    set +x
+    return
+  }
+  [ -z "$log_logfile" ] && {
+    log_msg=" - DEBUG"
+    _log_set_logfile "$(_mktemp_mktemp debug)" || return 1
+  }
+  set -x
+}
+log_print_log() {
+  local _level=$1 _level_str=$2 _color=$3 _tone=$4 _message="$5"
+  [ $_level -lt $conf_log_level ] && return 0
+  [ -n "$logging_context" ] &&
+    _message="${logging_context} - ${_message}"
+  [ -n "$_tone" ] && [ $beep_enabled -eq 1 ] && _beep_beep "$_tone"
+  local log_event_date_time="$(date '+%Y/%m/%d %H:%M:%S')"
+  log_to_file "$_level_str" "$log_event_date_time" "$_message"
+  log_to_console "$_color" "$log_event_date_time" "$_message"
+  log_user_log "$_level_str" "$log_event_date_time" "$_message"
+  [ -n "$log_syslog" ] && _syslog_syslog "$_message"
+  return 0
+}
+log_app() {
+  log_debug "$APPLICATION_NAME:$APPLICATION_CMD - $1 ($$)"
+}
+log_user_log() { :; }
+_metadata_load() {
+  [ -f $APP_PATH/.metadata ] && . $APP_PATH/.metadata && return 0
+  [ -n "$HOME" ] && [ -f "$HOME/.local/walterjwhite/apps/$APPLICATION_NAME/.metadata" ] && . "$HOME/.local/walterjwhite/apps/$APPLICATION_NAME/.metadata"
+}
+_mktemp_mktemp() {
+  local _suffix=$1
+  [ -n "$_suffix" ] && _suffix=".$_suffix"
+  mktemp -${_mktemp_options}t ${APPLICATION_NAME}.${APPLICATION_CMD}${_suffix}.XXXXXXXX
+}
+platform_is_supported() {
+  local _supported_platforms="$1"
+  local _platform
+  [ -z "$_supported_platforms" ] && return 0
+  for _platform in $_supported_platforms; do
+    [ "$APP_PLATFORM_PLATFORM" = "$_platform" ] && return 0
+  done
+  exit_with_error "platform '$APP_PLATFORM_PLATFORM' is not supported; supported: $_supported_platforms"
+}
+processes_restrict_to_single_process() {
+  _processes_has_other_instances && {
+    exit_with_error "$APPLICATION_CMD is restricted to a single instance and another instance is running"
+  }
+  processes_setup_app_pipe
+}
+_processes_has_other_instances() {
+  find $APPLICATION_CMD_DIR -maxdepth 1 -type p ! -name $$ 2>/dev/null | grep -qm1 '.'
+}
+processes_setup_app_pipe() {
+  mkdir -p $APPLICATION_PIPE_DIR
+  mkfifo $APPLICATION_PIPE
+  exit_defer processes_cleanup_app_pipe
+}
+processes_cleanup_app_pipe() {
+  rm -rf $APPLICATION_PIPE_DIR
+}
+_processes_is_backgrounded() {
+  [ -n "$no_ps" ] && return 1
+  case $(ps -o stat= -p $$) in
+  *+*)
+    return 1
+    ;;
+  esac
+  return 0
+}
+_syslog_syslog() {
+  logger -i -t "$APPLICATION_NAME.$APPLICATION_CMD" "$1"
+}
+sudo_run() {
+  [ $# -eq 0 ] && exit_with_error 'no arguments were provided to sudo_run'
+  sudo_is_validation_required || {
+    "$@"
+    return
+  }
+  validation_require "$_SUDO_CMD" "sudo_cmd - $*"
+  [ -z "$NON_INTERACTIVE" ] && {
+    $_SUDO_CMD -n ls >/dev/null 2>&1 || sudo_precmd "$@"
+  }
+  $_SUDO_CMD $sudo_options "$@"
+  local sudo_return_status=$?
+  unset sudo_options
+  return $sudo_return_status
+}
+sudo_is_validation_required() {
+  [ -n "$sudo_user" ] && {
+    [ "$sudo_user" = "$USER" ] && return 1
+    sudo_options="$sudo_options -u $sudo_user"
+    return 0
+  }
+  [ "$USER" = "root" ] && return 1
+  return 0
+}
+sudo_ensure_root() {
+  [ "$(id -u)" -eq 0 ] && return
+  log_info "enter sudo password to run this program as root"
+  sudo_run "$0" "$@"
+  exit $?
+}
+sudo_ensure_not_root() {
+  [ $(id -u) -ne 0 ] && return
+  exit_with_error "$0 cannot be run as root"
+}
+sudo_ensure_non_root_user() {
+  [ "$(id -u)" -ne 0 ] && return
+  [ -z "$SUDO_USER" ] && exit_with_error "unable to determine non-root user"
+  sudo_user=$SUDO_USER
+  sudo_run "$0" "$@"
+  exit $?
+}
+time_timeout() {
+  local _timeout=$1
+  shift
+  local _message=$1
+  shift
+  local _timeout_units='s'
+  if [ $(printf '%s' "$_timeout" | grep -c '[smhd]{1}') -gt 0 ]; then
+    unset _timeout_units
+  fi
+  local _sudo
+  [ -n "$sudo_required" ] || [ -n "$sudo_user" ] && _sudo=sudo_run
+  $_sudo timeout $options $_timeout "$@" || {
+    local _error_status=$?
+    local _error_message="Other error"
+    if [ $_error_status -eq 124 ]; then
+      _error_message="Timed Out"
+    fi
+    [ $timeout_err_function ] && $timeout_err_function
+    local timeout_error_msg="time_timeout: $_error_message: ${_timeout}${_timeout_units} - $_message ($_error_status): $_sudo timeout $options $_timeout $* ($USER)"
+    [ $warn_on_error ] && {
+      log_warn "$timeout_error_msg"
+      return $_error_status
+    }
+    exit_with_error "$timeout_error_msg"
+  }
+}
+wait_waitee_init() {
+  [ -z "$WAIT_WAITEE" ] && return
+  processes_setup_app_pipe
+  log_warn "please use -w=$$ ($APPLICATION_CMD)"
+  exit_defer wait_waitee_done
+}
+wait_waitee_done() {
+  [ -z "$WAIT_WAITEE" ] && return
+  [ -e $application_pipe ] || return
+  log_info "$0 process completed, notifying ($exit_status)"
+  printf '%s\n' "$exit_status" >$application_pipe
+  log_info "$0 downstream process picked up"
+}
+wait_waiter() {
+  local _upstream_application_pipe
+  local _upstream_application_status
+  local _upstream_status
+  [ -z "$wait_waiter_pid" ] && return
+  _upstream_application_pipe=$(find $APPLICATION_CONTEXT_GROUP -type p -name $wait_waiter_pid 2>/dev/null | head -1)
+  [ -z "$_upstream_application_pipe" ] && exit_with_error "$wait_waiter_pid not found"
+  [ ! -e $_upstream_application_pipe ] && {
+    log_warn "$_upstream_application_pipe does not exist, did upstream start?"
+    return
+  }
+  log_info "waiting for upstream to complete: $wait_waiter_pid"
+  while :; do
+    if [ ! -e $_upstream_application_pipe ]; then
+      exit_with_error "upstream pipe no longer exists"
+    fi
+    _upstream_application_status=$(time_timeout $conf_wait_interval "wait_waiter:upstream" cat $_upstream_application_pipe 2>/dev/null)
+    _upstream_status=$?
+    if [ $_upstream_status -eq 0 ]; then
+      if [ -z "$_upstream_application_status" ] || [ $_upstream_application_status -gt 0 ]; then
+        exit_with_error "upstream exited with exit_with_error ($_upstream_application_status)"
+      fi
+      log_warn "upstream finished: $_upstream_application_pipe ($_upstream_status)"
+      break
+    fi
+    log_detail "upstream is still running: $_upstream_application_pipe ($_upstream_status)"
+    sleep 1
+  done
+}
+validation_require() {
+  [ -n "$1" ] && return
+  [ -n "$warn_on_error" ] && {
+    log_warn "$2 required $required_message" $3
+    return 1
+  }
+  exit_with_error "$2 required $required_message" $3
+}
+_mail_send() {
+  [ -n "$conf_log_mail_disabled" ] && {
+    log_warn "mail is disabled"
+    return 1
+  }
+  if [ $# -lt 3 ]; then
+    log_warn "recipients[0], subject[1], message[2] is required - $# arguments provided"
+    return 2
+  fi
+  local _recipients
+  _recipients=$(printf '%s' "$1" | tr '|' ' ')
+  shift
+  local _subject
+  _subject="$1"
+  shift
+  local _message
+  _message="$1"
+  shift
+  printf '%s\n' "$_message" | mail -s "$_subject" $_recipients
+}
+_alert_alert() {
+  local _recipients
+  local _subject
+  local _log_color
+  case $exit_status in
+  0)
+    _log_color=$conf_log_c_scs
+    ;;
+  *)
+    _log_color=$conf_log_c_err
+    ;;
+  esac
+  log_print_log 5 ALRT "$_log_color" "$conf_log_beep_alrt" "$1"
+  _recipients="$optn_log_alert_recipients"
+  _subject="alert: $0 - $1"
+  if [ -z "$_recipients" ]; then
+    log_debug "recipients is empty, aborting"
+    return 1
+  fi
+  _mail_send "$_recipients" "$_subject" "$2"
+}
+_alert_long_running_cmd() {
+  [ -n "$optn_disable_long_running_cmd_notification" ] && return
+  local _application_end_time=$(date +%s)
+  local _application_runtime=$(($_application_end_time - $APPLICATION_START_TIME))
+  [ $_application_runtime -lt $conf_log_long_running_cmd ] && return
+  local _subject="$logging_context - $exit_message - ($exit_status)"
+  local _message=""
+  if [ -n "$log_logfile" ]; then
+    _message=$(tail -$conf_log_long_running_cmd_lines $log_logfile)
+  fi
+  _alert_alert "$_subject" "$_message"
+}
+_trim_registry_value() {
+  printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+_set_registry_from_config() {
+  local registries="$conf_init_app_registries"
+  local registry_entry
+  registry_name=
+  registry_url=
+  registry_path=
+  local selected_registry=$(_trim_registry_value "$1")
+  while [ -n "$registries" ]; do
+    case $registries in
+    *,*)
+      registry_entry=${registries%%,*}
+      registries=${registries#*,}
+      ;;
+    *)
+      registry_entry=$registries
+      registries=
+      ;;
+    esac
+    registry_entry=$(_trim_registry_value "$registry_entry")
+    [ -z "$registry_entry" ] && continue
+    case $registry_entry in
+    *'|'*)
+      registry_name=$(_trim_registry_value "${registry_entry%%|*}")
+      registry_url=$(_trim_registry_value "${registry_entry#*|}")
+      ;;
+    *)
+      exit_with_error "invalid registry entry '$registry_entry' — expected <registry_name>|<registry_url>"
+      return 1
+      ;;
+    esac
+    [ -z "$registry_name" ] && {
+      exit_with_error "invalid registry entry '$registry_entry' — missing registry name"
+      return 1
+    }
+    [ -z "$registry_url" ] && {
+      exit_with_error "invalid registry entry '$registry_entry' — missing registry url"
+      return 1
+    }
+    if [ "$registry_name" = "$selected_registry" ]; then
+      registry_path=$REGISTRY_PATH/$registry_name
+      return 0
+    fi
+  done
+  exit_with_error "registry '$selected_registry' not found in conf_init_app_registries"
+}
+_set_registry() {
+  _set_registry_from_config "${use_registry:-default}"
+}
+_is_latest() {
+  [ ! -e "$TARGET_APP_PATH/.metadata" ] && return 1
+  local installed_app_git_url
+  installed_app_git_url=$(grep APPLICATION_GIT_URL "$TARGET_APP_PATH/.metadata" 2>/dev/null | cut -f2 -d= | tr -d '"')
+  local latest_app_version=$target_application_version
+  target_application_installed_version=$(grep APPLICATION_VERSION "$TARGET_APP_PATH/.metadata" 2>/dev/null | cut -f2 -d= | tr -d '"')
+  [ "$latest_app_version" = "$target_application_installed_version" ]
+}
+_install_filter_file() {
+  local _setup_file=$1
+  $GNU_GREP -Pv '(^$|^#)' "$_setup_file" | tr '\n' ' '
+  unset _setup_file
+}
+_install_filter_file_callback() {
+  local _setup_file=$1
+  local _callback=$2
+  local element
+  for element in $(_install_filter_file "$_setup_file"); do
+    if "$_callback" "$element"; then
+      _install_setup_type_add "$element"
+    else
+      log_warn "failed to install $element"
+    fi
+  done
+  unset _setup_file _callback element
+}
+_install_uninstall_filter_file_callback() {
+  local setup_file_type="$1"
+  local uninstall_packages
+  uninstall_packages=$($GNU_GREP -Pv '(^$|^#)' "$setup_file_type" | tr '\n' ' ')
+  if [ -z "$uninstall_packages" ]; then
+    log_debug "no ${setup_type_name}(s) to uninstall"
+    return
+  fi
+  [ -n "$_APP_INSTALLATION" ] && {
+    local packages_to_install
+    packages_to_install=$(_install_exclude_contents_from_file)
+    uninstall_packages=$(printf '%s' "$uninstall_packages" | $GNU_GREP -Pv "($packages_to_install)")
+    [ -z "$uninstall_packages" ] && {
+      log_warn "uninstall - $setup_type_name - skipping"
+      return 1
+    }
+    local reinstalled_elements
+    reinstalled_elements=$(_install_get_reinstalled_elements)
+    if [ -n "$reinstalled_elements" ]; then
+      uninstall_packages=$(printf '%s' "$uninstall_packages" | $GNU_GREP -Pv "($reinstalled_elements)")
+      [ -z "$uninstall_packages" ] && {
+        log_warn "uninstall - $setup_type_name - skipping (all will be reinstalled)"
+        return 1
+      }
+    fi
+  }
+  local element
+  for element in $uninstall_packages; do
+    log_detail "uninstalling $element"
+    "$2" "$element"
+  done
+  rm -f "$1"
+}
+_install_get_reinstalled_elements() {
+  local _app_install_path="$registry_path/$target_application_name"
+  local setup_dir="$_app_install_path/setup/$target_platform"
+  [ ! -d "$setup_dir" ] && setup_dir="$_app_install_path/setup/all"
+  [ ! -d "$setup_dir" ] && return
+  local setup_type setup_type_name reinstalled_elements=""
+  for setup_type in $(find "$setup_dir" -maxdepth 1 -mindepth 1 2>/dev/null | sort -uV); do
+    setup_type_name=$(basename "$setup_type")
+    if _setup_type_platform_is_supported "$setup_type_name" &&
+      _setup_type_is_supported "$setup_type_name" &&
+      ! _setup_type_is_disabled "$setup_type_name"; then
+      local normalized_type_name="$setup_type_name"
+      case $normalized_type_name in
+      *.*)
+        normalized_type_name=$(printf '%s' "$normalized_type_name" | sed -e "s/^.*\\.//")
+        ;;
+      esac
+      normalized_type_name=${normalized_type_name%_*}
+      normalized_type_name=$(printf '%s' "$normalized_type_name" | tr '[:upper:]' '[:lower:]')
+      [ "$normalized_type_name" = "$setup_type_name" ] && {
+        local elements
+        elements=$($GNU_GREP -Pv '(^$|^#)' "$setup_type" 2>/dev/null | tr '\n' ' ')
+        [ -n "$elements" ] && reinstalled_elements="${reinstalled_elements}${elements}|"
+      }
+    fi
+  done
+  printf '%s' "$reinstalled_elements" | sed 's/|$//'
+}
+_install_exclude_contents_from_file() {
+  $GNU_GREP -Pvh '(^$|^#)' "$TARGET_APP_PATH/type/$setup_type_name" 2>/dev/null | tr '\n' '|'
+}
+_install_setup_type_add() {
+  printf "%s\n" "$1" | _install_setup_type_append
+}
+_install_setup_type_append() {
+  mkdir -p "$TARGET_APP_PATH/type"
+  cat - >>"$TARGET_APP_PATH/type/${setup_type_name}"
+}
+_metadata_install_is_set() {
+  local _path="${TARGET_APP_PATH:-$APP_PATH}"
+  grep -hcqm1 "^$1=" "$_path/.metadata" 2>/dev/null
+}
+_metadata_install_append() {
+  local _path="${TARGET_APP_PATH:-$APP_PATH}"
+  case $_path in
+  *$HOME*)
+    mkdir -p "$_path"
+    cat - >>"$_path/.metadata"
+    return
+    ;;
+  esac
+  sudo_run mkdir -p $_path
+  cat - | sudo_run tee -a "$_path/.metadata" >/dev/null
+}
+app_install() {
+  _install_filter_file_callback "$1" _app_install_do
+}
+_app_install_do() {
+  [ -z "$APP_INSTALL_DEPENDENCY" ] && {
+    readonly APP_INSTALL_DEPENDENCY=1
+    export APP_INSTALL_DEPENDENCY
+  }
+  app-install $1
+}
+app_uninstall() {
+  _install_uninstall_filter_file_callback "$1" app_uninstall_do
+}
+app_uninstall_do() {
+  app-uninstall $1
+}
+app_is_installed() {
+  [ -e "$APP_PLATFORM_PATH/apps/$1/.metadata" ]
+}
+app_is_latest() {
+  :
+}
+bin_install() {
+  mkdir -p "$TARGET_APP_PLATFORM_BIN_PATH"
+  _install_files "$1" "$TARGET_APP_PLATFORM_BIN_PATH"
+}
+bin_uninstall() {
+  [ ! -e "$1" ] && return
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+bin_is_installed() {
+  :
+}
+bin_is_latest() {
+  :
+}
+_crontab_target_user() {
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    printf 'root'
+  else
+    printf '%s' "$(id -un)"
+  fi
+}
+crontab_install() {
+  local crontab_sudo_user
+  crontab_sudo_user=$(_crontab_target_user)
+  crontab_uninstall
+  local temp_crontab
+  temp_crontab=$(_mktemp_mktemp)
+  cp "$1" "$temp_crontab"
+  $GNU_SED -i "s/$/ # app.$target_application_name/" "$temp_crontab"
+  local _marked_content
+  _marked_content=$(cat "$temp_crontab")
+  printf '# app.%s\n\n%s\n' "$target_application_name" "$_marked_content" >"$temp_crontab"
+  _crontab_append "$crontab_sudo_user" "$temp_crontab"
+  rm -f "$temp_crontab"
+}
+crontab_uninstall() {
+  local crontab_sudo_user
+  crontab_sudo_user=$(_crontab_target_user)
+  local temp_crontab
+  temp_crontab=$(_mktemp_mktemp)
+  _crontab_remove "$temp_crontab"
+  _crontab_write "$crontab_sudo_user" "$temp_crontab"
+  rm -f "$temp_crontab"
+}
+_crontab_remove() {
+  _crontab_get "$(_crontab_target_user)" "$1"
+  $GNU_SED -i '/^$/d' "$1"
+  $GNU_SED -i "/# app.$target_application_name/d" "$1"
+}
+crontab_is_installed() {
+  local crontab_sudo_user
+  crontab_sudo_user=$(_crontab_target_user)
+  local temp_crontab
+  temp_crontab=$(_mktemp_mktemp)
+  _crontab_get "$crontab_sudo_user" "$temp_crontab"
+  grep -qm1 "# app.$target_application_name" "$temp_crontab"
+  rm -f "$temp_crontab"
+}
+expect_bootstrap() {
+  _expect_bootstrap_is_expect_available || {
+    _package_install_new_only $EXPECT_PACKAGE
+    _expect_bootstrap_is_expect_available || EXPECT_DISABLED=1
+  }
+}
+_expect_bootstrap_is_expect_available() {
+  command -v expect >/dev/null 2>&1
+}
+expect_install() {
+  local _script
+  find "$1" -type f -name '*.exp' | sort | while IFS= read -r _script; do
+    log_detail "running expect script: $_script"
+    expect "$_script" >/dev/null 2>&1 || log_warn "expect script failed: $_script"
+  done
+}
+expect_is_installed() {
+  :
+}
+expect_is_latest() {
+  :
+}
+extensions_install() {
+  _install_extension_cmds "$1"
+  _install_extension_extensions "$1" "$installed_files"
+}
+_install_extension_cmds() {
+  [ ! -e "$1/bin" ] && return
+  log_detail "installing extension $1/bin"
+  _install_files "$1/bin" "$TARGET_APP_PLATFORM_BIN_PATH"
+}
+_install_extension_extensions() {
+  [ -e "$1/extension" ] && {
+    log_detail "installing extension $1/extension"
+    _install_files "$1/extension" "$TARGET_EXTENSIONS_PATH/extension"
+  }
+  [ -e "$1/type" ] && {
+    log_detail "installing extension $1/type"
+    _install_files "$1/type" "$TARGET_EXTENSIONS_PATH/type"
+  }
+  return 0
+}
+extensions_uninstall() {
+  [ ! -e "$1" ] && return
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+extensions_is_installed() {
+  :
+}
+extensions_is_latest() {
+  :
+}
+feature_install() {
+  feature="$1"
+  feature_key=$(printf '%s' "$feature" | sed -e 's/\.feature/\.feature\n/g' | $GNU_GREP -Po '/[a-zA-Z0-9-_]*.feature$' | sed -e 's/^\///' -e 's/\.feature$//' | tr '\n' '_' | sed -e 's/_$//')
+  feature_name=$(printf '%s' "$feature_key" | sed -e 's/^.*.feature//')
+  _settings_application_defaults "$feature"
+  _is_feature_enabled "$feature_key" && _feature_apply
+  unset _feature
+  return 0
+}
+_feature_apply() {
+  _setup_main "$feature/setup"
+  _setup_main "$feature/post-setup"
+}
+feature_is_installed() {
+  :
+}
+feature_is_latest() {
+  :
+}
+files_install() {
+  case $INSTALL_TARGET in
+  SYSTEM)
+    ;;
+  *)
+    [ -e "$1/_ROOT_" ] && exit_with_error "unable to install files @ root for a user install"
+    ;;
+  esac
+  _install_files "$1/_ROOT_" "$APP_PLATFORM_ROOT"
+  _install_files "$1/_APPLICATION_ROOT_" "$TARGET_APP_PATH"
+  return 0
+}
+files_uninstall() {
+  [ ! -e "$1" ] && return 0
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+files_is_installed() {
+  :
+}
+files_is_latest() {
+  :
+}
+go_install() {
+  go_bootstrap
+  _install_filter_file_callback "$1" _go_install_do
+}
+go_update() {
+  :
+}
+go_uninstall() {
+  _install_uninstall_filter_file_callback "$1" _go_uninstall_do
+}
+go_is_installed() {
+  _go_is_installed "$1"
+}
+go_is_latest() {
+  _go_get_latest_hash "$1"
+}
+help_install() {
+  _install_files "$1" "$TARGET_APP_PATH/help"
+}
+help_uninstall() {
+  [ ! -e "$1" ] && return
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+npm_install() {
+  npm_bootstrap
+  _install_filter_file_callback "$1" _npm_install_do
+}
+npm_uninstall() {
+  npm_bootstrap
+  _install_uninstall_filter_file_callback "$1" _npm_uninstall_do
+}
+npm_is_installed() {
+  _npm_is_installed "$1"
+}
+npm_is_latest() {
+  :
+}
+#
+package_install() {
+  _install_filter_file_callback "$1" _package_install_new_only
+}
+package_uninstall() {
+  _install_uninstall_filter_file_callback "$1" _package_uninstall_do
+}
+pypi_install() {
+  _install_filter_file_callback "$1" _pypi_install_do
+}
+pypi_uninstall() {
+  _install_uninstall_filter_file_callback "$1" _pypi_uninstall_do
+}
+pypi_is_installed() {
+  _setup_type_is_installed "$1"
+}
+run_install() {
+  . "$1"
+}
+run_uninstall() {
+  [ ! -e "$1" ] && return
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+run_is_installed() {
+  :
+}
+run_is_latest() {
+  :
+}
+rust_install() {
+  _install_filter_file_callback "$1" _rust_install_do
+}
+rust_uninstall() {
+  _install_uninstall_filter_file_callback "$1" _rust_uninstall_do
+}
+sbin_install() {
+  validation_require "$TARGET_APP_PLATFORM_SBIN_PATH" TARGET_APP_PLATFORM_SBIN_PATH
+  mkdir -p "$TARGET_APP_PLATFORM_SBIN_PATH"
+  _install_files "$1" "$TARGET_APP_PLATFORM_SBIN_PATH"
+}
+sbin_uninstall() {
+  [ ! -e "$1" ] && return
+  while IFS= read -r _entry; do
+    case "$_entry" in
+    */) rm -rf "$_entry" ;;
+    *) rm -f "$_entry" ;;
+    esac
+  done <"$1"
+  rm -f "$1"
+}
+sbin_is_installed() {
+  :
+}
+sbin_is_latest() {
+  :
+}
+_install_files() {
+  [ ! -e $1 ] && return 1
+  [ $(find $1 -type f 2>/dev/null | wc -l) -gt 0 ] || return 2
+  if _install_files_has_delta $1; then
+    mkdir -p $2
+    tar -c $_TAR_ARGS -C $1 . | tar -xop $_TAR_ARGS -C $2
+  else
+    log_warn "no delta between existing installed version and new version"
+  fi
+  _install_record_files $1 $2
+}
+_install_files_has_delta() {
+  return 0
+}
+_install_record_files() {
+  mkdir -p "$TARGET_APP_PATH"
+  find $1 -type f 2>/dev/null |
+    sed -e "s|^$1|$2|" | _install_setup_type_append
+}
+#
+_install_record_path() {
+  local _path="$1"
+  validation_require "$_path" "_install_record_path: path"
+  validation_require "$setup_type_name" "_install_record_path: setup_type_name (must be called from within a module install function)"
+  printf '%s\n' "$_path" | _install_setup_type_append
+}
+_install_record_dir() {
+  local _dir="$1"
+  validation_require "$_dir" "_install_record_dir: dir"
+  validation_require "$setup_type_name" "_install_record_dir: setup_type_name (must be called from within a module install function)"
+  printf '%s/\n' "$_dir" | _install_setup_type_append
+}
+_install_record_symlink() {
+  _install_record_path "$1"
+}
+_settings_init() {
+  log_info "using root directory: $APP_PLATFORM_ROOT"
+  _include_optional "$APPLICATION_METADATA_PATH"
+  if [ "$APP_PLATFORM_ROOT" != "/" ]; then
+    log_warn "using alternate root: $APP_PLATFORM_ROOT"
+    unset $(set | tr '\0' '\n' | grep '^bootstrap_[a-z0-9_]*=' | sed -e 's/=.*$//' | tr '\n' ' ')
+  fi
+  if [ -z "$target_platform" ]; then
+    target_platform=$APP_PLATFORM_PLATFORM
+  else
+    log_warn "targeting $target_platform on $APP_PLATFORM_PLATFORM"
+  fi
+  _set_registry
+}
+_settings_application() {
+  target_application_install_date=$(date +"%a %b %d %H:%M:%S %Y %z")
+  unset install_target INSTALL_TARGET
+  [ -f "$registry_path/$target_application_name/.app" ] &&
+    . "$registry_path/$target_application_name/.app"
+  INSTALL_TARGET="${install_target:-USER}"
+  #
+  #
+  #
+  if [ -n "$INSTALL_TARGET_OVERRIDE" ]; then
+    case "$INSTALL_TARGET_OVERRIDE" in
+    SYSTEM | USER)
+      if [ "$INSTALL_TARGET_OVERRIDE" != "$INSTALL_TARGET" ]; then
+        log_warn "overriding install_target: registry='$INSTALL_TARGET' -> override='$INSTALL_TARGET_OVERRIDE'"
+        INSTALL_TARGET="$INSTALL_TARGET_OVERRIDE"
+      fi
+      ;;
+    *)
+      exit_with_error "invalid INSTALL_TARGET_OVERRIDE value '$INSTALL_TARGET_OVERRIDE' — must be SYSTEM or USER"
+      ;;
+    esac
+    export INSTALL_TARGET_OVERRIDE
+  fi
+  export INSTALL_TARGET
+  _settings_validate_install_target
+  _settings_resolve_target_paths
+  mkdir -p "$TARGET_APP_PATH" "$APP_DATA_PATH/install"
+  _include_optional "$target_application_name"
+}
+#
+#
+_settings_validate_install_target() {
+  case $INSTALL_TARGET in
+  SYSTEM)
+    sudo_ensure_root $target_application_name
+    ;;
+  USER | *)
+    sudo_ensure_non_root_user $target_application_name
+    ;;
+  esac
+}
+#
+_settings_resolve_target_paths() {
+  local _root=""
+  [ "$APP_PLATFORM_ROOT" != "/" ] && _root=$(realpath -m "$APP_PLATFORM_ROOT")
+  unset TARGET_PLATFORM_PATH TARGET_BIN_PATH TARGET_SBIN_PATH
+  unset TARGET_APP_PLATFORM_PATH TARGET_APP_PLATFORM_BIN_PATH TARGET_APP_PLATFORM_SBIN_PATH
+  unset TARGET_APP_PLATFORM_CACHE_PATH TARGET_APP_PLATFORM_CONFIG_PATH
+  unset TARGET_APP_CONFIG_PATH TARGET_APP_PATH TARGET_EXTENSIONS_PATH
+  unset TARGET_PLATFORM_SYSTEM_ID_PATH
+  case $INSTALL_TARGET in
+  SYSTEM)
+    TARGET_PLATFORM_PATH=/usr/local/walterjwhite
+    TARGET_BIN_PATH=/usr/local/bin
+    TARGET_SBIN_PATH=/usr/local/sbin
+    TARGET_APP_PLATFORM_PATH=${_root}$TARGET_PLATFORM_PATH
+    TARGET_APP_PLATFORM_BIN_PATH=${_root}$TARGET_BIN_PATH
+    TARGET_APP_PLATFORM_SBIN_PATH=${_root}$TARGET_SBIN_PATH
+    TARGET_APP_PLATFORM_CONFIG_PATH=${_root}/usr/local/etc/walterjwhite/shell
+    TARGET_APP_PLATFORM_CACHE_PATH=${_root}/var/cache/walterjwhite/shell
+    TARGET_EXTENSIONS_PATH=${_root}$TARGET_PLATFORM_PATH/extensions
+    TARGET_PLATFORM_SYSTEM_ID_PATH=${_root}/usr/local/etc/walterjwhite/system
+    TARGET_APP_PATH=${_root}${TARGET_PLATFORM_PATH}/apps/${target_application_name}
+    TARGET_APP_CONFIG_PATH=${_root}/usr/local/etc/walterjwhite/shell/${target_application_name}
+    ;;
+  USER | *)
+    TARGET_PLATFORM_PATH=${HOME}/.local/walterjwhite
+    TARGET_BIN_PATH=${HOME}/.local/bin
+    TARGET_APP_PLATFORM_PATH=${_root}$TARGET_PLATFORM_PATH
+    TARGET_APP_PLATFORM_BIN_PATH=${_root}$TARGET_BIN_PATH
+    TARGET_APP_PLATFORM_CONFIG_PATH=${_root}${HOME}/.config/walterjwhite/shell
+    TARGET_APP_PLATFORM_CACHE_PATH=${_root}${HOME}/.cache
+    TARGET_EXTENSIONS_PATH=${_root}${HOME}/.local/walterjwhite/extensions
+    TARGET_PLATFORM_SYSTEM_ID_PATH=${_root}${HOME}/.local/walterjwhite/system
+    TARGET_APP_PATH=${_root}${HOME}/.local/walterjwhite/apps/${target_application_name}
+    TARGET_APP_CONFIG_PATH=${_root}${HOME}/.config/walterjwhite/shell/${target_application_name}
+    ;;
+  esac
+  validation_require "$TARGET_APP_PATH" "TARGET_APP_PATH - _settings_resolve_target_paths"
+  validation_require "$TARGET_APP_PLATFORM_BIN_PATH" "TARGET_APP_PLATFORM_BIN_PATH - _settings_resolve_target_paths"
+  #
+  #
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    conf_install_go_path=/usr/local
+  else
+    conf_install_go_path=$HOME/.local
+  fi
+}
+_settings_application_defaults() {
+  local default_file
+  for default_file in $(find "$1/cfg" -type f 2>/dev/null); do
+    [ -f "$default_file" ] && . "$default_file"
+  done
+}
+_setup_main() {
+  for setup_type in $(find "$1" -maxdepth 1 -mindepth 1 ! -name '*.conditional' 2>/dev/null | sort -uV); do
+    _setup_run_type "$setup_type"
+  done
+  unset setup_type
+}
+_setup_run_type() {
+  setup_type_name=$(basename "$1")
+  log_add_context "$setup_type_name"
+  log_debug "evaluating"
+  [ -e ${setup_type}.conditional ] && {
+    . ${setup_type}.conditional || {
+      log_warn "skipping $setup_type as ${setup_type}.conditional returned $?"
+      return
+    }
+  }
+  _setup_type_platform_is_supported || {
+    log_debug "ignoring $1, does not target this sub-platform"
+    log_remove_context
+    return
+  }
+  _setup_get_type_name
+  _setup_type_is_supported || {
+    log_warn "unknown type: $setup_type_name"
+    log_remove_context
+    return
+  }
+  _setup_type_is_disabled && {
+    log_warn "ignoring, disabled"
+    log_remove_context
+    return
+  }
+  _setup_run_do_bootstrap
+  log_detail processing
+  ${setup_type_name}_install "$1" || {
+    local error=$?
+    log_warn "exit_with_error installing: $error"
+    log_remove_context
+    return $error
+  }
+  log_remove_context
+  return 0
+}
+_setup_contains_subtype() {
+  [ -z "$APP_PLATFORM_SUB_PLATFORM" ] && return 1
+  case $1 in
+  *_*)
+    return 0
+    ;;
+  esac
+  return 1
+}
+_setup_sub_platform_matches() {
+  local setup_type_sub_platform=${1##*_}
+  setup_type_sub_platform=${setup_type_sub_platform%%.*}
+  [ -z "$setup_type_sub_platform" ] && return 0
+  [ "$setup_type_sub_platform" = "$APP_PLATFORM_SUB_PLATFORM" ] && return 0
+  [ -n "$APP_PLATFORM_DERIVED_SUB_PLATFORM" ] && [ "$setup_type_sub_platform" = "$APP_PLATFORM_DERIVED_SUB_PLATFORM" ] && return 0
+  return 1
+}
+_setup_type_platform_is_supported() {
+  _setup_contains_subtype "$setup_type_name" || return 0
+  _setup_sub_platform_matches "$setup_type_name"
+}
+_setup_get_type_name() {
+  case $setup_type_name in
+  *.*)
+    setup_type_name=$(printf '%s' "$setup_type_name" | sed -e "s/^.*\\.//")
+    ;;
+  esac
+  setup_type_name=${setup_type_name%_*}
+  setup_type_name=$(printf '%s' "$setup_type_name" | tr '[:upper:]' '[:lower:]')
+}
+_setup_type_is_supported() {
+  type "${setup_type_name}_install" >/dev/null 2>&1
+}
+_setup_type_is_disabled() {
+  _environment_variable_is_set "${setup_type_name}_disabled"
+}
+_setup_run_do_bootstrap() {
+  _setup_type_bootstrapped && return
+  log_debug "bootstrapping"
+  exec_call "${setup_type_name}_bootstrap" && {
+    printf '_bootstrap_%s=1\n' "$setup_type_name" | _metadata_install_append
+  }
+  exec_call "${setup_type_name}_bootstrap_post"
+}
+_setup_type_bootstrapped() {
+  _metadata_install_is_set "_bootstrap_${setup_type_name}"
+}
+_setup_type_is_installed() {
+  find "$TARGET_APP_PATH/type" -name "$setup_type_name" -type f -exec grep -qm1 "^$1$" {} + 2>/dev/null
+}
+uninstall_app() {
+  validation_require "$target_application_name" target_application_name
+  validation_require "$TARGET_APP_PATH" TARGET_APP_PATH
+  [ ! -e "$TARGET_APP_PATH" ] && return 1
+  [ ! -e "$TARGET_APP_PATH/.metadata" ] && return 1
+  rm -rf "$TARGET_APP_PATH/.metadata" \
+    "$TARGET_APP_PATH/help"
+  uninstall_type
+  [ -n "$clean" ] && rm -rf "$TARGET_APP_PATH"
+  log_info "uninstalled $target_application_name"
+}
+uninstall_type() {
+  [ ! -e "$TARGET_APP_PATH/type" ] && return 1
+  local _setup_type_file
+  find "$TARGET_APP_PATH/type" -type f |
+    while IFS= read -r _setup_type_file; do
+      local setup_type_name
+      setup_type_name=$(basename "$_setup_type_file")
+      local setup_type_function_name
+      setup_type_function_name=$(printf '%s' "$setup_type_name" | tr '[:upper:]' '[:lower:]')
+      exec_call "${setup_type_function_name}_uninstall" "$_setup_type_file"
+    done
+  rm -rf "$TARGET_APP_PATH/type"
+}
+_crontab_get() {
+  validation_require "$1" "Crontab User"
+  validation_require "$2" "Crontab Filename to write to"
+  crontab_${conf_cron_provider}_get "$@"
+}
+_crontab_write() {
+  validation_require "$1" "Crontab User"
+  file_require "$2" "Crontab File"
+  crontab_${conf_cron_provider}_write "$@"
+}
+_crontab_append() {
+  validation_require "$1" "Crontab User"
+  file_require "$2" "Crontab File"
+  _file_has_contents $2 || return 1
+  local current_crontab=$(_mktemp_mktemp)
+  [ "$1" = "root" ] && chown $1: $current_crontab
+  _crontab_get $1 $current_crontab
+  _crontab_run "$1" sh -c 'cat "$1" >> "$2"' _ "$2" "$current_crontab"
+  crontab_${conf_cron_provider}_write "$1" "$current_crontab"
+  _crontab_run "$1" rm -f "$current_crontab"
+}
+crontab_default_clear() {
+  _crontab_run "$1" crontab -r 2>/dev/null
+}
+crontab_default_get() {
+  _crontab_run "$1" sh -c 'crontab -l > "$1" 2>/dev/null || true' _ "$2"
+}
+crontab_default_write() {
+  _crontab_default_header "$1" "$2"
+  _crontab_run "$1" crontab "$2" || {
+    log_warn "error writing crontab"
+    _crontab_run "$1" cat "$2"
+  }
+}
+_crontab_default_header() {
+  [ ! -e "$2" ] && {
+    log_warn "crontab file $2 does not exist"
+    return 1
+  }
+  [ -z "$optn_install_crontab_header" ] && return 0
+  local _header="$optn_install_crontab_header"
+  _crontab_run "$1" sh -c 'printf "%s\n\n" "$1" > "$2.new"' _ "$_header" "$2"
+  _crontab_run "$1" sh -c 'cat "$1" >> "$1.new" && mv "$1.new" "$1"' _ "$2"
+}
+_crontab_run() {
+  local _user="$1"
+  shift
+  if [ "$_user" = "root" ]; then
+    sudo_user=root sudo_run "$@"
+  else
+    "$@"
+  fi
+}
+crontab_dcron_clear() {
+  case $1 in
+  root)
+    sudo_user=$1 sudo_run crontab /etc/crontab
+    ;;
+  *)
+    sudo_user=$1 sudo_run crontab -d
+    ;;
+  esac
+}
+crontab_dcron_get() {
+  sudo_user=$1 sudo_run crontab -l | sudo_user=$1 sudo_run tee $2 >/dev/null 2>&1
+}
+crontab_dcron_write() {
+  sudo_user=$1 sudo_run crontab $2
+}
+go_bootstrap() {
+  _go_set_proxy
+  _go_bootstrap_is_go_available || {
+    _package_install_new_only $GO_PACKAGE
+    _go_bootstrap_is_go_available || go_disabled=1
+  }
+}
+_go_set_proxy() {
+  [ -z "$http_proxy" ] && return
+  git config --global http.proxy $http_proxy
+  git config --global https.proxy $https_proxy
+  exit_defer _go_clear_proxy
+}
+_go_clear_proxy() {
+  git config --global --unset http.proxy
+  git config --global --unset https.proxy
+}
+_go_bootstrap_is_go_available() {
+  command -v go >/dev/null 2>&1
+}
+_go_walterjwhite_conf() {
+  [ -e ./.build/go ] && . ./.build/go
+  local _app_name=$(basename $1 | sed -e 's/@.*//')
+  local _build_date=$(date +"%Y/%m/%d-%H:%M:%S")
+  local _version=$(git branch --no-color --show-current)
+  local _scm_id=$(git rev-parse HEAD)
+  local _go_version=$(go version | awk {'print$3'} | sed 's/-X:.*//')
+  local _os_architecture=$(go version | awk {'print$4'})
+  local _app_name_flag="github.com/walterjwhite/go-code/lib/application.ApplicationName=$_app_name"
+  local _app_version_flag="github.com/walterjwhite/go-code/lib/application.ApplicationVersion=$_version"
+  local _scm_version_id_flag="github.com/walterjwhite/go-code/lib/application.SCMId=$_scm_id"
+  local _build_date_flag="github.com/walterjwhite/go-code/lib/application.BuildDate=$_build_date"
+  local _go_version_flag="github.com/walterjwhite/go-code/lib/application.GoVersion=$_go_version"
+  local _os_architecture_flag="github.com/walterjwhite/go-code/lib/application.OSArchitecture=$_os_architecture"
+  go_build_options="-X $_app_name_flag -X $_app_version_flag -X $_scm_version_id_flag -X $_build_date_flag -X $_go_version_flag -X $_os_architecture_flag"
+  [ -n "$output_build_filename" ] && {
+    go_build_options="$go_build_options -o $output_build_filename"
+    unset output_build_filename
+  }
+  log_debug "build flags:"
+  log_debug "$_app_name_flag"
+  log_debug "$_app_version_flag"
+  log_debug "$_scm_version_id_flag"
+  log_debug "$_build_date_flag"
+  log_debug "$_go_version_flag"
+  log_debug "$_os_architecture_flag"
+}
+_go_install_do() {
+  _go_is_installed $1 && {
+    log_detail "$1 is already installed"
+    return 0
+  }
+  case $1 in
+  *github.com/walterjwhite/*)
+    _go_walterjwhite_conf "$1"
+    ;;
+  *)
+    log_debug "using standard go properties"
+    ;;
+  esac
+  (
+    if [ -n "$go_build_options" ]; then
+      env GOPATH="$conf_install_go_path" CGO_ENABLED=1 go install -a -race -ldflags "$go_build_options" "$1"
+    else
+      env GOPATH="$conf_install_go_path" CGO_ENABLED=1 go install -a -race "$1"
+    fi
+  ) || {
+    log_warn "go install failed: env GOPATH='$conf_install_go_path' CGO_ENABLED=1 go install -a -race '$go_build_options' $1"
+    log_warn "http_proxy: $http_proxy"
+    log_warn "git  proxy: $(git config --global http.proxy)"
+  }
+}
+_go_uninstall_do() {
+  local cmd_name=$(basename "$(printf '%s\n' "$1" | sed 's/@.*//; s/\/v[0-9]*$//')")
+  local _bin="$conf_install_go_path/bin/$cmd_name"
+  if [ -e "$_bin" ]; then
+    rm -f "$_bin"
+    log_detail "removed go binary: $_bin"
+  else
+    log_warn "go binary not found, skipping: $_bin"
+  fi
+}
+_go_is_installed() {
+  local cmd_name=$(basename $(printf '%s\n' "$1" | sed 's/@.*//; s/\/v[0-9]*$//'))
+  [ -e "$conf_install_go_path/bin/$cmd_name" ]
+}
+npm_bootstrap() {
+  _npm_bootstrap_is_npm_available || {
+    _npm_bootstrap_pre
+    _package_install_new_only $NPM_PACKAGE
+    _npm_bootstrap_is_npm_available || npm_disabled=1
+  }
+  _npm_setup_proxy
+  exec_call npm_bootstrap_platform
+}
+_npm_bootstrap_pre() {
+  :
+}
+_npm_bootstrap_is_npm_available() {
+  command -v npm >/dev/null 2>&1
+}
+_npm_prefix() {
+  printf '%s' "$TARGET_APP_PLATFORM_BIN_PATH" | sed -e 's/\/bin$//'
+}
+_npm_install_do() {
+  _npm_is_installed $1 && {
+    log_detail "$1 is already installed"
+    return 0
+  }
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run npm install -s -g --prefix "$(_npm_prefix)" "$1"
+  else
+    npm install -s -g --prefix "$(_npm_prefix)" "$1"
+  fi
+}
+_npm_uninstall_do() {
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run npm uninstall -s -g --prefix "$(_npm_prefix)" "$1"
+  else
+    npm uninstall -s -g --prefix "$(_npm_prefix)" "$1"
+  fi
+}
+_npm_is_installed() {
+  npm list -g --prefix "$(_npm_prefix)" "$1" >/dev/null 2>&1
+}
+_npm_setup_proxy() {
+  [ -z "$http_proxy" ] && return
+  log_warn "configuring NPM to use an HTTP proxy: $http_proxy"
+  npm config set proxy $http_proxy
+  npm config set https-proxy $https_proxy
+  exit_defer _npm_clear_proxy
+}
+_npm_clear_proxy() {
+  log_warn "reverting NPM HTTP proxy: $http_proxy"
+  npm config rm proxy
+  npm config rm https-proxy
+}
+_package_install_new_only() {
+  [ $# -eq 0 ] && return
+  local package_install_packages=""
+  local package
+  for package in "$@"; do
+    _package_is_installed $package || {
+      if [ -n "$package_install_packages" ]; then
+        package_install_packages="$package_install_packages $package"
+      else
+        package_install_packages="$package"
+      fi
+    }
+  done
+  if [ -n "$package_install_packages" ]; then
+    _package_install_do $package_install_packages
+  else
+    log_warn "packages [$*] are already installed, skipping"
+    return 0
+  fi
+}
+pypi_bootstrap() {
+  _pypi_bootstrap_is_pypi_available || {
+    _package_install_new_only $PYPI_PACKAGE
+    _pypi_bootstrap_is_pypi_available || pypi_disabled=1
+  }
+}
+_pypi_bootstrap_is_pypi_available() {
+  command -v pip >/dev/null 2>&1
+}
+_pypi_install_do() {
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run pip install -U --no-input "$1" >/dev/null
+  else
+    pip install -U --no-input --user "$1" >/dev/null
+  fi
+}
+_pypi_uninstall_do() {
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run pip uninstall -y "$1" >/dev/null
+  else
+    pip uninstall -y "$1" >/dev/null
+  fi
+}
+rust_bootstrap() {
+  _rust_bootstrap_is_rust_available || {
+    _package_install_new_only $RUST_PACKAGE
+    _rust_bootstrap_is_rust_available || rust_disabled=1
+  }
+}
+_rust_bootstrap_is_rust_available() {
+  command -v cargo >/dev/null 2>&1
+}
+_rust_root_dir() {
+  printf '%s' "$TARGET_APP_PLATFORM_BIN_PATH" | sed -e 's/\/bin$//'
+}
+_rust_install_do() {
+  _rust_is_installed $1 && {
+    log_detail "$1 is already installed"
+    return 0
+  }
+  cargo install --root=$(_rust_root_dir) "$@"
+}
+rust_update() {
+  cargo update "$@"
+}
+_rust_uninstall_do() {
+  cargo uninstall --root=$(_rust_root_dir) "$@"
+}
+_rust_is_installed() {
+  cargo install --root=$(_rust_root_dir) --list | grep -cqm1 "^$1 .*:$"
+}
+rust_is_latest() {
+  :
+}
+aur_package_install() {
+  aur_package_install_new_only $(_install_filter_file $1)
+}
+aur_package_install_new_only() {
+  [ $# -eq 0 ] && return
+  local package_install_packages=""
+  local package
+  for package in "$@"; do
+    aur_package_is_installed $package || {
+      if [ -n "$package_install_packages" ]; then
+        package_install_packages="$package_install_packages $package"
+      else
+        package_install_packages="$package"
+      fi
+    }
+  done
+  if [ -n "$package_install_packages" ]; then
+    aur_package_install_do $package_install_packages
+  else
+    log_warn "packages [$*] are already installed, skipping"
+    return 0
+  fi
+}
+aur_package_install_do() {
+  flags="-Sqyu --noconfirm"
+  _aur_cmd "$@"
+}
+aur_package_uninstall() {
+  _install_uninstall_filter_file_callback $1 aur_package_uninstall_do
+}
+aur_package_uninstall_do() {
+  flags="-Rq --noconfirm"
+  _aur_cmd "$@"
+}
+aur_package_is_installed() {
+  flags="-Q"
+  _aur_cmd "$@"
+}
+aur_package_update() {
+  flags="-Syuq --noconfirm"
+  _aur_cmd "$@"
+}
+aur_package_bootstrap() {
+  sudo_run getent passwd builduser >/dev/null 2>&1 && return
+  sudo_run useradd -m builduser
+  printf "builduser ALL=(ALL) NOPASSWD: ALL\n" | sudo_run tee /etc/sudoers.d/builduser
+  sudo_run chmod 440 /etc/sudoers.d/builduser
+  flags="-Sqyu --noconfirm"
+  _pacman_cmd paru
+}
+_aur_cmd() {
+  [ "$#" -eq 0 ] && return
+  [ "$APP_PLATFORM_ROOT" = "/" ] && {
+    su - builduser -c "paru $flags $@" 2>&1 >/dev/null
+    return
+  }
+  [ "$_container_type" = "incus" ] && {
+    log_warn "detected incus container, using incus exec"
+    sudo_run incus exec $_container_name -- su - builduser -c "paru $flags $@" 2>&1 >/dev/null
+    return
+  }
+  su - builduser -c "paru $flags --sysroot $APP_PLATFORM_ROOT $@" 2>&1 >/dev/null
+}
+package_emerge_requires_reboot() {
+  :
+}
+package_emerge_install_do() {
+  _emerge_portage_sync
+  _package_emerge_cmd "$@"
+}
+package_emerge_uninstall_do() {
+  _package_emerge_cmd $emerge_options --depclean "$@"
+}
+_package_emerge_cmd() {
+  local log_target=/dev/null
+  [ -n "$log_logfile" ] && log_target=$log_logfile
+  [ "$APP_PLATFORM_ROOT" != "/" ] && {
+    _emerge_portage_run_in_chroot "$@" >>$log_target 2>&1
+    return
+  }
+  sudo_run emerge $EMERGE_FLAGS "$@" >>$log_target 2>&1
+}
+_emerge_portage_run_in_chroot() {
+  _emerge_portage_setup_chroot_mounts
+  sudo_run chroot $APP_PLATFORM_ROOT emerge $EMERGE_FLAGS "$@"
+  _emerge_portage_setup_chroot_mounts_cleanup
+}
+package_emerge_is_installed() {
+  local _package=$1
+  shift
+  [ -f $APP_PLATFORM_ROOT/var/lib/portage/world ] && {
+    $GNU_GREP -Pqm1 "^${_package}$" $APP_PLATFORM_ROOT/var/lib/portage/world && {
+      return 0
+    }
+  }
+  local package_group=$(printf '%s' $_package | cut -f1 -d/)
+  local package_name=$(printf '%s' $_package | cut -f2 -d/)
+  if [ -e $APP_PLATFORM_ROOT/var/db/pkg/$package_group ]; then
+    find $APP_PLATFORM_ROOT/var/db/pkg/$package_group -type f -name "$package_name-*.ebuild" | grep -Pqm1 '.' && {
+      return 0
+    }
+  fi
+}
+package_emerge_bootstrap() {
+  [ -n "$emerge_package_disabled" ] && return
+  mount | grep ' overlay on / ' | grep -v '/var/lib/docker' | grep -cqm1 '.' && {
+    log_warn 'disabling emerge as it appears we are running on an overlayfs'
+    emerge_package_disabled=1
+    return 1
+  }
+  _emerge_portage_setup_chroot_mounts_with_root
+  _emerge_portage_use_git
+  _emerge_portage_mirrors
+  _emerge_portage_sync
+  _emerge_portage_package_accept_keywords
+}
+package_emerge_update() {
+  _emerge_portage_sync
+  log_info "updating world packages"
+  _package_emerge_cmd --newuse -uD world "$@"
+  log_info "updated world packages"
+  if [ -n "$optn_install_gentoo_depclean" ]; then
+    log_info "running depclean"
+    _package_emerge_cmd $emerge_options --depclean $@
+    log_info "depclean completed"
+  fi
+}
+emerge_package_bootstrap_is_package_available() {
+  return 0
+}
+_emerge_portage_setup_chroot_mounts_with_root() {
+  [ "$APP_PLATFORM_ROOT" = "/" ] && return
+  sudo_run mkdir -p $APP_PLATFORM_ROOT/dev $APP_PLATFORM_ROOT/run $APP_PLATFORM_ROOT/sys $APP_PLATFORM_ROOT/proc $APP_PLATFORM_ROOT/var/db/repos
+  _emerge_portage_mount_rbind dev
+  _emerge_portage_mount_rbind run
+  _emerge_portage_mount_rbind sys
+  sudo_run mount --types proc /proc $APP_PLATFORM_ROOT/proc
+  [ -e /var/db/repos ] && sudo_run mount --bind /var/db/repos $APP_PLATFORM_ROOT/var/db/repos
+}
+_emerge_portage_setup_chroot_mounts_cleanup() {
+  [ "$APP_PLATFORM_ROOT" = "/" ] && return
+  sudo_run umount -R $APP_PLATFORM_ROOT/dev $APP_PLATFORM_ROOT/run $APP_PLATFORM_ROOT/sys $APP_PLATFORM_ROOT/proc $APP_PLATFORM_ROOT/var/db/repos
+}
+_emerge_portage_mount_rbind() {
+  local mount_point=$1
+  sudo_run mount --rbind /$mount_point $APP_PLATFORM_ROOT/$mount_point
+  sudo_run mount --make-rslave $APP_PLATFORM_ROOT/$mount_point
+}
+mask_bootstrap() {
+  :
+}
+mask_install() {
+  _utils_portage_install_file package.mask $1
+}
+mask_uninstall() {
+  _utils_portage_uninstall_file package.mask $1
+}
+mask_is_installed() {
+  _utils_portage_is_installed package.mask $1
+}
+mask_enabled() {
+  return 0
+}
+mask_is_file() {
+  return 0
+}
+package_accept_keywords_bootstrap() {
+  :
+}
+package_accept_keywords_install() {
+  _utils_portage_install_file package.accept_keywords $1
+}
+package_accept_keywords_uninstall() {
+  _utils_portage_uninstall_file package.accept_keywords $1
+}
+package_accept_keywords_is_installed() {
+  _utils_portage_is_installed package.accept_keywords $1
+}
+package_accept_keywords_enabled() {
+  return 0
+}
+package_accept_keywords_is_file() {
+  return 0
+}
+package_license_bootstrap() {
+  :
+}
+package_license_install() {
+  _utils_portage_install_file package.license $1
+}
+package_license_uninstall() {
+  _utils_portage_uninstall_file package.license $1
+}
+package_license_is_installed() {
+  _utils_portage_is_installed package.license $1
+}
+package_license_enabled() {
+  return 0
+}
+package_license_is_file() {
+  return 0
+}
+package_use_bootstrap() {
+  :
+}
+package_use_install() {
+  _utils_portage_install_file package.use $1
+}
+package_use_uninstall() {
+  _utils_portage_uninstall_file package.use $1
+}
+package_use_is_installed() {
+  _utils_portage_is_installed package.use $1
+}
+package_use_enabled() {
+  return 0
+}
+package_use_is_file() {
+  return 0
+}
+use_bootstrap() {
+  :
+}
+use_install() {
+  local _name_suffix=$(_utils_get_feature_name $1)
+  printf '# app.%s%s\n' $target_application_name "$_name_suffix" >>/etc/portage/make.conf
+  printf 'USE="$USE %s"\n' "$(cat $1)" >>/etc/portage/make.conf
+  unset _name_suffix
+}
+use_uninstall() {
+  local _name_suffix=$(_utils_get_feature_name $1)
+  $GNU_SED -i "s/ app.$target_application_name${_name_suffix}/ /" /etc/portage/make.conf
+  unset _name_suffix
+}
+use_is_installed() {
+  local _name_suffix=$(_utils_get_feature_name $1)
+  grep -qm1 " # app.$target_application_name${_name_suffix}" /etc/portage/make.conf
+  unset _name_suffix
+}
+use_enabled() {
+  return 0
+}
+use_is_file() {
+  return 0
+}
+app_default_bootstrap() {
+  :
+}
+app_default_install() {
+  local _desktop=$1
+  local _file_type=$2
+  if [ -n "$USER" ]; then
+    sudo_user="$USER" sudo_run xdg-mime default "$_desktop.desktop" "$_file_type"
+    local _result=$?
+    unset _desktop _file_type
+    return $_result
+  fi
+  xdg-mime default "$_desktop.desktop" "$_file_type"
+  local _result=$?
+  unset _desktop _file_type
+  return $_result
+}
+app_default_uninstall() {
+  :
+}
+app_default_is_installed() {
+  :
+}
+app_default_enabled() {
+  return 0
+}
+_npm_bootstrap_pre() {
+  case $APP_PLATFORM_SUB_PLATFORM in
+  Gentoo)
+    local _use_flag_file=/tmp/install-gentoo-npm.use
+    printf '%s npm\n' $NPM_PACKAGE >$_use_flag_file
+    package_use_install $_use_flag_file
+    rm -f $_use_flag_file
+    unset _use_flag_file
+    ;;
+  esac
+}
+user_bootstrap() {
+  log_detail "bootstrapping user module"
+  sudo_run mkdir -p /root/.ssh/socket
+  sudo_run chmod -R 700 /root/.ssh/socket
+  app-install configuration
+  log_detail "bootstrapped user module"
+}
+user_install() {
+  _users_add "$1"
+}
+user_uninstall() {
+  . "$1"
+  validation_require "$username" "username"
+  sudo_run userdel $username
+}
+_users_add_argument() {
+  local _option=$1
+  local _value=$2
+  [ -n "$_value" ] && user_options="$user_options $_option $_value"
+}
+_users_add() {
+  . $1
+  log_add_context $username
+  if [ "$username" != "root" ]; then
+    getent passwd $username >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      log_info "user already exists"
+      [ -n "$home" ] && {
+        log_info "setting user home: $home"
+        sudo_run usermod -m -d $home $username
+      }
+    else
+      log_info "add user: $1: $username"
+      user_options="-m"
+      _users_add_argument "-g" "$gid"
+      _users_add_argument "-G" "$grouplist"
+      _users_add_argument "-s" "$shell"
+      _users_add_argument "-u" "$uid"
+      _users_add_argument "-p" "$password"
+      sudo_run useradd $user_options $username
+    fi
+  else
+    [ -n "$shell" ] && {
+      log_info "setting shell to $shell"
+      sudo_run chsh -s "$shell"
+    }
+    if [ -n "$password" ]; then
+      log_info "setting password"
+      sudo_run usermod -p "$_password" $username
+    fi
+  fi
+  _users_configure
+  unset user_options username gid grouplist shell uid password system
+  log_remove_context
+}
+_users_configure() {
+  _user_home=$(getent passwd $username | cut -d: -f6)
+  [ -z "$_user_home" ] || [ "$_user_home" = "/" ] && {
+    log_warn "user home is unset"
+    return 1
+  }
+  _ssh_prepare_ssh_conf $_user_home $username
+  local _original_pwd=$PWD
+  cd /tmp
+  if [ -n "$system" ]; then
+    log_warn "$username is a system user, bypassing configuration"
+  else
+    local ohome=$HOME
+    export backup_ssh=1
+    export optn_git_mirror=$optn_git_mirror
+    export http_proxy="$http_proxy"
+    export https_proxy="$https_proxy"
+    export sudo_user=$username
+    export warn_on_error=1
+    export HOME=$_user_home
+    export sudo_options="--preserve-env=optn_git_mirror,backup_ssh,http_proxy,https_proxy,sudo_user,warn_on_error,HOME -H"
+    exec_wrap sudo_run conf restore || _user_configure_debug
+    HOME=$ohome
+  fi
+  [ "$username" != "root" ] && {
+    sudo_run chown -R $username:$username $_user_home
+  }
+  cd $_original_pwd
+  unset _user_home _original_pwd
+}
+_user_configure_debug() {
+  log_warn "error restoring configuration for $username"
+  cat $_user_home/.ssh/id_*.pub
+  cat $_user_home/.ssh/authorized_keys
+  cat $_user_home/.ssh/config
+}
+_utils_get_feature_name() {
+  local _path=$1
+  case $_path in
+  *feature*)
+    printf '%s' "$_path" | sed \
+      -e 's/^.*\/feature\///' \
+      -e 's/.feature\/.*//' \
+      -e 's/^/./' \
+      -e 's/\//./g'
+    ;;
+  *)
+    printf ''
+    ;;
+  esac
+  unset _path
+}
+_utils_portage_install_file() {
+  local _portage_type=$1
+  local _file=$2
+  sudo_run mkdir -p /etc/portage/$_portage_type
+  sudo_run cp $_file /etc/portage/$_portage_type/app.$target_application_name$(_utils_get_feature_name $_file)
+  unset _portage_type _file
+}
+_utils_portage_uninstall_file() {
+  local _portage_type=$1
+  local _file=$2
+  sudo_run rm -f /etc/portage/$_portage_type/app.$target_application_name$(_utils_get_feature_name $_file)
+  unset _portage_type _file
+}
+_utils_portage_is_installed() {
+  local _portage_type=$1
+  local _file=$2
+  [ -e /etc/portage/$_portage_type/app.$target_application_name$(_utils_get_feature_name $_file) ]
+  unset _portage_type _file
+}
+_requires_reboot() {
+  package_${linux_package_manager}_requires_reboot
+}
+_package_install_do() {
+  package_${linux_package_manager}_install_do "$@"
+}
+_package_uninstall_do() {
+  package_${linux_package_manager}_uninstall_do "$@"
+}
+_package_is_installed() {
+  package_${linux_package_manager}_is_installed "$@"
+}
+package_bootstrap() {
+  package_${linux_package_manager}_bootstrap "$@"
+}
+package_update() {
+  log_detail "updating packages via ${linux_package_manager}"
+  package_${linux_package_manager}_update "$@"
+}
+package_pacman_requires_reboot() {
+  local datestamp=$(date +%Y-%m-%d)
+  $GNU_GREP -Pcqm1 \
+    "\[${datestamp}T[\d]{2}:[\\d]{2}:[\\d]{2}-[\\d]{4}\] \[ALPM\] upgraded ($conf_system_maintenance_reboot_packages)" \
+    /var/log/pacman.log
+}
+package_pacman_install_do() {
+  pacman_flags="-Sqyu --noconfirm --noprogressbar"
+  _pacman_cmd "$@"
+  local status=$?
+  unset pacman_flags
+  return $status
+}
+package_pacman_uninstall_do() {
+  pacman_flags="-Rs --noconfirm --noprogressbar"
+  _pacman_cmd "$@"
+  local status=$?
+  unset pacman_flags
+  return $status
+}
+package_pacman_is_installed() {
+  pacman_flags="-Q"
+  sudo_not_required=1
+  _pacman_cmd "$@"
+  local status=$?
+  unset pacman_flags sudo_not_required
+  return $status
+}
+package_pacman_bootstrap() {
+  _pacman_setup_keys
+}
+package_pacman_update() {
+  pacman_flags="-Syuq --noconfirm --noprogressbar"
+  _pacman_cmd "$@"
+  unset pacman_flags
+  aur_package_update
+}
+_pacman_cmd() {
+  local log_target=/dev/null
+  [ -n "$log_logfile" ] && log_target=$log_logfile
+  local sudo_prefix=sudo_run
+  [ -n "$sudo_not_required" ] && unset sudo_prefix
+  [ "$APP_PLATFORM_ROOT" = "/" ] && {
+    $sudo_prefix pacman $pacman_flags "$@" >>$log_target 2>&1
+    return
+  }
+  [ "$_container_type" = "incus" ] && {
+    log_warn "detected incus container, using incus exec"
+    sudo_run incus exec $_container_name -- pacman $pacman_flags "$@" >>$log_target 2>&1
+    return
+  }
+  $sudo_prefix pacman $pacman_flags --sysroot $APP_PLATFORM_ROOT "$@" >>$log_target 2>&1
+}
+_pacman_setup_keys() {
+  [ -e $APP_PLATFORM_ROOT/etc/pacman.d/gnupg ] && {
+    log_debug "pacman keys already initialized"
+    return
+  }
+  sudo_run mkdir -p $APP_PLATFORM_ROOT/etc/pacman.d/gnupg
+  sudo_run pacman-key --init
+  sudo_run pacman-key --populate archlinux cachyos
+}
+pacman_package_bootstrap_is_package_available() {
+  return 0
+}
+_emerge_portage_use_git() {
+  [ -e $APP_PLATFORM_ROOT/etc/portage/repos.conf/gentoo.conf ] && return
+  _emerge_portage_setup_gentoo_git_workspace_conf
+  [ -e $APP_PLATFORM_ROOT/var/db/repos/gentoo/.git ] && {
+    log_detail "gentoo workspace already exists"
+    return
+  }
+  _emerge_portage_setup_gentoo_git_workspace
+}
+_emerge_portage_setup_gentoo_git_workspace_conf() {
+  rm -rf $APP_PLATFORM_ROOT/etc/portage/repos.conf && mkdir -p $APP_PLATFORM_ROOT/etc/portage/repos.conf
+  printf '
+  [DEFAULT]
+  main-repo = gentoo
+  [gentoo]
+  location = /var/db/repos/gentoo
+  sync-type = git
+  sync-uri = https://github.com/gentoo-mirror/gentoo.git
+  auto-sync = yes
+  sync-git-verify-commit-signature = yes
+  sync-openpgp-key-path = /usr/share/openpgp-keys/gentoo-release.asc
+  ' >$APP_PLATFORM_ROOT/etc/portage/repos.conf/gentoo.conf
+}
+_emerge_portage_setup_gentoo_git_workspace() {
+  log_detail "cleaning $APP_PLATFORM_ROOT/var/db/repos/gentoo"
+  rm -rf $APP_PLATFORM_ROOT/var/db/repos/gentoo/*
+  log_warn "cloning gentoo repo @ /var/db/repos/gentoo"
+  git clone --depth 1 https://github.com/gentoo-mirror/gentoo.git $APP_PLATFORM_ROOT/var/db/repos/gentoo
+  log_warn "cloned gentoo repo @ /var/db/repos/gentoo"
+}
+_emerge_portage_mirrors() {
+  [ "$APP_PLATFORM_ROOT" = "/" ] && return
+  [ ! -e /etc/portage/make.conf ] && return
+  grep -qm1 '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf || return
+  grep -qm1 '^GENTOO_MIRRORS=.*$' $APP_PLATFORM_ROOT/etc/portage/make.conf && return
+  printf '# mirror from host\n' >>$APP_PLATFORM_ROOT/etc/portage/make.conf
+  grep '^GENTOO_MIRRORS=.*$' /etc/portage/make.conf >>$APP_PLATFORM_ROOT/etc/portage/make.conf
+}
+_emerge_portage_package_accept_keywords() {
+  [ -e $APP_PLATFORM_ROOT/etc/portage/package.accept_keywords/platform ] && return
+  sudo_run mkdir -p $APP_PLATFORM_ROOT/etc/portage/package.accept_keywords /etc/portage/package.accept_keywords
+  printf '%s\n' "$emerge_PLATFORM_PACKAGES_accept_keywords" >>$APP_PLATFORM_ROOT/etc/portage/package.accept_keywords/platform
+  printf "$emerge_PLATFORM_PACKAGES_accept_keywords" >>/etc/portage/package.accept_keywords/platform
+}
+_emerge_portage_sync() {
+  [ -n "$emerge_bootstrap_install" ] && return 1
+  emerge_sync_file=$APP_PLATFORM_ROOT/var/cache/.portage.sync.time
+  _emerge_portage_synced && {
+    log_debug "portage was already synced today"
+    return
+  }
+  mkdir -p $(dirname $emerge_sync_file)
+  _package_emerge_cmd $emerge_options --sync && {
+    date +%s >"$emerge_sync_file"
+  }
+}
+_emerge_portage_synced() {
+  [ ! -e $emerge_sync_file ] && return 1
+  local last_synced=$(head -1 $emerge_sync_file)
+  local current_time=$(date +%s)
+  [ -z "$last_synced" ] && return 1
+  [ $(($current_time - $last_synced)) -le $emerge_portage_refresh_period ]
+}
+service_install() {
+  _install_filter_file_callback $1 _systemctl_enable
+}
+_systemctl_enable() {
+  sudo_run systemctl enable --now "$@"
+}
+service_uninstall() {
+  _install_filter_file_callback $1 _systemctl_disable
+}
+_systemctl_disable() {
+  sudo_run systemctl disable --now "$@"
+}
+_ssh_prepare_ssh_conf() {
+  local _path=$1
+  local _user=$2
+  sudo_run mkdir -p "$_path/.ssh/socket"
+  sudo_run chmod 700 "$_path/.ssh/socket"
+  printf 'StrictHostKeyChecking no\n' >>"$_path/.ssh/config"
+  _ssh_init_bastion_host "$_path"
+  [ "$_user" = "root" ] && return
+  if [ -e /root/.ssh ]; then
+    log_info "copying host ssh -> $_path/.ssh"
+    sudo_run cp /root/.ssh/id* /root/.ssh/config /root/.ssh/known_hosts "$_path/.ssh"
+  fi
+  if [ -e /root/.config/walterjwhite/shell ]; then
+    log_info "copying walterjwhite conf -> $_path/.config/walterjwhite/shell"
+    sudo_run rm -rf "$_path/.config/walterjwhite/shell" && sudo_run mkdir -p "$_path/.config/walterjwhite"
+    sudo_run cp -r /root/.config/walterjwhite/shell "$_path/.config/walterjwhite/shell"
+  else
+    log_warn "no walterjwhite conf found"
+    find /tmp -maxdepth 1
+  fi
+  sudo_run chown -R "$_user:$_user" "$_path"
+}
+_ssh_init_bastion_host() {
+  local _path=$1
+  [ -z "$bastion_host" ] && return 1
+  log_info "setting up SSH Bastion host: $_path"
+  _ssh_bastion_host "$_path"
+  _ssh_bastion_proxies "$_path"
+  chmod 600 "$_path/.ssh/config"
+}
+_ssh_bastion_host() {
+  local _path=$1
+  log_info "setting up SSH Bastion host: $_path"
+  printf 'Host host-proxy\n' >>"$_path/.ssh/config"
+  printf ' Hostname %s\n' "$bastion_host" >>"$_path/.ssh/config"
+  printf ' User root\n' >>"$_path/.ssh/config"
+}
+_ssh_bastion_proxies() {
+  local _path=$1
+  for bastion_hostname in $(printf '%s' "$bastion_hostnames" | sort -u); do
+    _ssh_bastion_proxy "$_path"
+  done
+}
+_ssh_bastion_proxy() {
+  local _path=$1
+  log_info "setting up SSH host proxy: $_path"
+  printf 'Host %s\n' "$bastion_hostname" >>"$_path/.ssh/config"
+  printf ' ProxyJump host-proxy:%s\n' "$bastion_port" >>"$_path/.ssh/config"
+  printf ' User root\n' >>"$_path/.ssh/config"
+}
+readonly APPLICATION_NAME=init
+readonly APPLICATION_START_TIME=$(date +%s)
+readonly APPLICATION_CMD=$(basename $0)
+readonly APP_PLATFORM_ARCHITECTURE=$(uname -m)
+readonly APP_PLATFORM_OS_NAME=$(uname)
+case "$APP_PLATFORM_OS_NAME" in
+Darwin)
+  readonly APP_PLATFORM_PLATFORM="Apple"
+  ;;
+MINGW64_NT-* | MSYS_NT-*)
+  readonly APP_PLATFORM_PLATFORM="Windows"
+  ;;
+*)
+  readonly APP_PLATFORM_PLATFORM="$APP_PLATFORM_OS_NAME"
+  ;;
+esac
+: ${APP_PLATFORM_ROOT:=/}
+APP_PLATFORM_ROOT=$(realpath -m $APP_PLATFORM_ROOT)
+[ "$HOME" = "/" ] || [ -z "$HOME" ] && HOME=/root
+readonly RUN_PATH=/tmp/$USER/walterjwhite/app
+readonly APP_CONTEXT="default"
+readonly APPLICATION_CONTEXT_GROUP=$RUN_PATH/$APP_CONTEXT
+readonly APPLICATION_CMD_DIR=$APPLICATION_CONTEXT_GROUP/$APPLICATION_NAME/$APPLICATION_CMD
+readonly APPLICATION_PIPE=$APPLICATION_CMD_DIR/$$
+readonly APPLICATION_PIPE_DIR=$(dirname $APPLICATION_PIPE)
+case $0 in
+*${HOME}*)
+  readonly APP_PLATFORM_PATH=$(printf '%s' "$APP_PLATFORM_ROOT/$HOME/.local/walterjwhite" | tr -s /)
+  readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT${HOME}/.config/walterjwhite/shell | tr -s /)
+  readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT${HOME}/.local/bin | tr -s /)
+  ;;
+*)
+  readonly APP_PLATFORM_PATH=$(printf '%s' "$APP_PLATFORM_ROOT/usr/local/walterjwhite" | tr -s /)
+  readonly APP_PLATFORM_CONFIG_PATH=$(printf '%s' $APP_PLATFORM_ROOT/usr/local/etc/walterjwhite/shell | tr -s /)
+  readonly APP_PLATFORM_BIN_PATH=$(printf '%s' $APP_PLATFORM_ROOT/usr/local/bin | tr -s /)
+  ;;
+esac
+readonly DATA_PATH=$(printf '%s' ${APP_PLATFORM_ROOT}$HOME/.data | tr -s /)
+readonly APP_PLATFORM_DATA_PATH=$DATA_PATH
+readonly APP_DATA_PATH=$APP_PLATFORM_DATA_PATH/$APPLICATION_NAME
+readonly APP_PATH=$APP_PLATFORM_PATH/apps/$APPLICATION_NAME
+readonly APP_CONFIG_PATH=$APP_PLATFORM_CONFIG_PATH/$APPLICATION_NAME
+readonly EXTENSIONS_PATH=$APP_PLATFORM_PATH/extensions
+readonly GNU_GREP=grep
+readonly GNU_SED=sed
+readonly _TAR_ARGS=" -f - "
+readonly _SUDO_CMD="sudo"
+readonly EMERGE_FLAGS="-q --quiet-build --quiet-fail"
+readonly IO_STAT_ARGS='-c %a'
+readonly APP_PLATFORM_SUB_PLATFORM=$($GNU_GREP -Ph "^NAME=" $APP_PLATFORM_ROOT/etc/os-release 2>/dev/null | sed -e 's/^NAME=//' -e 's/ Linux//' -e 's/"//g')
+case $APP_PLATFORM_SUB_PLATFORM in
+Arch | CachyOS)
+  linux_package_manager=pacman
+  case $APP_PLATFORM_SUB_PLATFORM in
+  CachyOS)
+    readonly APP_PLATFORM_DERIVED_SUB_PLATFORM=Arch
+    ;;
+  esac
+  readonly PLATFORM_PACKAGES="bc beep curl expect git shellcheck sudo shfmt"
+  readonly NPM_PACKAGE="npm"
+  readonly RUST_PACKAGE="rust"
+  readonly PYPI_PACKAGE="python"
+  readonly GO_PACKAGE="go gcc"
+  readonly EXPECT_PACKAGE="expect"
+  conf_system_maintenance_reboot_packages="linux-cachyos-lts-zfs|linux-cachyos-zfs|linux-cachyos|linux-cachyos-lts|linux-firmware"
+  ;;
+Gentoo)
+  linux_package_manager=emerge
+  readonly PLATFORM_PACKAGES="dev-vcs/git dev-tcltk/expect net-misc/curl dev-util/sh app-admin/sudo app-misc/beep app-portage/gentoolkit"
+  readonly PLATFORM_PACKAGES_ACCEPT_KEYWORDS="dev-util/sh ~amd64"
+  readonly NPM_PACKAGE="net-libs/nodejs"
+  readonly RUST_PACKAGE="dev-lang/rust"
+  readonly PYPI_PACKAGE="dev-lang/python"
+  readonly GO_PACKAGE="dev-lang/go"
+  readonly EXPECT_PACKAGE="dev-tcltk/expect"
+  conf_system_maintenance_reboot_packages="gentoo-kernel"
+  ;;
+esac
+readonly APPLICATION_METADATA_PATH=$APP_PATH/.metadata
+readonly ARTIFACTS_BUILD_PATH=/tmp/$USER/walterjwhite/$APPLICATION_NAME/artifacts
+readonly REGISTRY_PATH=$APP_DATA_PATH/registry
+readonly REQUIRED_ARGUMENTS="_APPLICATIONS:Applications to remove"
+_metadata_load
+_include_optional beep context init logging net paths platform wait
+: ${beep_enabled:=0}
+: ${conf_log_beep_timeout:=5}
+: ${conf_log_beep_err:='-f 1000 -l 1000'}
+: ${conf_log_beep_alrt:='-f 1000 -l 100 -n -f 1000 -l 100'}
+: ${conf_log_beep_scs:='-f 1600 -l 100'}
+: ${conf_log_beep_wrn:='-f 1500 -l 100 -n -f 1000'}
+: ${conf_log_beep_info:=''}
+: ${conf_log_beep_detail:=''}
+: ${conf_log_beep_debug:=''}
+: ${conf_log_beep_stdin:='-f 1000 -l 100 -n -f 1400'}
+: ${conf_log_sudo_beep_tone:='-f 1000 -l 100 -n -f 1400 -l 50 -n -f 1200'}
+: ${APP_CONTEXT:=$_CONSOLE_CONTEXT_ID}
+: ${APP_CONTEXT:=default}
+CONF_LOG_HEADER="##################################################"
+: ${conf_log_c_err:="1;31"}
+: ${conf_log_c_scs:="1;32"}
+: ${conf_log_c_wrn:="1;33"}
+: ${conf_log_c_info:="1;36"}
+: ${conf_log_c_detail:="1;0;36"}
+: ${conf_log_c_debug:="1;35"}
+: ${conf_log_c_stdin:="1;34"}
+: ${conf_log_date_format:="%y/%m/%d|%h:%m:%s"}
+: ${conf_log_date_time_format:="%y/%m/%d %h:%m:%s"}
+: ${conf_log_level:=2}
+: ${console_log_fd:=2}
+: ${conf_log_indent:="  "}
+: ${conf_log_validation_function:=warn}
+: ${conf_log_waiter_level:=debug}
+: ${conf_log_feature_timeout_error_level:=warn}
+: ${conf_log_long_running_cmd:=30}
+: ${conf_log_long_running_cmd_lines:=1000}
+: ${conf_log_date_time_to_console:=0}
+command -v mail >/dev/null 2>&1 || conf_log_mail_disabled=1
+[ -n "${GITHUB_ACTIONS}" ] || [ -n "${CI}" ] && {
+  NON_INTERACTIVE=1
+  NO_LOG_FILE=1
+}
+: ${conf_network_test_timeout:=5}
+: ${conf_network_test_targets:="http://connectivity-check.ubuntu.com http://example.org http://www.google.com http://telehack.com http://lxer.com"}
+: ${curl_flags:="--connect-timeout 5 --max-time 30"}
+: ${emerge_portage_refresh_period:=3600}
+: ${pacman_refresh_period:=3600}
+: ${pacman_bootstrap_install:=}
+: ${conf_wait_interval:=30}
+: ${conf_install_no_pager:=0}
+: ${conf_install_app_build_depth:=3}
+: ${conf_install_step_timeout:=300}
+: ${conf_install_iostat_duration:=5}
+: ${conf_init_app_registries:="default|https://github.com/walterjwhite/app.registry.git"}
+: ${conf_install_auto_update_packages:=0}
+: ${conf_clean_app_registry_workspace:=1}
+: ${conf_install_random_default_length:=8}
+[ "$conf_install_no_pager" = "1" ] && PAGER=cat
+: ${conf_install_checksum_cmd:="sha256 -q"}
+: ${conf_install_remove_unused_functions:=1}
+command -v shfmt >/dev/null 2>&1 || _optn_install_disable_shfmt=1
+case $APP_PLATFORM_PLATFORM in
+Apple)
+  : ${conf_install_max_concurrent_jobs:=$(getconf _NPROCESSORS_ONLN)}
+  ;;
+*)
+  : ${conf_install_max_concurrent_jobs:=$(nproc)}
+  ;;
+esac
+: ${conf_install_app_registry_timeout:=5}
+#
+#
+: ${no_remove_unused_functions:=}
+: ${no_remove_unused_variables:=}
+#
+#
+#
+#
+: ${remove_unused_variables_exclude_patterns:=}
+: ${no_check_missing_functions:=}
+trap '_exit_on_hup $LINENO' 1
+trap '_exit_on_int $LINENO' 2
+trap '_exit_on_quit $LINENO' 3
+trap '_exit_on_illegal $LINENO' 4
+trap '_exit_on_abort $LINENO' 6
+trap '_exit_on_alarm $LINENO' 14
+trap '_exit_on_term $LINENO' 15
+trap exit_with_success 0
+_processes_is_backgrounded && backgrounded=1
+[ -n "$NON_INTERACTIVE" ] && {
+  [ -z "$NO_LOG_FILE" ] && {
+    [ -z "$log_logfile" ] && log_logfile="$APP_DATA_PATH/log/$(date +%Y%m%d-%H%M%S).log"
+  }
+}
+log_init
+for _ARG in "$@"; do
+  case $_ARG in
+  -h | --help)
+    _help_print_and_exit
+    ;;
+  -w=*)
+    wait_waiter_pid="${1#*=}"
+    shift
+    ;;
+  -w)
+    readonly WAIT_WAITEE=1
+    shift
+    ;;
+  -conf-* | -[a-z0-9][a-z0-9][a-z0-9]*)
+    _configuration_name=${_ARG#*-}
+    _configuration_name=${_configuration_name%%=*}
+    printf '%s' "$_configuration_name" | grep -cqm1 '_$' && {
+      _configuration_name=${_configuration_name%%_*}
+      printf '%s' "$_configuration_name" | grep -cqm1 '^conf' && {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/-/-$APPLICATION_NAME-/" -e 's/--/-/')
+      } || {
+        _configuration_name=$(printf '%s' "$_configuration_name" | sed -e "s/^/$APPLICATION_NAME-/" -e 's/--/-/')
+      }
+    }
+    _configuration_name=$(printf '%s' $_configuration_name | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+    case "$_ARG" in
+    *-*)
+      _configuration_value=${_ARG#*=}
+      ;;
+    *)
+      _configuration_value=1
+      ;;
+    esac
+    eval "${_configuration_name}=\"$_configuration_value\""
+    unset _configuration_name _configuration_value
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+log_enable_debug_mode
+readonly ACTUAL_ARGUMENT_COUNT=$#
+readonly DISCOVERED_ARGUMENT_COUNT=$(printf '%s' "$REQUIRED_ARGUMENTS" | sed -e 's/$/\n/' | tr '|' '\n' | wc -l | awk {'print$1'})
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && log_warn "expecting $DISCOVERED_ARGUMENT_COUNT, received $# arguments"
+arg_index=1
+while [ $arg_index -le $DISCOVERED_ARGUMENT_COUNT ]; do
+  _argument_name=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/:.*$//')
+  _argument_message=$(printf '%s' "$REQUIRED_ARGUMENTS" | tr '|' '\n' | sed -n ${arg_index}p | sed -e 's/^.*://')
+  if [ -z "$1" ]; then
+    log_warn "$arg_index:$_argument_message was not provided"
+  else
+    log_debug "$arg_index:$_argument_name=$1"
+    eval "$_argument_name=\"$1\""
+    shift
+  fi
+  arg_index=$(($arg_index + 1))
+done
+[ $ACTUAL_ARGUMENT_COUNT -lt $DISCOVERED_ARGUMENT_COUNT ] && exit_with_error "missing arguments"
+unset arg_index _argument_name _argument_message
+readonly DISCOVERED_REQUIRED_ARGUMENTS="$REQUIRED_ARGUMENTS"
+log_debug "remaining args: $*"
+wait_waitee_init
+wait_waiter
+_settings_init
+for target_application_name in $_APPLICATIONS; do
+  _settings_application
+  uninstall_app
+done

@@ -1,0 +1,13 @@
+agent-persona-worker - Agent Persona Worker
+USAGE:
+    agent-persona-worker <agent-persona>
+DESCRIPTION:
+    Execute agent task with specific persona configuration.
+    Creates job and delegates to agent-worker for execution.
+ARGUMENTS:
+    agent-persona
+        Agent persona configuration to use (required)
+EXAMPLES:
+    agent-persona-worker developer
+    agent-persona-worker tester
+    agent-persona-worker analyst

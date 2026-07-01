@@ -1,0 +1,121 @@
+#!/bin/sh
+_extract_extract() {
+  if [ $# -lt 2 ]; then
+    log_warn "expecting 2 arguments, source file, and target to extract to"
+    return 1
+  fi
+  log_info "extracting $1"
+  [ -n "$clean" ] && {
+    rm -rf $2
+    mkdir -p $2
+  }
+  case $1 in
+  *.tar.gz | *.tgz | *.tar.bz2 | *.tbz2 | *.tar.xz)
+    tar xf $1 -C $2
+    ;;
+  *.zip)
+    unzip -q $1 -d $2
+    ;;
+  *)
+    log_warn "extension unsupported - $1"
+    return 2
+    ;;
+  esac
+}
+_download_fetch() {
+  mkdir -p "$TARGET_APP_PLATFORM_CACHE_PATH"
+  local _cached_filename
+  if [ $# -gt 1 ]; then
+    _cached_filename="$2"
+  else
+    _cached_filename=$(basename "$1" | sed -e 's/?.*$//')
+  fi
+  download_file="$TARGET_APP_PLATFORM_CACHE_PATH/$_cached_filename"
+  [ -z "$no_cache" ] && {
+    [ -e "$download_file" ] && {
+      log_detail "$1 already downloaded to: $download_file"
+      return
+    }
+  }
+  if [ -z "$download_disabled" ]; then
+    log_info "downloading $1 -> $download_file"
+    curl $curl_flags -o "$download_file" -sL "$1"
+  else
+    _stdin_continue_if "Please manually download: $1 and place it in $download_file" "Y/n"
+  fi
+}
+_download_install_file() {
+  warn_on_error=1 validation_require "$1" "1 (_download_install_file) target filename" || return 1
+  warn_on_error=1 validation_require "$download_file" "download_file" || return 1
+  : ${_install_file_chmod:=444}
+  log_info "installing $download_file -> $1"
+  if [ "${INSTALL_TARGET:-USER}" = "SYSTEM" ]; then
+    sudo_run mkdir -p $(dirname $1)
+    sudo_run cp "$download_file" $1
+    sudo_run chmod $_install_file_chmod $1
+  else
+    mkdir -p $(dirname $1)
+    cp "$download_file" $1
+    chmod $_install_file_chmod $1
+  fi
+  unset download_file
+  [ -e $1 ] || {
+    log_warn "failed to install file to: $1"
+    return 1
+  }
+  _install_record_path "$1"
+}
+_download_verify() {
+  shasum -a 512 -c $1 >/dev/null 2>&1
+}
+readonly ANTIGRAVITY_BASE_URL="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app"
+_get_latest_antigravity_version_info() {
+    antigravity_platform=$(printf '%s' $APP_PLATFORM_PLATFORM | tr '[[:upper:]]' '[[:lower:]]')
+    case $antigravity_platform in
+        apple) antigravity_platform=darwin ;;
+        linux) ;;
+        *) log_warn "unsupported platform: $antigravity_platform"; return 1 ;;
+    esac
+    case $APP_PLATFORM_ARCHITECTURE in
+        x86_64 | amd64) antigravity_architecture=amd64 ;;
+        arm64 | aarch64) antigravity_architecture="arm64" ;;
+        *) log_warn "unsupported architecture: $APP_PLATFORM_ARCHITECTURE"; return 2 ;;
+    esac
+    _get_antigravity_manifest
+    latest_antigravity_version=$(grep -m1 '"version"' "$antigravity_manifest" | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    latest_antigravity_url=$(grep -m1 '"url"' "$antigravity_manifest" | sed 's/.*"url": *"\([^"]*\)".*/\1/')
+    latest_antigravity_checksum=$(grep -m1 '"sha512"' "$antigravity_manifest" | sed 's/.*"sha512": *"\([^"]*\)".*/\1/')
+}
+_get_antigravity_manifest() {
+    local antigravity_manifest_url="$ANTIGRAVITY_BASE_URL/manifests/${antigravity_platform}_${antigravity_architecture}.json"
+    no_cache=1 _download_fetch "$antigravity_manifest_url" antigravity-${antigravity_platform}_${antigravity_architecture}.json
+    antigravity_manifest=$download_file
+}
+_get_installed_antigravity_version() {
+    if [ -e $TARGET_APP_PLATFORM_BIN_PATH/antigravity-cli ]; then
+        $TARGET_APP_PLATFORM_BIN_PATH/antigravity-cli --version | cut -d' ' -f2
+    fi
+}
+_antigravity_install() {
+    versioned_filename="antigravitycli-$latest_antigravity_version-$APP_PLATFORM_ARCHITECTURE-$(basename $latest_antigravity_url)"
+    _download_fetch $latest_antigravity_url "$versioned_filename"
+    local _dest="$TARGET_APP_PLATFORM_BIN_PATH/antigravity-cli"
+    cd /tmp
+    versioned_extract_dir="/tmp/antigravitycli-$latest_antigravity_version"
+    mkdir -p "$versioned_extract_dir"
+    _extract_extract $download_file "$versioned_extract_dir"
+    exit_defer rm -rf "$versioned_extract_dir"
+    mv "$versioned_extract_dir/antigravity" "$_dest"
+    chmod 755 "$_dest"
+    _install_record_path "$_dest"
+}
+_antigravity_is_latest_version() {
+    local installed_antigravity_version=$(_get_installed_antigravity_version)
+    [ "$installed_antigravity_version" = "$latest_antigravity_version" ]
+}
+_get_latest_antigravity_version_info
+if ! _antigravity_is_latest_version; then
+  _antigravity_install
+else
+  log_detail "latest version of antigravity is already installed: $latest_antigravity_version"
+fi

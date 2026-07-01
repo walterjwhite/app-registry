@@ -1,0 +1,16 @@
+azure-cli - Azure CLI Wrapper
+USAGE:
+    azure-cli [azure-cli-arguments...]
+DESCRIPTION:
+    Azure CLI wrapper that activates Python virtual environment
+    before running Azure CLI commands.
+ARGUMENTS:
+    azure-cli-arguments
+        Any valid Azure CLI arguments
+CONFIGURATION:
+    -conf-dev-azure-venv PATH
+        Path to Azure CLI Python virtual environment
+EXAMPLES:
+    azure-cli login
+    azure-cli group list
+    azure-cli vm create --resource-group myRG --name myVM

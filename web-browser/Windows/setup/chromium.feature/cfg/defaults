@@ -1,0 +1,9 @@
+case $APP_PLATFORM_PLATFORM in
+Linux | FreeBSD)
+  _CONFIGURATION_DIRECTORY=~/.config/chromium
+  ;;
+*)
+  exit_with_error "unsupported platform: $APP_PLATFORM_PLATFORM"
+  ;;
+esac
+_CONFIGURATION_DIRECTORY=~/.config/chromium

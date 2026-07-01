@@ -1,0 +1,25 @@
+when-at - Scheduled Command Execution
+USAGE:
+    when-at -at=TIME [-file=script] [-execute=command] [-cleanup]
+DESCRIPTION:
+    Execute a command at a specified date/time or when criteria is met.
+    Supports various time formats and execution methods.
+OPTIONS:
+    -at=TIME
+        Time to execute (required):
+        - 12:00          - Waits until 12:00 today or next day
+        - 00:00:00       - Waits until 12:00:00 today or next day  
+        - "2025/11/21 00:00:00" - Specific date/time (error if passed)
+    -file=script
+        Script file to execute
+    -execute=command
+        Command with arguments to execute
+    -cleanup
+        Cleanup file on successful execution
+EXAMPLES:
+    when-at -at=12:00 -file=/tmp/test.sh
+    when-at -at=12:00 -execute="sh /tmp/test.sh"
+    when-at -at=12:00 -execute="printf 'hi\n'"
+    when-at -at=00:00:00 -execute="printf hi\n"
+    when-at -at="2025/11/21 00:00:00" -execute="printf hi\n"
+    when-at -at="2025/11/22 00:00:00" -execute="printf hi\n"

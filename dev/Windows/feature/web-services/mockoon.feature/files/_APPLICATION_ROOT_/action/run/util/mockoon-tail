@@ -1,0 +1,10 @@
+#!/bin/sh
+_ESC=$(printf '\033')
+tail -f $_LOG_FILE |
+	sed -u -e "s,\"level\":\"trace\",${_ESC}[34mTRACE${_ESC}[0m,"\
+	-e "s,\"level\":\"debug\",${_ESC}[35mDEBUG${_ESC}[0m,"\
+	-e "s,\"level\":\"info\",${_ESC}[36mINFO${_ESC}[0m,"\
+	-e "s,\"level\":\"warn\",${_ESC}[33mWARN${_ESC}[0m,"\
+	-e "s,\"level\":\"error\",${_ESC}[31mERROR${_ESC}[0m,"\
+    -e "s/,\"[[:alpha:]]*\":\"/ /g"\
+    -e "s/[\"{}]//g"

@@ -1,0 +1,7 @@
+gpath - Git Project Path
+USAGE:
+    gpath
+DESCRIPTION:
+    Show the current project's git path.
+EXAMPLES:
+    gpath

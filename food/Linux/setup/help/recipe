@@ -1,0 +1,8 @@
+recipe - Recipe Display
+USAGE:
+    recipe
+DESCRIPTION:
+    Display recipes from the current directory. Shows the main recipe
+    and any additional .recipe files found in the current directory.
+EXAMPLES:
+    recipe

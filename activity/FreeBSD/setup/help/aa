@@ -1,0 +1,10 @@
+aa - Activity Add
+USAGE:
+    aa
+DESCRIPTION:
+    Record a new activity entry. Prompts for tags and notes.
+INPUT:
+    - Tags separated by '|'
+    - Notes (end with empty line)
+EXAMPLES:
+    aa

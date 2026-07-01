@@ -1,0 +1,12 @@
+mq - Movies Queue
+USAGE:
+    mq <movie-id>
+DESCRIPTION:
+    Queue a movie for trailer download. Downloads all trailers
+    for the specified movie ID and adds to the video queue.
+ARGUMENTS:
+    movie-id
+        ID of the movie to queue (required)
+EXAMPLES:
+    mq abc123
+    mq movie-id-456

@@ -1,0 +1,43 @@
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$ApplicationName
+)
+$ErrorActionPreference = "Stop"
+$ns = "root\ccm\ClientSDK"
+function Escape-SqlString([string]$s) {
+    return $s.Replace("'", "''")
+}
+$escapedName = Escape-SqlString $ApplicationName
+Write-Host "Searching for ConfigMgr Application with name: '$ApplicationName'..."
+$query = @"
+SELECT CI_ID, LocalizedDisplayName
+FROM CCM_Application
+WHERE LocalizedDisplayName = '$escapedName'
+"@
+try {
+    $apps = Get-CimInstance -Namespace $ns -Query $query
+}
+catch {
+    Write-Error "Failed querying CCM_Application via ClientSDK. Is this a ConfigMgr client with ClientSDK enabled? $_"
+    exit 1
+}
+if (-not $apps) {
+    Write-Error "No exact match found on this client for '$ApplicationName'. Try the exact name as shown in Software Center."
+    exit 1
+}
+$ciId = [string]$apps[0].CI_ID
+Write-Host "Match found. CI_ID = $ciId"
+Write-Host "Triggering install..."
+try {
+    $result = Invoke-CimMethod -Namespace $ns -ClassName CCM_ApplicationDeployment -MethodName ExecuteAction -Arguments @{
+        CI_ID  = $ciId
+        Action = 1
+    }
+    Write-Host "Install trigger sent. Result:"
+    $result | Out-String | Write-Host
+}
+catch {
+    Write-Error "Failed to trigger application install. $_"
+    exit 1
+}
+Write-Host "Done. Monitor install status in Software Center."
