@@ -1,0 +1,44 @@
+Conduct a comprehensive migration of the existing shell script codebase to Golang, utilizing reusable packages and modules to enhance maintainability and scalability.
+1. **Code Functionality**
+   - Ensure all shell script functionalities are replicated in Go.
+   - Identify areas that can benefit from Go's concurrency model.
+2. **Reusable Packages and Modules**
+   - Design and implement reusable Go modules for common tasks.
+   - Utilize existing Go libraries where applicable for efficiency.
+3. **Coding Best Practices**
+   - Maintain clean, readable code adhering to Go's conventions.
+   - Implement proper exit_with_error handling and logging throughout.
+   - Validate input and output to ensure robustness.
+1. **Code Review and Analysis**
+   - Analyze the existing shell scripts for functionality and structure.
+   - Document the current logic and identify key modules for migration.
+2. **Package Design**
+   - Create a modular structure for the Go codebase.
+   - Define interfaces and types that facilitate reusability.
+3. **Implementation**
+   - Translate shell script logic into Go.
+   - Use Goroutines and channels for tasks that can run concurrently.
+4. **Testing**
+   - Write unit tests for the new Go modules.
+   - Validate that all functionalities perform as expected.
+5. **Documentation**
+   - Ensure complete documentation for each module and function.
+   - Update any usage guides to reflect the new Go implementations.
+For each migrated component, provide:
+1. **Location**: Path to the new Go package/module
+2. **Functionality**: Brief description of what the code does
+3. **Dependencies**: List any external libraries used
+4. **Testing**: Description of implemented tests
+5. **Documentation**: Links to relevant documentation for the code
+- **Code Readability**: Ensure code is easy to read and understand.
+- **Test Coverage**: Measure coverage of unit tests on new code.
+- **Modularity**: Assess how well the new code adheres to modular design principles.
+- **Performance**: Identify any performance improvements over the original shell scripts.
+- Emphasize clear naming conventions and code organization.
+- Adopt the Go community's idiomatic styles.
+- Utilize Go modules for dependency management.
+- Implement comprehensive exit_with_error handling and logging.
+- Include thorough tests for all functionalities.
+- Summarize migration progress and remaining tasks.
+- Highlight key improvements and potential issues encountered.
+- Provide clear guidelines for usage and further development of the new Go code.

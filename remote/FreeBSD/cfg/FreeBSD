@@ -1,0 +1,4 @@
+: ${_CONF_REMOTE_SERVICE_START_CMD:="service wireguard start"}
+: ${_CONF_REMOTE_SERVICE_STOP_CMD:="service wireguard stop"}
+: ${_CONF_REMOTE_VPN_CLIENT_TABLE_NAME:=vpn_client}
+: ${_CONF_REMOTE_SERVICE_CMD:=service}

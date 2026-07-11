@@ -1,0 +1,18 @@
+gh-open-pr - GitHub Pull Request Creator
+USAGE:
+    gh-open-pr [base-branch] [head-branch]
+DESCRIPTION:
+    Create a GitHub pull request using console context information
+    for title and description.
+ARGUMENTS:
+    base-branch
+        Base branch for PR (optional)
+    head-branch
+        Head branch for PR (optional)
+CONFIGURATION:
+    -conf-github-gh-notification METHOD
+        Notification method after PR creation
+EXAMPLES:
+    gh-open-pr
+    gh-open-pr main feature-branch
+    gh-open-pr develop my-feature

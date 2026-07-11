@@ -1,0 +1,9 @@
+#!/bin/sh
+_json_format_file() {
+    local temp_file=$(_mktemp_mktemp)
+    jq -MS . "$JSON_FILE" >$temp_file
+    mv $temp_file "$JSON_FILE"
+}
+for JSON_FILE in $(_extension_find_default); do
+    _json_format_file
+done

@@ -1,0 +1,12 @@
+gh-setup - GitHub CLI Setup
+USAGE:
+    gh-setup
+DESCRIPTION:
+    Configure GitHub CLI (gh) authentication. Sets up gh if not
+    already configured.
+CONFIGURATION:
+    -interactive
+        Enable interactive mode for authentication
+EXAMPLES:
+    gh-setup
+    interactive=1 gh-setup

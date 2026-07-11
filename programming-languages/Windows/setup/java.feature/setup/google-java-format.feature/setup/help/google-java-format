@@ -1,0 +1,20 @@
+google-java-format - Google Java Code Formatter
+USAGE:
+    google-java-format [files-or-directories...]
+DESCRIPTION:
+    Format Java source files using Google Java Format.
+    Processes files and directories recursively.
+ARGUMENTS:
+    files-or-directories...
+        Java files or directories to format (optional, defaults to all)
+CONFIGURATION:
+    -conf-dev-java-google-java-format-jdk JDK
+        JDK to use for formatting
+    -conf-dev-java-google-java-format-options OPTIONS
+        Default formatting options
+    -conf-dev-google-java-format-jar PATH
+        Path to Google Java Format JAR
+EXAMPLES:
+    google-java-format
+    google-java-format src/
+    google-java-format File1.java File2.java

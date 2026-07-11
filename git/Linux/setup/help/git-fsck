@@ -1,0 +1,16 @@
+git-fsck - Git Filesystem Check
+USAGE:
+    git-fsck [--git-user=USER]
+DESCRIPTION:
+    Perform git fsck on mirrors as administrator.
+OPTIONS:
+    --git-user=USER
+        Git user to run fsck as (conf_git_git_user)
+CONFIGURATION:
+    -conf-git-git-user=USER
+        Default git user for fsck operations
+NOTE:
+    Run this command in the root directory where git repositories are kept.
+EXAMPLES:
+    git-fsck
+    git-fsck --git-user=gitadmin

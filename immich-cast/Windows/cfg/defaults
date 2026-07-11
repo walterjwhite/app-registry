@@ -1,0 +1,7 @@
+: ${conf_immich_memories_server_url:="http://localhost:2283"}
+: ${conf_immich_memories_max_years_ago:=30}
+: ${conf_immich_memories_slide_duration:=10}
+: ${conf_immich_memories_cache_dir:=/tmp/immich-memories}
+: ${conf_immich_memories_image_list_file:="$conf_immich_memories_cache_dir/images.txt"}
+: ${conf_immich_memories_downloads:="$conf_immich_memories_cache_dir/downloads"}
+: ${conf_immich_memories_cache_date_file:="$conf_immich_memories_cache_dir/cache_date"}

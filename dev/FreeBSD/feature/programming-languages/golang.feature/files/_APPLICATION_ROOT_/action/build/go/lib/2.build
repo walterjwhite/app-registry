@@ -1,0 +1,35 @@
+#!/bin/sh
+_build_lib() {
+	go build -a -race $_BUILD_OPTIONS
+}
+_build_cmd() {
+	_APP_NAME=$(basename $PWD)
+	_BUILD_DATE=$(date +"%Y/%m/%d-%H:%M:%S")
+	_VERSION=$(gcb)
+	_SCM_ID=$(git-head)
+	_GO_VERSION=$(go version | awk {'print$3'})
+	_OS_ARCHITECTURE=$(go version | awk {'print$4'})
+	_APP_NAME_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.ApplicationName=$_APP_NAME"
+	_APP_VERSION_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.ApplicationVersion=$_VERSION"
+	_SCM_VERSION_ID_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.SCMId=$_SCM_ID"
+	_BUILD_DATE_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.BuildDate=$_BUILD_DATE"
+	_GO_VERSION_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.GoVersion=$_GO_VERSION"
+	_OS_ARCHITECTURE_FLAG="${_CONF_DEV_APPLICATION_PACKAGE_PREFIX}.OSArchitecture=$_OS_ARCHITECTURE"
+	_BUILD_OPTIONS="-X $_APP_NAME_FLAG -X $_APP_VERSION_FLAG -X $_SCM_VERSION_ID_FLAG -X $_BUILD_DATE_FLAG -X $_GO_VERSION_FLAG -X $_OS_ARCHITECTURE_FLAG"
+	_DEBUG "#####"
+	_DEBUG "$_APP_NAME"
+	_DEBUG "$_VERSION"
+	_DEBUG "$_SCM_ID"
+	_DEBUG "$_BUILD_DATE"
+	_DEBUG "$_GO_VERSION"
+	_DEBUG "$_OS_ARCHITECTURE"
+	local error_count=0
+	go install -a -race -ldflags "$_BUILD_OPTIONS" || error_count=1
+	unset _BUILD_DATE _VERSION _GO_VERSION _OS_ARCHITECTURE _APP_VERSION_FLAG _BUILD_DATE_FLAG _GO_VERSION_FLAG _OS_ARCHITECTURE_FLAG _BUILD_OPTIONS
+	return $error_count
+}
+if [ $(grep "package main" *.go -n 2>/dev/null | wc -l) -gt 0 ]; then
+	_build_cmd
+else
+	_build_lib
+fi

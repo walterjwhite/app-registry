@@ -1,0 +1,15 @@
+lombok-slf4j - Lombok SLF4J Fixer
+USAGE:
+    lombok-slf4j <source-filename>
+DESCRIPTION:
+    Replace manual SLF4J logger with Lombok @Slf4j annotation.
+    Removes logger declarations and adds annotation.
+ARGUMENTS:
+    source-filename
+        Java source file to fix (required)
+CONFIGURATION:
+    -conf-dev-lombok-slf4j-logger-name NAME
+        Logger name to use (default: log)
+EXAMPLES:
+    lombok-slf4j MyClass.java
+    lombok-slf4j src/main/java/com/example/Service.java

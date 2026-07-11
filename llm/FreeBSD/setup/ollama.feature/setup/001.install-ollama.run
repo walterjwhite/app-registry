@@ -1,0 +1,27 @@
+#!/bin/sh
+_ollama_install_from_source() {
+    cd /tmp
+    git clone --depth 1 -b feature/add-bsd-support https://github.com/prep/ollama.git
+    cd ollama
+    go122 generate ./... > /tmp/ollama-generate.log 2>&1 || {
+        log_warn "error generating ollama"
+        cat /tmp/ollama-generate.log
+        return 1
+    }
+    rm -f /tmp/ollama-generate.log
+    go122 build . > /tmp/ollama-build.log 2>&1 || {
+        log_warn "error building ollama"
+        cat /tmp/ollama-build.log
+        return 1
+    }
+    rm -f /tmp/ollama-build.log
+    local _dest="$TARGET_APP_PLATFORM_BIN_PATH/ollama"
+    cp ollama "$_dest"
+    chmod +x "$_dest"
+    _install_record_path "$_dest"
+    cd ..
+    rm -rf ollama
+}
+command -v ollama > /dev/null 2>&1 || {
+    _ollama_install_from_source
+}

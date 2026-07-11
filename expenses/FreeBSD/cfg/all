@@ -1,0 +1,2 @@
+: ${conf_expenses_text_fields:="date|name|description|category|comments"}
+: ${conf_expenses_numerical_fields:="unit-price|quantity|tax|tip|fees|total"}

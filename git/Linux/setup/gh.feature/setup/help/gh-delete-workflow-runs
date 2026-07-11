@@ -1,0 +1,23 @@
+gh-delete-workflow-runs - GitHub Workflow Run Deleter
+USAGE:
+    gh-delete-workflow-runs <repository-owner> <repository> [filter]
+DESCRIPTION:
+    Delete GitHub Actions workflow runs for specified repository.
+    Supports filtering by branch or custom criteria.
+ARGUMENTS:
+    repository-owner
+        Repository owner (required)
+    repository
+        Repository name (required)
+    filter
+        Filter criteria for workflow runs (optional):
+        select(expression) - Custom jq filter
+        =branch - Filter by exact branch name
+        *branch* - Filter by branch pattern
+CONFIGURATION:
+    -conf-gh-delete-workflow-parallel-runs NUM
+        Parallel deletion requests (default: 10)
+EXAMPLES:
+    gh-delete-workflow-runs owner repo
+    gh-delete-workflow-runs owner repo feature-branch
+    gh-delete-workflow-runs owner repo "select(.head_branch != \"main\")"

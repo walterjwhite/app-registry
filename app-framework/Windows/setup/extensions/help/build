@@ -1,0 +1,8 @@
+build - Application Builder
+USAGE:
+    build
+DESCRIPTION:
+    Automatically detects the build system and uses the appropriate build command.
+    Supports Maven, go, rust, npm, and app projects.
+EXAMPLES:
+    build

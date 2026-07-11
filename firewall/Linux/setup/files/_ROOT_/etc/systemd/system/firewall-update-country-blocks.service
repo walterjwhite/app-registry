@@ -1,0 +1,5 @@
+[Unit]
+Description=Update country blocks
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/firewall-update-country-blocks

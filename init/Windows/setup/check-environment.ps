@@ -1,0 +1,76 @@
+Write-Host "`n=== Software Install Tool Checker ===" -ForegroundColor Cyan
+Write-Host "Running checks...`n"
+function Check-Tool {
+    param($Name, $Command, $Args, $Description)
+    Write-Host -NoNewline "  [$Name] $Description... "
+    try {
+        $result = & $Command $Args 2>&1
+        if ($LASTEXITCODE -eq 0 -or $?) {
+            Write-Host "OK" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "NOT AVAILABLE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "NOT FOUND" -ForegroundColor Red
+        return $false
+    }
+}
+Write-Host "Package Managers:" -ForegroundColor Yellow
+$hasWinget = Check-Tool "winget" "winget" "--version" "winget (Windows Package Manager)"
+$hasChoco  = Check-Tool "choco"  "choco"  "--version" "Chocolatey"
+$hasScoop  = Check-Tool "scoop"  "scoop"  "--version" "Scoop"
+Write-Host "`nNetwork Access:" -ForegroundColor Yellow
+Write-Host -NoNewline "  [web] Outbound HTTPS to internet... "
+try {
+    $response = Invoke-WebRequest -Uri "https://get.scoop.sh" -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+    Write-Host "OK" -ForegroundColor Green
+    $hasWeb = $true
+} catch {
+    Write-Host "BLOCKED" -ForegroundColor Red
+    $hasWeb = $false
+}
+Write-Host -NoNewline "  [proxy] System proxy configured... "
+$proxy = [System.Net.WebRequest]::GetSystemWebProxy()
+$testUri = [System.Uri]"https://example.com"
+$proxyUri = $proxy.GetProxy($testUri)
+if ($proxyUri -ne $testUri) {
+    Write-Host "YES ($proxyUri)" -ForegroundColor Green
+    $hasProxy = $true
+} else {
+    Write-Host "None detected" -ForegroundColor DarkGray
+    $hasProxy = $false
+}
+Write-Host "`nPermissions:" -ForegroundColor Yellow
+Write-Host -NoNewline "  [admin] Running as administrator... "
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    Write-Host "YES" -ForegroundColor Green
+} else {
+    Write-Host "No (user mode only)" -ForegroundColor DarkGray
+}
+Write-Host -NoNewline "  [execpol] PowerShell execution policy... "
+$policy = Get-ExecutionPolicy -Scope CurrentUser
+Write-Host $policy -ForegroundColor $(if ($policy -in "Unrestricted","RemoteSigned","Bypass") { "Green" } else { "Red" })
+Write-Host "`n=== Recommendations ===" -ForegroundColor Cyan
+if ($hasWinget) {
+    Write-Host "  -> Use winget (already available)" -ForegroundColor Green
+} elseif ($hasChoco) {
+    Write-Host "  -> Use Chocolatey (already available)" -ForegroundColor Green
+} elseif ($hasScoop) {
+    Write-Host "  -> Use Scoop (already available)" -ForegroundColor Green
+} elseif ($hasWeb -and $policy -in "Unrestricted","RemoteSigned","Bypass") {
+    Write-Host "  -> You can install Scoop (web access + execution policy OK)" -ForegroundColor Yellow
+} elseif ($hasWeb -and $policy -notin "Unrestricted","RemoteSigned","Bypass") {
+    Write-Host "  -> Web access OK, but fix execution policy first:" -ForegroundColor Yellow
+    Write-Host "     Set-ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor DarkGray
+} elseif ($hasProxy) {
+    Write-Host "  -> Behind a proxy — set HTTP_PROXY/HTTPS_PROXY and retry" -ForegroundColor Yellow
+} else {
+    Write-Host "  -> No package managers found and web access is blocked." -ForegroundColor Red
+    Write-Host "     Try portable/zip installs, or contact IT." -ForegroundColor DarkGray
+}
+Write-Host ""
+.\check-install-tools.ps1
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser

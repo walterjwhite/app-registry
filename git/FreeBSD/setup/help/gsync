@@ -1,0 +1,12 @@
+gsync - Git Repository Sync
+USAGE:
+    gsync
+DESCRIPTION:
+    Sync git repositories by pulling and pushing changes.
+    Syncs projects/git and .data directories for current user.
+PROCESS:
+    1. Change to home directory
+    2. Pull changes for each repository
+    3. Push all changes for each repository
+EXAMPLES:
+    gsync

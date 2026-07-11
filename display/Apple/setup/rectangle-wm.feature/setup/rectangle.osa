@@ -1,0 +1,10 @@
+#!/usr/bin/osascript -l JavaScript
+// var Rectangle = new Application("/Applications/Rectangle.app")
+// var Rectangle = new Application("/Applications/Rectangle.app/Contents/MacOS/Rectangle")
+on run argv
+	set argList to {}
+	repeat with arg in argv
+		var app = new Application(argv);
+		app.activate();
+	end repeat
+end run

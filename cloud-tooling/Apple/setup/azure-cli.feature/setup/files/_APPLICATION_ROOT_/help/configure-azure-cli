@@ -1,0 +1,15 @@
+configure-azure-cli - Azure CLI Configuration
+USAGE:
+    configure-azure-cli
+DESCRIPTION:
+    Configure Azure CLI with automatic updates and authentication.
+    Enables auto-upgrade, upgrades CLI, clears accounts, and logs in.
+CONFIGURATION:
+    -conf-dev-azure-upgrade-timeout SECONDS
+        Timeout for upgrade operations
+    -conf-dev-azure-login-timeout SECONDS
+        Timeout for login operations
+    -conf-dev-azure-output-format FORMAT
+        Azure CLI output format
+EXAMPLES:
+    configure-azure-cli

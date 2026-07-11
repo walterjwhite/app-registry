@@ -1,0 +1,9 @@
+: ${conf_dev_azure_login_timeout:=30}
+: ${conf_dev_azure_upgrade_timeout:=30}
+: ${conf_dev_azure_output_format:=table}
+if [ -n "$TARGET_APP_PATH" ]; then
+  : ${conf_dev_azure_venv:=$TARGET_APP_PATH/python/env/azure}
+else
+  : ${conf_dev_azure_venv:=$APP_PATH/python/env/azure}
+fi
+: ${conf_dev_azure_python_artifact=azure-cli}

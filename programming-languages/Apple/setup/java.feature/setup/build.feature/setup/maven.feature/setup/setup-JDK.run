@@ -1,0 +1,7 @@
+#!/bin/sh
+log_info "setting JAVA_HOME"
+_OPENJDK=$(find /opt/homebrew/Cellar/openjdk -type d -maxdepth 1 ! -name openjdk | sort -u | tail -1)
+JAVA_HOME=$_OPENJDK/libexec/openjdk.jdk/Contents/Home
+if [ $(grep -c JAVA_HOME $HOME/.zshrc) -eq 0 ]; then
+	printf 'JAVA_HOME=%s\n' "$JAVA_HOME" >> $HOME/.zshrc
+fi

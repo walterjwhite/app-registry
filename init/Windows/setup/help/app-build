@@ -1,0 +1,20 @@
+app-build - Build applications
+USAGE:
+    app-build
+DESCRIPTION:
+    Build the current application. Must be run from app directory.
+CONFIGURATION:
+    -conf-install-no-pager 0|1
+        Disable pager output (default: 0)
+    -conf-install-app-build-depth NUM
+        Set build depth (default: 3)
+    -conf-install-step-timeout SECONDS
+        Timeout per build step (default: 300)
+    -conf-install-max-concurrent-jobs NUM
+        Maximum concurrent jobs (default: nproc)
+    -conf-install-checksum-cmd CMD
+        Checksum command (default: "sha256 -q")
+    -conf-install-remove-unused-functions 0|1
+        Remove unused functions (default: 1)
+EXAMPLES:
+    app-build

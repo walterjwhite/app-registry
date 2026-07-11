@@ -1,0 +1,21 @@
+: ${conf_install_no_pager:=0}
+: ${conf_install_app_build_depth:=3}
+: ${conf_install_step_timeout:=300}
+: ${conf_install_iostat_duration:=5}
+: ${conf_init_app_registries:="default|https://github.com/walterjwhite/app.registry.git"}
+: ${conf_install_auto_update_packages:=0}
+: ${conf_clean_app_registry_workspace:=1}
+: ${conf_install_random_default_length:=8}
+[ "$conf_install_no_pager" = "1" ] && PAGER=cat
+: ${conf_install_checksum_cmd:="sha256 -q"}
+: ${conf_install_remove_unused_functions:=1}
+command -v shfmt > /dev/null 2>&1 || disable_shfmt=1
+case $APP_PLATFORM_PLATFORM in
+  Apple)
+    : ${conf_install_max_concurrent_jobs:=$(getconf _NPROCESSORS_ONLN)}
+    ;;
+  *)
+    : ${conf_install_max_concurrent_jobs:=$(nproc)}
+    ;;
+esac
+: ${conf_install_app_registry_timeout:=5}

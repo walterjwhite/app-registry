@@ -1,0 +1,23 @@
+gcommit - Git Commit
+USAGE:
+    gcommit [-m='message'] [-a] [git-commit-arguments...]
+DESCRIPTION:
+    Commit changes with optional message. Uses APP_CONTEXT
+    environment variable to inject contextual information into commit message.
+OPTIONS:
+    -m='message'
+        Commit message
+    -a
+        Stage all changes before committing
+ARGUMENTS:
+    git-commit-arguments
+        Any valid git commit arguments
+CONFIGURATION:
+    -conf-install-context=CONTEXT
+        Context information to inject into commit message
+NOTE:
+    Makes use of APP_CONTEXT environment variable for contextual information.
+EXAMPLES:
+    gcommit -m="Fix bug in parser"
+    gcommit -a -m="Add new feature"
+    gcommit -m="Update docs" --amend

@@ -1,0 +1,8 @@
+if command -v Xwayland >/dev/null 2>&1; then
+  :
+elif command -v Xorg >/dev/null 2>&1; then
+  :
+else
+  log_warn "disabling python-detect-secrets as no graphical environment was detected"
+  feature_scan_python_detect_secrets_disabled=1
+fi

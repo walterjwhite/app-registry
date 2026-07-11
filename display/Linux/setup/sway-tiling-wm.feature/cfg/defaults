@@ -1,0 +1,1 @@
+: ${conf_display_sway_tiling_wm_refresh_interval:=5}

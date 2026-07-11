@@ -1,0 +1,1 @@
+: ${conf_console_source_highlight:=/usr/local/bin/src-hilite-lesspipe.sh}

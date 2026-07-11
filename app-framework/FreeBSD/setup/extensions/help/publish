@@ -1,0 +1,7 @@
+publish - Application Publisher
+USAGE:
+    publish
+DESCRIPTION:
+    Publish application to repositories or distribution channels.
+EXAMPLES:
+    publish

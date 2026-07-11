@@ -1,0 +1,12 @@
+asearch - Activity Search
+USAGE:
+    asearch [search-term]
+DESCRIPTION:
+    Search within activity records only. Confined to activity project.
+ARGUMENTS:
+    search-term
+        Term to search for (optional)
+EXAMPLES:
+    asearch
+    asearch "meeting"
+    asearch "project name"

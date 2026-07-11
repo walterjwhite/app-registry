@@ -1,0 +1,8 @@
+if command -v Xwayland >/dev/null 2>&1; then
+  :
+elif command -v Xorg >/dev/null 2>&1; then
+  :
+else
+  log_warn "disabling github as no graphical environment was detected"
+  feature_gh_disabled=1
+fi

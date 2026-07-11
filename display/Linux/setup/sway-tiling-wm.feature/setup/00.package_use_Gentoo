@@ -1,0 +1,5 @@
+sys-auth/seatd server
+gui-wm/sway tray network pipewire
+www-client/w3m -X -fbcon -imlib
+>=app-text/xmlto-0.0.28-r11 text
+>=app-crypt/gcr-3.41.1-r2:0 gtk

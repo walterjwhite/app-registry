@@ -1,0 +1,9 @@
+: ${conf_search_contents_recurse_submodules:=1}
+: ${conf_search_contents_type:=string}
+: ${conf_search_cwd_only:=0}
+: ${conf_search_recursive_pager:=1}
+: ${conf_search_scope_max_depth:=3}
+: ${search_type:=git/contents}
+: ${conf_search_editor:=$EDITOR}
+: ${conf_search_exclude_path:='*/.*/*'}
+: ${conf_search_exclude_git_grep:='^\.'}

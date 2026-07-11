@@ -1,0 +1,10 @@
+projects-using-lombok - Lombok Project Finder
+USAGE:
+    projects-using-lombok
+DESCRIPTION:
+    Find all projects in current directory that use Lombok.
+    Searches for Java files with Lombok imports.
+OUTPUT:
+    List of project directories using Lombok
+EXAMPLES:
+    projects-using-lombok

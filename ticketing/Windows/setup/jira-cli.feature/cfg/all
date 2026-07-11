@@ -1,0 +1,1 @@
+: ${conf_def_jira_installation_timeout:=30}

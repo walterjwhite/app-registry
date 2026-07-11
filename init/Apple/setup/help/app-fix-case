@@ -1,0 +1,9 @@
+app-fix-case - Fix filename case issues
+USAGE:
+    app-fix-case
+DESCRIPTION:
+    Fix filename case issues in the current project.
+    This is typically used on case-insensitive filesystems
+    where filename case may have been mixed up.
+EXAMPLES:
+    app-fix-case

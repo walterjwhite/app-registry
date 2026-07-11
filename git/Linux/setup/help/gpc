@@ -1,0 +1,7 @@
+gpc - Git Parent Commit
+USAGE:
+    gpc
+DESCRIPTION:
+    Show the parent commit of the current HEAD.
+EXAMPLES:
+    gpc

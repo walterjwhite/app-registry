@@ -1,0 +1,14 @@
+media-chromecast-slideshow - Chromecast Media Slideshow
+USAGE:
+    media-chromecast-slideshow <media-directory>
+DESCRIPTION:
+    Cast media files from directory to Chromecast as slideshow.
+ARGUMENTS:
+    media-directory
+        Directory containing media files (required)
+CONFIGURATION:
+    -conf-media-share-chromecast-name NAME
+        Chromecast device name
+EXAMPLES:
+    media-chromecast-slideshow /path/to/photos
+    media-chromecast-slideshow $HOME/Pictures

@@ -1,0 +1,8 @@
+remote-web-browser - Remote Web Browser
+USAGE:
+    remote-web-browser
+DESCRIPTION:
+    Launch a web browser with remote debugging enabled for
+    automation and remote control.
+EXAMPLES:
+    remote-web-browser

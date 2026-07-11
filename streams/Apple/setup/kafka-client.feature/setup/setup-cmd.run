@@ -1,0 +1,19 @@
+#!/bin/sh
+_link_create() {
+  local _target=$1
+  local _link_path=$2
+  ln -s "$_target" "$_link_path"
+}
+_link_install_link() {
+  local _target=$1
+  local _link_path=$2
+  _link_create "$_target" "$_link_path" &&
+    printf '%s\n' "$_link_path" >>"$install_library_path/$target_application_name/.files"
+}
+local _dest="$TARGET_APP_PLATFORM_BIN_PATH/conduktor"
+if [ -e /Applications/Conduktor.app/Contents/MacOS/Conduktor ]; then
+    _link /Applications/Conduktor.app/Contents/MacOS/Conduktor "$_dest"
+    _install_record_symlink "$_dest"
+else
+    log_warn '/Applications/Conduktor.app/Contents/MacOS/Conduktor does not exist?'
+fi

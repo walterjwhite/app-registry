@@ -1,0 +1,20 @@
+h - HTTPie Client
+USAGE:
+    h [-request=method] [-q|--quiet] [--no-log-env] [-s=host] [--session=name]
+DESCRIPTION:
+    HTTPie command-line HTTP client with various options.
+OPTIONS:
+    -request=method
+        HTTP request method
+    -q|--quiet
+        Quiet mode
+    --no-log-env
+        Don't log environment variables
+    -s=host
+        Server host
+    --session=name
+        Session name
+EXAMPLES:
+    h -request=GET
+    h -q --session=myapp
+    h -s=api.example.com --no-log-env

@@ -1,0 +1,13 @@
+bindkey -e
+bindkey    "^[[3~"          delete-char
+bindkey    "^[3;5~"         delete-char
+bindkey '\e[1~'   beginning-of-line  # Linux console
+bindkey '\e[H'    beginning-of-line  # xterm
+bindkey '\eOH'    beginning-of-line  # gnome-terminal
+bindkey '\e[4~'   end-of-line        # Linux console
+bindkey '\e[F'    end-of-line        # xterm
+bindkey '\eOF'    end-of-line        # gnome-terminal
+bindkey '^[[1;5C' emacs-forward-word
+bindkey '^[[1;5D' emacs-backward-word
+bindkey "^[[5~" history-beginning-search-backward
+bindkey "^[[6~" history-beginning-search-forward

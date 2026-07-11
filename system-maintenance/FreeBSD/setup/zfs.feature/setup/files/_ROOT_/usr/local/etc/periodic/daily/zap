@@ -1,0 +1,3 @@
+#!/bin/sh
+zfs-zap-maintenance daily
+zfs-rclone-backup

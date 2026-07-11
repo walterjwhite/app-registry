@@ -1,0 +1,8 @@
+: ${conf_firewall_lock_timeout:=60}
+: ${conf_firewall_lock_file:=/tmp/pfctl.lock}
+: ${conf_firewall_ip_block_et:=https://rules.emergingthreats.net/blockrules/compromised-ips.txt https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt}
+: ${conf_firewall_ip_block_providers:=ET FIREHOL}
+: ${conf_firewall_tables_path:=/usr/local/etc/walterjwhite/firewall/dynamic}
+: ${conf_firewall_parallel_workers:=8}
+: ${conf_firewall_dns_timeout:=1}
+: ${conf_firewall_dnsmasq_log_file:=/var/log/dnsmasq/log}

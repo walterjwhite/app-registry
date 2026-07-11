@@ -1,0 +1,13 @@
+#!/bin/sh
+if [ $# -gt 0 ]; then
+  case $1 in
+  -r=*)
+    git_ref=${1#*=}
+    shift
+    ;;
+  esac
+  [ -z "$git_ref" ] && git_ref=$(git-head)
+  git checkout $git_ref -- "$@"
+else
+  git reset --hard HEAD
+fi

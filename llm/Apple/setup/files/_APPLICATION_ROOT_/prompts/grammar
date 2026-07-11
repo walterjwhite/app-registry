@@ -1,0 +1,27 @@
+Perform a comprehensive review of all text files to ensure they meet high standards of written communication by:
+1. Correcting all spelling and grammatical errors
+2. Improving clarity and readability
+3. Ensuring consistent style and tone throughout
+- All text files in the codebase
+- Documentation files
+- Comments in code
+- Error messages and user-facing text
+1. Identify and correct:
+   - Spelling mistakes
+   - Grammatical errors
+   - Punctuation issues
+   - Inconsistent terminology
+   - Awkward phrasing
+2. Ensure consistent:
+   - Voice (active/passive)
+   - Tense usage
+   - Style (e.g., Oxford comma usage)
+3. Maintain technical accuracy while improving clarity
+- Provide a summary of changes made
+- Highlight any ambiguous sections that need author review
+- Maintain original meaning while improving clarity
+- Preserve code formatting and special characters
+- Verify technical terms are used correctly
+- Ensure changes don't introduce errors
+- Maintain consistency with existing documentation style
+- Respect any project-specific terminology

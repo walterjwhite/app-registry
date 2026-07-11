@@ -1,0 +1,14 @@
+gb - Git Branch
+USAGE:
+    gb [git-branch-arguments...]
+DESCRIPTION:
+    Show git branches with filtered output. All arguments are passed
+    directly to git branch.
+ARGUMENTS:
+    git-branch-arguments
+        Any valid git branch arguments
+EXAMPLES:
+    gb
+    gb -a
+    gb -r
+    gb --merged

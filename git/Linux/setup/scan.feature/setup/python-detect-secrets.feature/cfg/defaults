@@ -1,0 +1,7 @@
+if [ -n "$TARGET_APP_PATH" ]; then
+   : ${conf_dev_detect_secrets_venv:=$TARGET_APP_PATH/python/env/detect_secrets}
+else
+  : ${conf_dev_detect_secrets_venv:=$APP_PATH/python/env/detect_secrets}
+fi
+: ${conf_dev_detect_secrets_python_artifact=detect-secrets}
+: ${conf_dev_detect_secrets_exclude_files:="--exclude-files '.*\.secret/.*' --exclude-files '.*.archived.*' --exclude-files '.*\.secrets$'"}

@@ -1,0 +1,23 @@
+randoop - Randoop Unit Test Generator
+USAGE:
+    randoop <command> [options...]
+DESCRIPTION:
+    Generate unit tests using Randoop tool. Supports test generation,
+    minimization, and help commands.
+COMMANDS:
+    gen <class-name>
+        Generate tests for specified class
+    help
+        Show Randoop help
+ARGUMENTS:
+    class-name
+        Fully qualified class name or Java file path
+CONFIGURATION:
+    -conf-dev-randoop-heap OPTIONS
+        JVM heap options for Randoop
+    -conf-dev-randoop-options OPTIONS
+        Default Randoop options
+EXAMPLES:
+    randoop gen com.example.MyClass
+    randoop gen src/main/java/com/example/MyClass.java
+    randoop help
